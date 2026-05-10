@@ -1,0 +1,47 @@
+const { execSync } = require('child_process');
+const fs           = require('path');
+
+// Provision an SSL certificate for a subdomain using certbot
+// Requires: certbot installed on the Oracle VM, port 80 open
+const provisionSSL = (subdomain) => {
+  const domain    = process.env.CLOUDFLARE_DOMAIN || 'launchpad.dev';
+  const fullDomain = `${subdomain}.${domain}`;
+  const email     = process.env.SSL_EMAIL || process.env.SMTP_USER;
+
+  try {
+    execSync(
+      `certbot certonly --nginx -d ${fullDomain} --non-interactive --agree-tos -m ${email} --redirect`,
+      { stdio: 'pipe' }
+    );
+    console.log(`SSL certificate provisioned for ${fullDomain}`);
+    return true;
+  } catch (err) {
+    // In dev mode certbot won't exist — log and continue, don't crash the deploy
+    console.warn(`SSL provisioning skipped (${fullDomain}):`, err.message.slice(0, 100));
+    return false;
+  }
+};
+
+// Revoke and delete SSL cert when a project is removed
+const revokeSSL = (subdomain) => {
+  const domain     = process.env.CLOUDFLARE_DOMAIN || 'launchpad.dev';
+  const fullDomain = `${subdomain}.${domain}`;
+  try {
+    execSync(`certbot delete --cert-name ${fullDomain} --non-interactive`, { stdio: 'pipe' });
+    console.log(`SSL certificate revoked for ${fullDomain}`);
+  } catch (err) {
+    console.warn(`SSL revoke skipped:`, err.message.slice(0, 100));
+  }
+};
+
+// Renew all certs (called by cron job weekly)
+const renewAllSSL = () => {
+  try {
+    execSync('certbot renew --quiet', { stdio: 'pipe' });
+    console.log('SSL certificates renewed');
+  } catch (err) {
+    console.error('SSL renewal error:', err.message);
+  }
+};
+
+module.exports = { provisionSSL, revokeSSL, renewAllSSL };

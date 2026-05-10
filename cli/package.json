@@ -1,0 +1,20 @@
+{
+  "name": "launchpad-cli",
+  "version": "1.0.0",
+  "description": "Deploy your apps with LaunchPad from the terminal",
+  "main": "index.js",
+  "bin": {
+    "launchpad": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chalk": "^4.1.2",
+    "commander": "^11.0.0",
+    "inquirer": "^8.2.6",
+    "ora": "^5.4.1",
+    "conf": "^10.2.0"
+  }
+}
