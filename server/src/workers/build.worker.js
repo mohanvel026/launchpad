@@ -116,6 +116,8 @@ buildQueue.process(async (job) => {
     await log(`   ↳ Detected Stack: ${stack.toUpperCase()}`);
     await Project.findByIdAndUpdate(projectId, { stack });
 
+    const rawEnvs = await EnvVar.find({ project: projectId });
+
     // ── PHASE 3: Prepare Docker ──
     await log(`📝 PHASE 3: Generating optimized build instructions…`);
     const dockerfile = generateDockerfile(stack, repoDir, {
@@ -129,7 +131,6 @@ buildQueue.process(async (job) => {
 
     // ── PHASE 4/5: Build & Run ──
     if (!isWindows) {
-      const rawEnvs = await EnvVar.find({ project: projectId });
       const runtimeEnv = { PORT: '3000', NODE_ENV: 'production' };
       const buildArgs  = {};
 
