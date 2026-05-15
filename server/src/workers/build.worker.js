@@ -227,8 +227,8 @@ buildQueue.process(async (job) => {
       }
 
       await log('🌐 PHASE 7: Updating routing engine…');
-      // No longer need to write host-level nginx configs for every subdomain.
-      // The internal projectProxyMiddleware handles this automatically via the wildcard rule.
+      const { invalidateProjectCache } = require('../middleware/projectProxy.middleware');
+      invalidateProjectCache(project.subdomain);
       await log(`   ✅ Internal proxy updated. Traffic routed to ${liveUrl}`);
 
       if (!project.dnsRecordId) {

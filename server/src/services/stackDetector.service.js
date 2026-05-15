@@ -98,7 +98,8 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
     .join('\n');
 
   const nginxHeredocBlock = (includeProxy = false) => `\
-RUN MAIN_HTML=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" -exec basename {} \\; | sort | head -1) && \\
+RUN chmod -R 755 /usr/share/nginx/html && \\
+    MAIN_HTML=$(find /usr/share/nginx/html -name "*.html" -exec basename {} \\; | sort | head -1) && \\
     MAIN_HTML=\${MAIN_HTML:-index.html} && \\
     cat << EOF > /etc/nginx/conf.d/default.conf
 server {
