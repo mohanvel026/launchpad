@@ -44,45 +44,43 @@ const getBuildOutput = (dir) => {
 };
 
 // ─── Stack Analysis ───────────────────────────────────────────────────────────
+// Restored to return STRICTLY A STRING so pipeline `.toUpperCase()` doesn't crash
 const detectStack = (repoPath) => {
   const rootPkg = readPkg(repoPath);
-  const pm = detectPackageManager(repoPath);
-
+  
   const hasFrontendDir = exists(repoPath, 'frontend') || exists(repoPath, 'client');
   const hasBackendDir = exists(repoPath, 'backend') || exists(repoPath, 'server');
   const hasHtmlFile = getHtmlFiles(repoPath).length > 0;
 
-  const baseConfig = { packageManager: pm, isMonorepo: hasFrontendDir && hasBackendDir };
-
   if (!rootPkg) {
-    if (baseConfig.isMonorepo) return { ...baseConfig, type: 'fullstack-split' };
-    if (hasFrontendDir) return { ...baseConfig, type: 'react' };
-    if (hasBackendDir) return { ...baseConfig, type: 'node' };
-    return { ...baseConfig, type: 'static' };
+    if (hasFrontendDir && hasBackendDir) return 'fullstack-split';
+    if (hasFrontendDir) return 'react';
+    if (hasBackendDir) return 'node';
+    return 'static';
   }
 
   const scripts = rootPkg.scripts || {};
-  if (hasDep(rootPkg, 'next')) return { ...baseConfig, type: 'next' };
-  if (hasDep(rootPkg, 'nuxt')) return { ...baseConfig, type: 'nuxt' };
-  if (baseConfig.isMonorepo) return { ...baseConfig, type: 'fullstack-split' };
+  if (hasDep(rootPkg, 'next')) return 'next';
+  if (hasDep(rootPkg, 'nuxt')) return 'nuxt';
+  if (hasFrontendDir && hasBackendDir) return 'fullstack-split';
 
   if ((hasDep(rootPkg, 'express') || hasDep(rootPkg, 'fastify')) && (hasDep(rootPkg, 'react') || hasFrontendDir)) {
-    return { ...baseConfig, type: 'mern' };
+    return 'mern';
   }
 
-  if (hasDep(rootPkg, 'react') || hasDep(rootPkg, 'vite') || scripts.build) return { ...baseConfig, type: 'react' };
-  if (hasDep(rootPkg, 'express') || hasDep(rootPkg, 'fastify') || scripts.start) return { ...baseConfig, type: 'node' };
+  if (hasDep(rootPkg, 'react') || hasDep(rootPkg, 'vite') || scripts.build) return 'react';
+  if (hasDep(rootPkg, 'express') || hasDep(rootPkg, 'fastify') || scripts.start) return 'node';
 
-  return { ...baseConfig, type: hasHtmlFile ? 'static' : 'node' };
+  return hasHtmlFile ? 'static' : 'node';
 };
 
 // ─── Dockerfile Generation ────────────────────────────────────────────────────
 const generateDockerfile = (stack, repoPath = '', options = {}) => {
-  // If stack is passed as the first arg (compatible with worker), use it.
-  // Otherwise detect it from the path.
-  const config = detectStack(repoPath);
-  const type = (stack && typeof stack === 'string') ? stack : config.type;
-  const pm = config.packageManager;
+  // If stack is passed as string use it, otherwise detect it.
+  const type = (stack && typeof stack === 'string') ? stack : detectStack(repoPath);
+  
+  // Detect package manager directly here instead of relying on detectStack
+  const pm = detectPackageManager(repoPath);
 
   const installCmd = options.installCommand || pm.install;
   const buildCmd = options.buildCommand || `${pm.run} build`;

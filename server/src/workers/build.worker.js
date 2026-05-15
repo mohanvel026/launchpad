@@ -109,7 +109,9 @@ buildQueue.process(async (job) => {
     // ── PHASE 2: Analyze ──
     await log(`🔍 PHASE 2: Analyzing project architecture…`);
     const analysis = detectStack(repoDir);
-    const stack = project.framework && project.framework !== 'auto' ? project.framework : analysis.type;
+    const stack = (project.framework && project.framework !== 'auto') 
+      ? project.framework 
+      : (typeof analysis === 'string' ? analysis : analysis.type);
     
     await log(`   ↳ Detected Stack: ${stack.toUpperCase()}`);
     await Project.findByIdAndUpdate(projectId, { stack });
