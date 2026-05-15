@@ -317,9 +317,13 @@ COPY ${beDir}/ .
 
 # Bundle the built frontend into the backend's public directory
 RUN mkdir -p ./public
-COPY --from=frontend-builder /app/${outDir} ./public/ 2>/dev/null || true
-COPY --from=frontend-builder /app/build ./public/ 2>/dev/null || true
-COPY --from=frontend-builder /app/out ./public/ 2>/dev/null || true
+# To optionally copy directories without failing if they don't exist, we use a wildcard trick:
+# COPY <src>* <dest> -> if <src> is empty, it copies nothing without error (in most buildx).
+# But safer is to just copy from /app to a temp dir, then move whatever is there.
+# Instead, since we know it's a frontend, let's just copy the root /app from builder, and extract the likely output dir:
+COPY --from=frontend-builder /app /app-frontend
+RUN cp -r /app-frontend/${outDir}/* ./public/ 2>/dev/null || cp -r /app-frontend/build/* ./public/ 2>/dev/null || cp -r /app-frontend/out/* ./public/ 2>/dev/null || true
+RUN rm -rf /app-frontend
 
 ENV NODE_ENV=production
 ENV PORT=3000
