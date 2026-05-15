@@ -231,6 +231,7 @@ buildQueue.process(async (job) => {
       invalidateProjectCache(project.subdomain);
       await log(`   ✅ Internal proxy updated. Traffic routed to ${liveUrl}`);
 
+      const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || '129.159.22.142.nip.io').toLowerCase();
       const isNipIo = DOMAIN.includes('nip.io');
 
       if (!project.dnsRecordId && !isNipIo) {
