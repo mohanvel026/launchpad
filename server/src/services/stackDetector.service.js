@@ -114,6 +114,7 @@ COPY . .
 ${buildArgBlock}
 RUN ${buildCommand}
 FROM nginx:alpine
+RUN rm -rf /usr/share/nginx/html/*
 RUN rm -f /etc/nginx/conf.d/default.conf
 RUN ${nginxWriteCmd(3000)}
 COPY --from=builder /app/${outDir} /usr/share/nginx/html
@@ -147,6 +148,7 @@ CMD ["npm", "start"]`;
 
     case 'static':
       return `FROM nginx:alpine
+RUN rm -rf /usr/share/nginx/html/*
 RUN rm -f /etc/nginx/conf.d/default.conf
 RUN ${nginxWriteCmd(3000)}
 COPY . /usr/share/nginx/html
