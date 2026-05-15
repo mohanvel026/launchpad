@@ -220,9 +220,10 @@ buildQueue.process(async (job) => {
         throw new Error('Runtime execution failure');
       }
 
-      await log('🌐 PHASE 7: Updating global edge routing…');
-      createNginxConfig(project.subdomain, hostPort, false);
-      await log(`   ✅ Traffic routed to ${liveUrl}`);
+      await log('🌐 PHASE 7: Updating routing engine…');
+      // No longer need to write host-level nginx configs for every subdomain.
+      // The internal projectProxyMiddleware handles this automatically via the wildcard rule.
+      await log(`   ✅ Internal proxy updated. Traffic routed to ${liveUrl}`);
 
       if (!project.dnsRecordId) {
         const dnsRecordId = await createSubdomain(project.subdomain);

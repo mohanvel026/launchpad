@@ -117,6 +117,12 @@ FROM nginx:alpine
 RUN rm -f /etc/nginx/conf.d/default.conf
 RUN ${nginxWriteCmd(3000)}
 COPY --from=builder /app/${outDir} /usr/share/nginx/html
+# Auto-create index.html if missing
+RUN if [ ! -f /usr/share/nginx/html/index.html ]; then \\
+      FOUND=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" | sort | head -1); \\
+      if [ -n "$FOUND" ]; then cp "$FOUND" /usr/share/nginx/html/index.html; \\
+      else echo '<meta http-equiv="refresh" content="0;url=/404.html">' > /usr/share/nginx/html/index.html; fi; \\
+    fi
 EXPOSE 3000
 CMD ["nginx", "-g", "daemon off;"]`;
     }
@@ -144,6 +150,12 @@ CMD ["npm", "start"]`;
 RUN rm -f /etc/nginx/conf.d/default.conf
 RUN ${nginxWriteCmd(3000)}
 COPY . /usr/share/nginx/html
+# Auto-create index.html if missing (e.g. repo has portfolio.html instead)
+RUN if [ ! -f /usr/share/nginx/html/index.html ]; then \\
+      FOUND=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" | sort | head -1); \\
+      if [ -n "$FOUND" ]; then cp "$FOUND" /usr/share/nginx/html/index.html; \\
+      else echo '<meta http-equiv="refresh" content="0;url=/404.html">' > /usr/share/nginx/html/index.html; fi; \\
+    fi
 EXPOSE 3000
 CMD ["nginx", "-g", "daemon off;"]`;
 

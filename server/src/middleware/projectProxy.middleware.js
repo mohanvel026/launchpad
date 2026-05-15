@@ -80,6 +80,8 @@ const projectProxyMiddleware = async (req, res, next) => {
     }
 
     // ── Pipe the request to the container ──────────────────────────────────────
+    console.log(`[proxy] ${subdomain} → :${port} ${req.method} ${req.url}`);
+
     const proxyReq = http.request(
       {
         hostname: '127.0.0.1',
@@ -111,6 +113,7 @@ const projectProxyMiddleware = async (req, res, next) => {
     req.pipe(proxyReq, { end: true });
 
   } catch (err) {
+    console.error(`[proxy] middleware error:`, err);
     next(err);
   }
 };
