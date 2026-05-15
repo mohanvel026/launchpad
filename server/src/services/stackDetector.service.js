@@ -1,20 +1,26 @@
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const exists  = (base, f) => fs.existsSync(path.join(base, f));
+const exists = (base, f) => fs.existsSync(path.join(base, f));
 const readPkg = (base, f = 'package.json') => {
   try { return JSON.parse(fs.readFileSync(path.join(base, f), 'utf-8')); }
   catch { return null; }
 };
 const allDeps = (pkg) => ({ ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) });
-const hasDep  = (pkg, dep) => dep in allDeps(pkg);
+const hasDep = (pkg, dep) => dep in allDeps(pkg);
+
+// Helper to find any HTML files in a directory
+const getHtmlFiles = (dir) => {
+  try { return fs.readdirSync(dir).filter(f => f.endsWith('.html')); }
+  catch { return []; }
+};
 
 // ─── Find the best start command for a Node backend ──────────────────────────
 const getStartCommand = (dir) => {
   const pkg = readPkg(dir);
   if (pkg?.scripts?.start) return { cmd: 'npm', args: ['start'], useNpm: true };
-  
+
   const candidates = [
     'server.js', 'index.js', 'app.js', 'main.js',
     'src/server.js', 'src/index.js', 'src/app.js', 'src/main.js'
@@ -22,7 +28,7 @@ const getStartCommand = (dir) => {
   for (const f of candidates) {
     if (exists(dir, f)) return { cmd: 'node', args: [f], useNpm: false };
   }
-  
+
   // Fallback to a generic node entry or npm start
   return { cmd: 'npm', args: ['start'], useNpm: true };
 };
@@ -40,13 +46,13 @@ const getBuildOutput = (dir) => {
 const detectStack = (repoPath) => {
   const rootPkg = readPkg(repoPath);
   const hasFrontendDir = exists(repoPath, 'frontend') || exists(repoPath, 'client');
-  const hasBackendDir  = exists(repoPath, 'backend')  || exists(repoPath, 'server');
-  const hasIndexHtml   = exists(repoPath, 'index.html');
+  const hasBackendDir = exists(repoPath, 'backend') || exists(repoPath, 'server');
+  const hasHtmlFile = getHtmlFiles(repoPath).length > 0;
 
   if (!rootPkg) {
     if (hasFrontendDir && hasBackendDir) return 'fullstack-split';
     if (hasFrontendDir) return 'react';
-    if (hasBackendDir)  return 'node';
+    if (hasBackendDir) return 'node';
     return 'static';
   }
 
@@ -54,7 +60,7 @@ const detectStack = (repoPath) => {
   if (hasDep(rootPkg, 'next')) return 'next';
   if (hasDep(rootPkg, 'nuxt')) return 'nuxt';
   if (hasFrontendDir && hasBackendDir) return 'fullstack-split';
-  
+
   // MERN Detection (Monorepo-ish)
   if ((hasDep(rootPkg, 'express') || hasDep(rootPkg, 'fastify')) && (hasDep(rootPkg, 'react') || hasFrontendDir)) {
     return 'mern';
@@ -62,39 +68,39 @@ const detectStack = (repoPath) => {
 
   if (hasDep(rootPkg, 'react') || hasDep(rootPkg, 'vite') || scripts.build) return 'react';
   if (hasDep(rootPkg, 'express') || hasDep(rootPkg, 'fastify') || scripts.start) return 'node';
-  
-  return hasIndexHtml ? 'static' : 'node';
+
+  return hasHtmlFile ? 'static' : 'node';
 };
 
 // Writes nginx config inside a Docker image using reliable one-echo-per-line approach.
-// Single-quoted echo means shell NEVER expands $uri, $host, etc.
-// Far more reliable than printf with multi-line strings across sh/ash/bash.
+// Dynamically detects the actual HTML file inside the container (e.g., app.html, main.html)
 const nginxWriteCmd = (port = 3000) => [
+  `MAIN_HTML=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" -exec basename {} \\; | sort | head -1)`,
+  `MAIN_HTML=\${MAIN_HTML:-index.html}`,
   `echo 'server {'`,
   `echo '    listen ${port};'`,
   `echo '    root /usr/share/nginx/html;'`,
-  `echo '    index index.html;'`,
+  `echo "    index $MAIN_HTML;"`,
   `echo '    gzip on;'`,
   `echo '    gzip_types text/plain text/css application/json application/javascript text/xml;'`,
-  `echo '    location ~* .(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {'`,
+  `echo '    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {'`,
   `echo '        expires 1y;'`,
   `echo '        add_header Cache-Control public;'`,
   `echo '    }'`,
   `echo '    location / {'`,
-  `echo '        try_files $uri $uri/ /index.html;'`,
+  `echo "        try_files \\$uri \\$uri/ /$MAIN_HTML;"`, // Escapes $uri for nginx, allows $MAIN_HTML to expand
   `echo '    }'`,
   `echo '}'`,
 ]
-  .map((cmd, i) => `${cmd} ${i === 0 ? '>' : '>>'} /etc/nginx/conf.d/app.conf`)
-  .join(' \
- && ');
+  .map((cmd, i) => i < 2 ? cmd : `${cmd} ${i === 2 ? '>' : '>>'} /etc/nginx/conf.d/app.conf`)
+  .join(' \\\n && ');
 
 // ─── Dockerfile Generation ────────────────────────────────────────────────────
 const generateDockerfile = (stack, repoPath = '', options = {}) => {
-  const { 
-    installCommand = 'npm install', 
-    buildCommand = 'npm run build', 
-    outputDir 
+  const {
+    installCommand = 'npm install',
+    buildCommand = 'npm run build',
+    outputDir
   } = options;
 
   const buildArgBlock = `\
@@ -116,14 +122,9 @@ RUN ${buildCommand}
 FROM nginx:alpine
 RUN rm -rf /usr/share/nginx/html/*
 RUN rm -f /etc/nginx/conf.d/default.conf
-RUN ${nginxWriteCmd(3000)}
+# Copying before writing config allows dynamic HTML detection
 COPY --from=builder /app/${outDir} /usr/share/nginx/html
-# Auto-create index.html if missing
-RUN if [ ! -f /usr/share/nginx/html/index.html ]; then \\
-      FOUND=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" | sort | head -1); \\
-      if [ -n "$FOUND" ]; then cp "$FOUND" /usr/share/nginx/html/index.html; \\
-      else echo '<meta http-equiv="refresh" content="0;url=/404.html">' > /usr/share/nginx/html/index.html; fi; \\
-    fi
+RUN ${nginxWriteCmd(3000)}
 EXPOSE 3000
 CMD ["nginx", "-g", "daemon off;"]`;
     }
@@ -150,14 +151,8 @@ CMD ["npm", "start"]`;
       return `FROM nginx:alpine
 RUN rm -rf /usr/share/nginx/html/*
 RUN rm -f /etc/nginx/conf.d/default.conf
-RUN ${nginxWriteCmd(3000)}
 COPY . /usr/share/nginx/html
-# Auto-create index.html if missing (e.g. repo has portfolio.html instead)
-RUN if [ ! -f /usr/share/nginx/html/index.html ]; then \\
-      FOUND=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" | sort | head -1); \\
-      if [ -n "$FOUND" ]; then cp "$FOUND" /usr/share/nginx/html/index.html; \\
-      else echo '<meta http-equiv="refresh" content="0;url=/404.html">' > /usr/share/nginx/html/index.html; fi; \\
-    fi
+RUN ${nginxWriteCmd(3000)}
 EXPOSE 3000
 CMD ["nginx", "-g", "daemon off;"]`;
 
@@ -169,10 +164,6 @@ CMD ["nginx", "-g", "daemon off;"]`;
       const start = getStartCommand(path.join(repoPath, beDir));
       const beStartCmd = start.useNpm ? 'npm start' : `node ${start.args[0]}`;
 
-      // Use nginx as the public-facing server on port 3000.
-      // nginx serves the React frontend and reverse-proxies /api/* to the
-      // Node backend running internally on port 4000 — no changes needed
-      // in the user's own code.
       return `# ── Stage 1: Build Frontend ──
 FROM node:20-alpine AS fe-builder
 WORKDIR /app/frontend
@@ -201,7 +192,10 @@ COPY ${beDir}/ .
 COPY --from=fe-builder /app/frontend/${feOut} /usr/share/nginx/html
 
 # nginx config: serve frontend + proxy /api to node on port 4000
-RUN printf 'server {\n  listen 3000;\n  root /usr/share/nginx/html;\n  index index.html;\n  location /api/ {\n    proxy_pass http://127.0.0.1:4000;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection upgrade;\n    proxy_set_header Host $host;\n  }\n  location /socket.io/ {\n    proxy_pass http://127.0.0.1:4000;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection upgrade;\n  }\n  location / {\n    try_files $uri $uri/ /index.html;\n  }\n}\n' > /etc/nginx/conf.d/default.conf
+# Dynamically inserts detected main html file into the format string
+RUN MAIN_HTML=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" -exec basename {} \\; | sort | head -1) && \\
+    MAIN_HTML=\${MAIN_HTML:-index.html} && \\
+    printf 'server {\n  listen 3000;\n  root /usr/share/nginx/html;\n  index %s;\n  location /api/ {\n    proxy_pass http://127.0.0.1:4000;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection upgrade;\n    proxy_set_header Host $host;\n  }\n  location /socket.io/ {\n    proxy_pass http://127.0.0.1:4000;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection upgrade;\n  }\n  location / {\n    try_files $uri $uri/ /%s;\n  }\n}\n' "$MAIN_HTML" "$MAIN_HTML" > /etc/nginx/conf.d/default.conf
 
 # Entrypoint: start node backend then nginx
 RUN printf '#!/bin/sh\ncd /app/backend && PORT=4000 ${beStartCmd} &\nnginx -g "daemon off;"\n' > /start.sh && chmod +x /start.sh
