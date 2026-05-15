@@ -3,7 +3,7 @@ const path         = require('path');
 const { execSync } = require('child_process');
 
 const NGINX_SITES  = process.env.NGINX_SITES_DIR || '/etc/nginx/sites-enabled';
-const DOMAIN       = process.env.CLOUDFLARE_DOMAIN || 'launchpad.dev';
+const DOMAIN       = process.env.CLOUDFLARE_DOMAIN || '129.159.22.142.nip.io';
 
 const httpTemplate = (subdomain, port) => `
 server {

@@ -29,18 +29,10 @@ const getProjects = async (req, res) => {
 
 // ─── POST /api/projects ───────────────────────────────────────────────────────
 const createProject = async (req, res) => {
-  const { repoFullName, branch = 'main', name } = req.body;
+  const { repoFullName, branch = 'main', name, framework } = req.body;
   if (!repoFullName) return res.status(400).json({ message: 'repoFullName is required' });
 
   try {
-    // Enforce per-user app limit
-    const count = await Project.countDocuments({ owner: req.user._id });
-    if (count >= req.user.appLimit) {
-      return res.status(403).json({
-        message: `App limit reached (${req.user.appLimit} apps on the free plan)`,
-      });
-    }
-
     // Validate the repo exists on GitHub
     const repoRes = await axios.get(`https://api.github.com/repos/${repoFullName}`, {
       headers: { Authorization: `Bearer ${req.user.githubAccessToken}` },
@@ -58,6 +50,7 @@ const createProject = async (req, res) => {
       repoUrl:      repo.clone_url,
       branch,
       subdomain,
+      ...(framework && framework !== 'auto' ? { framework } : {}),
     });
 
     res.status(201).json({ project });
@@ -83,6 +76,11 @@ const getProject = async (req, res) => {
   }
 };
 
+const { exec } = require('child_process');
+const util = require('util');
+const path = require('path');
+const execPromise = util.promisify(exec);
+
 // ─── DELETE /api/projects/:id ─────────────────────────────────────────────────
 const deleteProject = async (req, res) => {
   try {
@@ -91,7 +89,22 @@ const deleteProject = async (req, res) => {
       owner: req.user._id,       // only the owner can delete
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
-    res.json({ message: 'Project deleted' });
+    
+    // Clean up server resources to save storage
+    try {
+      const containerName = `lp-${project._id}`;
+      const repoDir = path.join(__dirname, '../../repos', project._id.toString());
+      
+      // Stop and remove docker container, remove repo files, and remove nginx config
+      await execPromise(`docker rm -f ${containerName} || true`);
+      await execPromise(`rm -rf ${repoDir} || true`);
+      await execPromise(`sudo rm -f /etc/nginx/sites-enabled/${project.subdomain}.conf || true`);
+      await execPromise(`sudo systemctl reload nginx || true`);
+    } catch (cleanupErr) {
+      console.error('Failed to cleanup project resources:', cleanupErr);
+    }
+
+    res.json({ message: 'Project deleted and server resources freed' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

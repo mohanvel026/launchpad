@@ -9,8 +9,9 @@ const provisionSSL = (subdomain) => {
   const email     = process.env.SSL_EMAIL || process.env.SMTP_USER;
 
   try {
+    const emailArg = (email && email !== 'placeholder') ? `-m ${email}` : '--register-unsafely-without-email';
     execSync(
-      `certbot certonly --nginx -d ${fullDomain} --non-interactive --agree-tos -m ${email} --redirect`,
+      `certbot certonly --nginx -d ${fullDomain} --non-interactive --agree-tos ${emailArg} --redirect`,
       { stdio: 'pipe' }
     );
     console.log(`SSL certificate provisioned for ${fullDomain}`);

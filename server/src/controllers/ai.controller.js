@@ -2,134 +2,101 @@ const axios      = require('axios');
 const Project    = require('../models/Project.model');
 const Deployment = require('../models/Deployment.model');
 
+// Helper function to call AI with automatic fallback
+const generateAIResponse = async (systemPrompt, userMessage, history = []) => {
+  const hasGemini = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'placeholder';
+  const hasGroq   = process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== 'placeholder';
+
+  if (!hasGemini && !hasGroq) {
+    throw new Error('No valid API keys found. Please add GEMINI_API_KEY or GROQ_API_KEY to your .env');
+  }
+
+  // 1. Try Gemini
+  if (hasGemini) {
+    try {
+      const contents = history.map(h => ({
+        role: h.role === 'user' ? 'user' : 'model',
+        parts: [{ text: h.content }]
+      }));
+      contents.push({ role: 'user', parts: [{ text: `System Instruction: ${systemPrompt}\n\nUser Question: ${userMessage}` }] });
+
+      const res = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        { contents }
+      );
+      return res.data.candidates[0].content.parts[0].text;
+    } catch (err) {
+      console.warn('Gemini failed, falling back to Groq...', err.message);
+      if (!hasGroq) throw err;
+    }
+  }
+
+  // 2. Try Groq (Fallback or Primary if Gemini missing)
+  if (hasGroq) {
+    const messages = [{ role: 'system', content: systemPrompt }];
+    history.forEach(h => messages.push({ role: h.role, content: h.content }));
+    messages.push({ role: 'user', content: userMessage });
+
+    const res = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: 'llama3-8b-8192',
+        messages,
+      },
+      { headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` } }
+    );
+    return res.data.choices[0].message.content;
+  }
+};
+
 // POST /api/ai/:projectId/chat
-// AI deployment assistant — answers questions about the user's specific deployment
 const chatWithAI = async (req, res) => {
   const { message, history = [] } = req.body;
   if (!message) return res.status(400).json({ message: 'message is required' });
 
   try {
-    const project = await Project.findOne({
-      _id: req.params.projectId,
-      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
-    });
+    const project = await Project.findOne({ _id: req.params.projectId, $or: [{ owner: req.user._id }, { collaborators: req.user._id }] });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    // Get latest deployment for context
-    const latestDeploy = await Deployment.findOne({ project: project._id })
-      .sort({ createdAt: -1 })
-      .select('status commitMessage aiErrorSummary logs duration stack');
+    const latestDeploy = await Deployment.findOne({ project: project._id }).sort({ createdAt: -1 }).select('status commitMessage aiErrorSummary logs duration stack');
+    const systemPrompt = `You are a DevOps assistant. Project: ${project.name}, Stack: ${project.stack}. Status: ${project.status}. Latest Deploy Status: ${latestDeploy?.status}. Be concise and technical.`;
 
-    // Build context about the user's project
-    const systemPrompt = `You are a helpful deployment assistant for LaunchPad, a fullstack app deployment platform.
-
-You are helping the user with their project called "${project.name}".
-- Repo: ${project.repoFullName}
-- Stack: ${project.stack || 'unknown'}
-- Status: ${project.status}
-- Branch: ${project.branch}
-- Subdomain: ${project.subdomain ? `${project.subdomain}.launchpad.dev` : 'not deployed yet'}
-${latestDeploy ? `
-Latest deployment:
-- Status: ${latestDeploy.status}
-- Commit: ${latestDeploy.commitMessage || 'unknown'}
-- Duration: ${latestDeploy.duration ? `${(latestDeploy.duration/1000).toFixed(1)}s` : 'unknown'}
-${latestDeploy.aiErrorSummary ? `- Last error: ${latestDeploy.aiErrorSummary}` : ''}
-` : '- No deployments yet'}
-
-Answer questions about:
-- Deployment errors and how to fix them
-- How to configure environment variables
-- How to set up a custom domain
-- How to optimize their app for deployment
-- General MERN/Node/React deployment questions
-
-Be concise, technical, and helpful. If you don't know something specific about their setup, say so.
-Never make up deployment logs or error messages you don't have.`;
-
-    // Build conversation history for Claude
-    const messages = [
-      ...history.slice(-6).map((h) => ({ role: h.role, content: h.content })),
-      { role: 'user', content: message },
-    ];
-
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model:      'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        system:     systemPrompt,
-        messages,
-      },
-      {
-        headers: {
-          'x-api-key':         process.env.ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'Content-Type':      'application/json',
-        },
-      }
-    );
-
-    const reply = response.data.content[0].text;
+    const reply = await generateAIResponse(systemPrompt, message, history);
     res.json({ reply });
   } catch (err) {
     console.error('AI chat error:', err.message);
+    if (err.message.includes('No valid API keys')) {
+      return res.json({ reply: "Sorry, I can't analyze your logs right now! 🤖\n\nTo activate me, you need to add a `GEMINI_API_KEY` or `GROQ_API_KEY` to your `/home/ubuntu/launchpad/server/.env` file and restart the server.\n\n*(Tip: Both are completely FREE!)*" });
+    }
     res.status(500).json({ message: 'AI assistant unavailable: ' + err.message });
   }
 };
 
 // POST /api/ai/:projectId/suggest-fix
-// Suggest a fix for the latest failed deployment
 const suggestFix = async (req, res) => {
   try {
-    const project = await Project.findOne({
-      _id: req.params.projectId,
-      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
-    });
+    const project = await Project.findOne({ _id: req.params.projectId, $or: [{ owner: req.user._id }, { collaborators: req.user._id }] });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const failedDeploy = await Deployment.findOne({
-      project: project._id,
-      status:  'failed',
-    }).sort({ createdAt: -1 });
+    const latestDeploy = await Deployment.findOne({ project: project._id }).sort({ createdAt: -1 });
+    if (!latestDeploy) return res.json({ suggestion: 'No deployments found to analyze.' });
+    if (latestDeploy.status === 'failed' && latestDeploy.aiErrorSummary) return res.json({ suggestion: latestDeploy.aiErrorSummary });
 
-    if (!failedDeploy) {
-      return res.json({ suggestion: 'No failed deployments found. Your app is deploying successfully!' });
-    }
+    const fs = require('fs'); const path = require('path');
+    let fileStructure = 'Unable to read files';
+    try { const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString()); if (fs.existsSync(repoPath)) { fileStructure = fs.readdirSync(repoPath).join(', '); } } catch (e) {}
 
-    if (failedDeploy.aiErrorSummary) {
-      return res.json({ suggestion: failedDeploy.aiErrorSummary });
-    }
+    const logs = latestDeploy.logs?.slice(-20).join('\n') || 'No logs available';
+    const prompt = `You are a DevOps AI assistant. A user deployed a ${project.stack} app. \nThe build status was: ${latestDeploy.status}.\n\nRecent Logs:\n${logs}\n\nFiles Found:\n${fileStructure}\n\nDiagnose the error. Give a 2-3 sentence technical fix.`;
 
-    // Generate fresh analysis
-    const logs = failedDeploy.logs?.slice(-20).join('\n') || 'No logs available';
-    const prompt = `A ${project.stack} app failed to deploy. Last 20 log lines:
-
-${logs}
-
-Give a 2-3 sentence diagnosis and exact fix. Be specific and technical.`;
-
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model:      'claude-sonnet-4-20250514',
-        max_tokens: 300,
-        messages:   [{ role: 'user', content: prompt }],
-      },
-      {
-        headers: {
-          'x-api-key':         process.env.ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'Content-Type':      'application/json',
-        },
-      }
-    );
-
-    const suggestion = response.data.content[0].text;
-    await Deployment.findByIdAndUpdate(failedDeploy._id, { aiErrorSummary: suggestion });
+    const suggestion = await generateAIResponse('You are an expert DevOps engineer diagnosing build failures.', prompt);
+    await Deployment.findByIdAndUpdate(latestDeploy._id, { aiErrorSummary: suggestion });
     res.json({ suggestion });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+  } catch (err) { 
+    if (err.message.includes('No valid API keys')) {
+      return res.json({ suggestion: "To use the AI Diagnostic tool, add a free `GEMINI_API_KEY` or `GROQ_API_KEY` to your `.env` file!" });
+    }
+    res.status(500).json({ message: err.message }); 
   }
 };
 

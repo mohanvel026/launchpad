@@ -7,7 +7,8 @@ const projectSchema = new mongoose.Schema({
   repoFullName:  { type: String, required: true },   // e.g. "username/my-app"
   repoUrl:       { type: String, required: true },
   branch:        { type: String, default: 'main' },
-  stack:         { type: String, enum: ['react', 'node', 'mern', 'static', 'unknown'], default: 'unknown' },
+  stack:         { type: String, enum: ['react', 'node', 'mern', 'mern-split', 'fullstack-split', 'next', 'nuxt', 'static', 'unknown'], default: 'unknown' },
+  framework:     { type: String }, // user-selected framework override
   subdomain:     { type: String, unique: true, sparse: true },
   customDomain:  { type: String },
   port:          { type: Number },
