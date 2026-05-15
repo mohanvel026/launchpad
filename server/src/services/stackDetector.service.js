@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Core Helpers ─────────────────────────────────────────────────────────────
 const exists = (base, f) => fs.existsSync(path.join(base, f));
 const readPkg = (base, f = 'package.json') => {
   try { return JSON.parse(fs.readFileSync(path.join(base, f), 'utf-8')); }
@@ -9,28 +9,29 @@ const readPkg = (base, f = 'package.json') => {
 };
 const allDeps = (pkg) => ({ ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) });
 const hasDep = (pkg, dep) => dep in allDeps(pkg);
-
-// Helper to find any HTML files in a directory
 const getHtmlFiles = (dir) => {
   try { return fs.readdirSync(dir).filter(f => f.endsWith('.html')); }
   catch { return []; }
 };
 
-// ─── Find the best start command for a Node backend ──────────────────────────
-const getStartCommand = (dir) => {
+// ─── Tooling Detection (Package Manager & Build) ──────────────────────────────
+const detectPackageManager = (dir) => {
+  if (exists(dir, 'pnpm-lock.yaml')) return { name: 'pnpm', install: 'pnpm install', run: 'pnpm run', lockfile: 'pnpm-lock.yaml' };
+  if (exists(dir, 'yarn.lock')) return { name: 'yarn', install: 'yarn install', run: 'yarn', lockfile: 'yarn.lock' };
+  if (exists(dir, 'bun.lockb')) return { name: 'bun', install: 'bun install', run: 'bun run', lockfile: 'bun.lockb' };
+  return { name: 'npm', install: 'npm install --legacy-peer-deps || npm install', run: 'npm run', lockfile: 'package-lock.json' };
+};
+
+const getStartCommand = (dir, pmName = 'npm') => {
   const pkg = readPkg(dir);
-  if (pkg?.scripts?.start) return { cmd: 'npm', args: ['start'], useNpm: true };
+  const runner = pmName === 'npm' ? 'npm' : pmName;
+  if (pkg?.scripts?.start) return { cmd: runner, args: ['start'], isScript: true };
 
-  const candidates = [
-    'server.js', 'index.js', 'app.js', 'main.js',
-    'src/server.js', 'src/index.js', 'src/app.js', 'src/main.js'
-  ];
+  const candidates = ['server.js', 'index.js', 'app.js', 'main.js', 'src/server.js', 'src/index.js'];
   for (const f of candidates) {
-    if (exists(dir, f)) return { cmd: 'node', args: [f], useNpm: false };
+    if (exists(dir, f)) return { cmd: 'node', args: [f], isScript: false };
   }
-
-  // Fallback to a generic node entry or npm start
-  return { cmd: 'npm', args: ['start'], useNpm: true };
+  return { cmd: runner, args: ['start'], isScript: true };
 };
 
 const getBuildOutput = (dir) => {
@@ -39,105 +40,136 @@ const getBuildOutput = (dir) => {
   if (hasDep(pkg, 'vite') || buildScript.includes('vite')) return 'dist';
   if (hasDep(pkg, 'next') || buildScript.includes('next build')) return '.next';
   if (buildScript.includes('react-scripts')) return 'build';
-  return 'dist';
+  return 'dist'; 
 };
 
-// ─── Stack Detection ──────────────────────────────────────────────────────────
+// ─── Stack Analysis ───────────────────────────────────────────────────────────
 const detectStack = (repoPath) => {
   const rootPkg = readPkg(repoPath);
+  const pm = detectPackageManager(repoPath);
+
   const hasFrontendDir = exists(repoPath, 'frontend') || exists(repoPath, 'client');
   const hasBackendDir = exists(repoPath, 'backend') || exists(repoPath, 'server');
   const hasHtmlFile = getHtmlFiles(repoPath).length > 0;
 
+  const baseConfig = { packageManager: pm, isMonorepo: hasFrontendDir && hasBackendDir };
+
   if (!rootPkg) {
-    if (hasFrontendDir && hasBackendDir) return 'fullstack-split';
-    if (hasFrontendDir) return 'react';
-    if (hasBackendDir) return 'node';
-    return 'static';
+    if (baseConfig.isMonorepo) return { ...baseConfig, type: 'fullstack-split' };
+    if (hasFrontendDir) return { ...baseConfig, type: 'react' };
+    if (hasBackendDir) return { ...baseConfig, type: 'node' };
+    return { ...baseConfig, type: 'static' };
   }
 
   const scripts = rootPkg.scripts || {};
-  if (hasDep(rootPkg, 'next')) return 'next';
-  if (hasDep(rootPkg, 'nuxt')) return 'nuxt';
-  if (hasFrontendDir && hasBackendDir) return 'fullstack-split';
+  if (hasDep(rootPkg, 'next')) return { ...baseConfig, type: 'next' };
+  if (hasDep(rootPkg, 'nuxt')) return { ...baseConfig, type: 'nuxt' };
+  if (baseConfig.isMonorepo) return { ...baseConfig, type: 'fullstack-split' };
 
-  // MERN Detection (Monorepo-ish)
   if ((hasDep(rootPkg, 'express') || hasDep(rootPkg, 'fastify')) && (hasDep(rootPkg, 'react') || hasFrontendDir)) {
-    return 'mern';
+    return { ...baseConfig, type: 'mern' };
   }
 
-  if (hasDep(rootPkg, 'react') || hasDep(rootPkg, 'vite') || scripts.build) return 'react';
-  if (hasDep(rootPkg, 'express') || hasDep(rootPkg, 'fastify') || scripts.start) return 'node';
+  if (hasDep(rootPkg, 'react') || hasDep(rootPkg, 'vite') || scripts.build) return { ...baseConfig, type: 'react' };
+  if (hasDep(rootPkg, 'express') || hasDep(rootPkg, 'fastify') || scripts.start) return { ...baseConfig, type: 'node' };
 
-  return hasHtmlFile ? 'static' : 'node';
+  return { ...baseConfig, type: hasHtmlFile ? 'static' : 'node' };
 };
-
-// Writes nginx config inside a Docker image using reliable one-echo-per-line approach.
-// Dynamically detects the actual HTML file inside the container (e.g., app.html, main.html)
-const nginxWriteCmd = (port = 3000) => [
-  `MAIN_HTML=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" -exec basename {} \\; | sort | head -1)`,
-  `MAIN_HTML=\${MAIN_HTML:-index.html}`,
-  `echo 'server {'`,
-  `echo '    listen ${port};'`,
-  `echo '    root /usr/share/nginx/html;'`,
-  `echo "    index $MAIN_HTML;"`,
-  `echo '    gzip on;'`,
-  `echo '    gzip_types text/plain text/css application/json application/javascript text/xml;'`,
-  `echo '    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {'`,
-  `echo '        expires 1y;'`,
-  `echo '        add_header Cache-Control public;'`,
-  `echo '    }'`,
-  `echo '    location / {'`,
-  `echo "        try_files \\$uri \\$uri/ /$MAIN_HTML;"`, // Escapes $uri for nginx, allows $MAIN_HTML to expand
-  `echo '    }'`,
-  `echo '}'`,
-]
-  .map((cmd, i) => i < 2 ? cmd : `${cmd} ${i === 2 ? '>' : '>>'} /etc/nginx/conf.d/app.conf`)
-  .join(' \\\n && ');
 
 // ─── Dockerfile Generation ────────────────────────────────────────────────────
 const generateDockerfile = (stack, repoPath = '', options = {}) => {
-  const {
-    installCommand = 'npm install',
-    buildCommand = 'npm run build',
-    outputDir
-  } = options;
+  // If stack is passed as the first arg (compatible with worker), use it.
+  // Otherwise detect it from the path.
+  const config = detectStack(repoPath);
+  const type = (stack && typeof stack === 'string') ? stack : config.type;
+  const pm = config.packageManager;
 
-  const buildArgBlock = `\
+  const installCmd = options.installCommand || pm.install;
+  const buildCmd = options.buildCommand || `${pm.run} build`;
+
+  // PM Setup logic for non-NPM managers
+  let pmSetup = '';
+  if (pm.name === 'yarn') pmSetup = 'RUN corepack enable && corepack prepare yarn@stable --activate';
+  if (pm.name === 'pnpm') pmSetup = 'RUN corepack enable && corepack prepare pnpm@latest --activate';
+  if (pm.name === 'bun')  pmSetup = 'RUN npm install -g bun';
+
+  const envArgs = `\
 ARG VITE_API_URL=""
 ARG REACT_APP_API_URL=""
 ENV VITE_API_URL=$VITE_API_URL
 ENV REACT_APP_API_URL=$REACT_APP_API_URL`;
 
-  switch (stack) {
+  const nginxHeredocBlock = (includeProxy = false) => `\
+RUN MAIN_HTML=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" -exec basename {} \\; | sort | head -1) && \\
+    MAIN_HTML=\${MAIN_HTML:-index.html} && \\
+    cat << EOF > /etc/nginx/conf.d/default.conf
+server {
+    listen 3000;
+    root /usr/share/nginx/html;
+    index $MAIN_HTML;
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml;
+    
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control public;
+    }${includeProxy ? `\n
+    location /api/ {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \\$http_upgrade;
+        proxy_set_header Connection upgrade;
+        proxy_set_header Host \\$host;
+    }
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \\$http_upgrade;
+        proxy_set_header Connection upgrade;
+    }` : ''}
+
+    location / {
+        try_files \\$uri \\$uri/ /$MAIN_HTML;
+    }
+}
+EOF`;
+
+  const healthCheck = 'HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:3000/ || exit 1';
+
+  switch (type) {
     case 'react': {
-      const outDir = outputDir || (repoPath ? getBuildOutput(repoPath) : 'dist');
+      const outDir = options.outputDir || (repoPath ? getBuildOutput(repoPath) : 'dist');
       return `FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN ${installCommand} --legacy-peer-deps || ${installCommand}
+${pmSetup}
+COPY package*.json ${pm.lockfile || ''} ./
+RUN ${installCmd}
 COPY . .
-${buildArgBlock}
-RUN ${buildCommand}
+${envArgs}
+RUN ${buildCmd}
+
 FROM nginx:alpine
+RUN apk add --no-cache curl
 RUN rm -rf /usr/share/nginx/html/*
-RUN rm -f /etc/nginx/conf.d/default.conf
-# Copying before writing config allows dynamic HTML detection
 COPY --from=builder /app/${outDir} /usr/share/nginx/html
-RUN ${nginxWriteCmd(3000)}
+${nginxHeredocBlock(false)}
 EXPOSE 3000
+${healthCheck}
 CMD ["nginx", "-g", "daemon off;"]`;
     }
 
     case 'next':
       return `FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN ${installCommand} --legacy-peer-deps || ${installCommand}
+${pmSetup}
+COPY package*.json ${pm.lockfile || ''} ./
+RUN ${installCmd}
 COPY . .
-${buildArgBlock}
-RUN ${buildCommand}
+${envArgs}
+RUN ${buildCmd}
+
 FROM node:20-alpine
+RUN apk add --no-cache curl
 WORKDIR /app
 ENV PORT=3000
 COPY --from=builder /app/package*.json ./
@@ -145,33 +177,37 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/node_modules ./node_modules
 EXPOSE 3000
-CMD ["npm", "start"]`;
+${healthCheck}
+CMD ["${pm.name}", "start"]`;
 
     case 'static':
       return `FROM nginx:alpine
+RUN apk add --no-cache curl
 RUN rm -rf /usr/share/nginx/html/*
-RUN rm -f /etc/nginx/conf.d/default.conf
 COPY . /usr/share/nginx/html
-RUN ${nginxWriteCmd(3000)}
+${nginxHeredocBlock(false)}
 EXPOSE 3000
+${healthCheck}
 CMD ["nginx", "-g", "daemon off;"]`;
 
     case 'mern':
     case 'fullstack-split': {
       const feDir = exists(repoPath, 'client') ? 'client' : (exists(repoPath, 'frontend') ? 'frontend' : '.');
       const beDir = exists(repoPath, 'server') ? 'server' : (exists(repoPath, 'backend') ? 'backend' : '.');
-      const feOut = outputDir || (repoPath ? getBuildOutput(path.join(repoPath, feDir)) : 'dist');
-      const start = getStartCommand(path.join(repoPath, beDir));
-      const beStartCmd = start.useNpm ? 'npm start' : `node ${start.args[0]}`;
+      const feOut = options.outputDir || (repoPath ? getBuildOutput(path.join(repoPath, feDir)) : 'dist');
+      
+      const start = getStartCommand(path.join(repoPath, beDir), pm.name);
+      const beStartCmd = start.isScript ? `${pm.name} start` : `node ${start.args[0]}`;
 
       return `# ── Stage 1: Build Frontend ──
 FROM node:20-alpine AS fe-builder
 WORKDIR /app/frontend
-COPY ${feDir}/package*.json ./
-RUN npm install --legacy-peer-deps || npm install
+${pmSetup}
+COPY ${feDir}/package*.json ${pm.lockfile ? `${feDir}/${pm.lockfile}` : ''} ./
+RUN ${installCmd}
 COPY ${feDir}/ .
-${buildArgBlock}
-RUN npm run build 2>/dev/null || echo "no-build"
+${envArgs}
+RUN ${buildCmd} 2>/dev/null || echo "no-build"
 
 # ── Stage 2: Build Backend deps ──
 FROM node:20-alpine AS be-builder
@@ -181,43 +217,44 @@ RUN npm install --only=production --legacy-peer-deps || npm install --only=produ
 
 # ── Stage 3: Final image (nginx + node) ──
 FROM nginx:alpine
-RUN apk add --no-cache nodejs npm
+RUN apk add --no-cache nodejs npm curl
 
-# Backend
 WORKDIR /app/backend
 COPY --from=be-builder /app/backend/node_modules ./node_modules
 COPY ${beDir}/ .
 
-# Frontend
 COPY --from=fe-builder /app/frontend/${feOut} /usr/share/nginx/html
 
-# nginx config: serve frontend + proxy /api to node on port 4000
-# Dynamically inserts detected main html file into the format string
-RUN MAIN_HTML=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" -exec basename {} \\; | sort | head -1) && \\
-    MAIN_HTML=\${MAIN_HTML:-index.html} && \\
-    printf 'server {\n  listen 3000;\n  root /usr/share/nginx/html;\n  index %s;\n  location /api/ {\n    proxy_pass http://127.0.0.1:4000;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection upgrade;\n    proxy_set_header Host $host;\n  }\n  location /socket.io/ {\n    proxy_pass http://127.0.0.1:4000;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection upgrade;\n  }\n  location / {\n    try_files $uri $uri/ /%s;\n  }\n}\n' "$MAIN_HTML" "$MAIN_HTML" > /etc/nginx/conf.d/default.conf
+${nginxHeredocBlock(true)}
 
-# Entrypoint: start node backend then nginx
-RUN printf '#!/bin/sh\ncd /app/backend && PORT=4000 ${beStartCmd} &\nnginx -g "daemon off;"\n' > /start.sh && chmod +x /start.sh
+RUN cat << 'EOF' > /start.sh
+#!/bin/sh
+cd /app/backend && PORT=4000 ${beStartCmd} &
+nginx -g "daemon off;"
+EOF
+RUN chmod +x /start.sh
 
 EXPOSE 3000
+${healthCheck}
 CMD ["/start.sh"]`;
     }
 
     case 'node':
     default: {
-      const start = repoPath ? getStartCommand(repoPath) : { cmd: 'npm', args: ['start'], useNpm: true };
-      const runCmd = start.useNpm ? `CMD ["npm", "start"]` : `CMD ["node", "${start.args[0]}"]`;
+      const start = getStartCommand(repoPath, pm.name);
+      const runCmd = start.isScript ? `CMD ["${pm.name}", "start"]` : `CMD ["node", "${start.args[0]}"]`;
       return `FROM node:20-alpine
+RUN apk add --no-cache curl
 WORKDIR /app
 COPY package*.json ./
-RUN ${installCommand} --only=production --legacy-peer-deps || ${installCommand} --only=production
+RUN npm install --only=production --legacy-peer-deps || npm install --only=production
 COPY . .
 ENV PORT=3000
 EXPOSE 3000
+${healthCheck}
 ${runCmd}`;
     }
   }
 };
 
-module.exports = { detectStack, generateDockerfile, getStartCommand };
+module.exports = { detectStack, generateDockerfile, getStartCommand, detectPackageManager };
