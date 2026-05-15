@@ -83,16 +83,42 @@ export default function ProjectDetail() {
     };
   }, [loadProject, loadDeployments, loadEnvVars]);
 
+  // Auto-load latest deployment logs when switching to Build Logs tab
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      // If no logs yet and we're not mid-deploy, load the latest deployment's logs
+      if (logs.length === 0 && !deploying && deployments.length > 0) {
+        viewLogs(deployments[0]);
+      }
+    }
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (activeTab === 'logs') logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs, activeTab]);
+  }, [logs]);
 
-  const connectToLogs = (deploymentId) => {
+  const connectToLogs = async (deploymentId) => {
     socketRef.current?.disconnect();
     setLogs([]);
-    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', { transports: ['websocket'] });
+
+    // Fetch any logs already stored in DB (handles page refresh / mid-build reconnect)
+    try {
+      const r = await api.get(`/deploy/${id}/${deploymentId}`);
+      const stored = r.data.deployment?.logs || [];
+      if (stored.length > 0) setLogs(stored);
+    } catch { /* no stored logs yet */ }
+
+    // Connect socket for live streaming of future log lines
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+    const socket = io(socketUrl, {
+      transports: ['websocket', 'polling'],  // polling fallback if nginx doesn't upgrade WS
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
     socket.emit('join:deployment', deploymentId);
     socket.on('log', ({ line }) => setLogs(prev => [...prev, line]));
+    socket.on('connect_error', (err) => console.warn('Socket error:', err.message));
     socketRef.current = socket;
   };
 

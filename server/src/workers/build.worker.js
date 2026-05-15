@@ -17,6 +17,7 @@ const { provisionSSL }                            = require('../services/ssl.ser
 const { getNextFreePort }                         = require('../services/portAllocator.service');
 const { emitLog }                                 = require('../sockets/logs.socket');
 const { sendDeployNotification }                  = require('../services/notification.service');
+const { invalidateProjectCache }                  = require('../middleware/projectProxy.middleware');
 
 // ─── Queue Setup ──────────────────────────────────────────────────────────────
 const buildQueue = new Queue('builds', {
@@ -162,28 +163,60 @@ buildQueue.process(async (job) => {
         throw new Error('Docker build failure');
       }
 
-      if (project.containerId) {
-        await log('🔄 PHASE 6: Gracefully migrating traffic from old instance…');
-        safeExec(`docker stop ${project.containerId}`);
-        safeExec(`docker rm   ${project.containerId}`);
-      } else {
-        await log('🚀 PHASE 6: Initializing first production instance…');
-      }
+      // Use a stable container name per project so re-deploys cleanly replace the old one
+      const containerName = `lp-${projectId.slice(-8)}`;
+
+      // Stop old container whether it's tracked by ID or by name
+      await log('🔄 PHASE 6: Replacing previous instance…');
+      if (project.containerId) safeExec(`docker stop ${project.containerId} 2>/dev/null`);
+      safeExec(`docker stop ${containerName} 2>/dev/null`);
+      safeExec(`docker rm -f ${containerName} 2>/dev/null`);
+      if (project.containerId) safeExec(`docker rm -f ${project.containerId} 2>/dev/null`);
+
+      // Detect the EXPOSE port from the built image (so Node apps on 5000 work correctly)
+      let containerPort = 3000;
+      try {
+        const exposedRaw = execSync(
+          `docker inspect --format='{{json .Config.ExposedPorts}}' ${imageTag}`,
+          { stdio: 'pipe' }
+        ).toString().trim();
+        const exposed = JSON.parse(exposedRaw);
+        const firstPort = Object.keys(exposed || {})[0]; // e.g. "3000/tcp"
+        if (firstPort) containerPort = parseInt(firstPort.split('/')[0]) || 3000;
+      } catch { /* keep default 3000 */ }
 
       const hostPort = project.port || await getNextFreePort();
-      let runCmd = `docker run -d --restart unless-stopped -p ${hostPort}:3000`;
+      let runCmd = `docker run -d --restart unless-stopped -p ${hostPort}:${containerPort}`;
       for (const [k, v] of Object.entries(runtimeEnv)) {
         const safe = v.replace(/"/g, '\\"');
         runCmd += ` -e ${k}="${safe}"`;
       }
-      runCmd += ` --name lp-${deploymentId.slice(-8)} ${imageTag}`;
+      runCmd += ` --name ${containerName} ${imageTag}`;
+      await log(`   ↳ Mapping host:${hostPort} → container:${containerPort}`);
 
       let containerId;
       try {
         containerId = execSync(runCmd, { stdio: 'pipe' }).toString().trim();
-        await log(`   ✅ Instance online (ID: ${containerId.slice(0, 12)})`);
+        await log(`   ✅ Container started (ID: ${containerId.slice(0, 12)}) — verifying...`);
+
+        // Wait 4 seconds then confirm container is still running (catches immediate crashes)
+        await new Promise(r => setTimeout(r, 4000));
+        const state = safeExec(`docker inspect --format '{{.State.Status}}' ${containerId}`);
+        const status = state ? state.toString().trim() : 'unknown';
+
+        if (status !== 'running') {
+          // Grab container logs to help debug
+          const crashLogs = safeExec(`docker logs --tail 30 ${containerId}`) || '';
+          await log(`   ❌ Container exited immediately (status: ${status})`);
+          await log(`   📋 Container logs:\n${crashLogs.toString().slice(0, 800)}`);
+          safeExec(`docker rm -f ${containerId}`);
+          throw new Error(`Container exited with status: ${status}`);
+        }
+
+        await log(`   ✅ Instance online and healthy (ID: ${containerId.slice(0, 12)})`);
       } catch (runErr) {
-        await log(`   ❌ Deployment failed: ${runErr.message}`);
+        if (runErr.message.startsWith('Container exited')) throw runErr;
+        await log(`   ❌ docker run failed: ${runErr.message}`);
         throw new Error('Runtime execution failure');
       }
 
@@ -232,6 +265,9 @@ buildQueue.process(async (job) => {
 
     await log(`✨ ALL PHASES COMPLETE! Deployed in ${(duration / 1000).toFixed(1)}s.`);
     await log(`🚀 Project is now live at: ${liveUrl}`);
+
+    // Flush proxy cache so the new port is used immediately
+    invalidateProjectCache(project.subdomain);
 
     if (project.owner?.email) {
       sendDeployNotification(project.owner.email, {

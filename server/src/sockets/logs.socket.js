@@ -5,9 +5,13 @@ let io;
 const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin:  process.env.CLIENT_URL,
+      origin:  '*',           // allow any origin — auth is handled by JWT on API routes
       methods: ['GET', 'POST'],
+      credentials: false,
     },
+    transports: ['websocket', 'polling'],   // polling fallback if WS upgrade fails through nginx
+    pingTimeout:  60000,
+    pingInterval: 25000,
   });
 
   io.on('connection', (socket) => {

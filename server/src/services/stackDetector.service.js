@@ -140,8 +140,12 @@ CMD ["nginx", "-g", "daemon off;"]`;
       const beDir = exists(repoPath, 'server') ? 'server' : (exists(repoPath, 'backend') ? 'backend' : '.');
       const feOut = outputDir || (repoPath ? getBuildOutput(path.join(repoPath, feDir)) : 'dist');
       const start = getStartCommand(path.join(repoPath, beDir));
-      const runCmd = start.useNpm ? `CMD ["npm", "start"]` : `CMD ["node", "${start.args[0]}"]`;
+      const beStartCmd = start.useNpm ? 'npm start' : `node ${start.args[0]}`;
 
+      // Use nginx as the public-facing server on port 3000.
+      // nginx serves the React frontend and reverse-proxies /api/* to the
+      // Node backend running internally on port 4000 — no changes needed
+      // in the user's own code.
       return `# ── Stage 1: Build Frontend ──
 FROM node:20-alpine AS fe-builder
 WORKDIR /app/frontend
@@ -149,19 +153,34 @@ COPY ${feDir}/package*.json ./
 RUN npm install --legacy-peer-deps || npm install
 COPY ${feDir}/ .
 ${buildArgBlock}
-RUN npm run build || echo "No build script"
+RUN npm run build 2>/dev/null || echo "no-build"
 
-# ── Stage 2: Final Runtime ──
-FROM node:20-alpine
-WORKDIR /app
+# ── Stage 2: Build Backend deps ──
+FROM node:20-alpine AS be-builder
+WORKDIR /app/backend
 COPY ${beDir}/package*.json ./
 RUN npm install --only=production --legacy-peer-deps || npm install --only=production
+
+# ── Stage 3: Final image (nginx + node) ──
+FROM nginx:alpine
+RUN apk add --no-cache nodejs npm
+
+# Backend
+WORKDIR /app/backend
+COPY --from=be-builder /app/backend/node_modules ./node_modules
 COPY ${beDir}/ .
-# Copy frontend build into backend public folder
-COPY --from=fe-builder /app/frontend/${feOut} ./public
-ENV PORT=3000
+
+# Frontend
+COPY --from=fe-builder /app/frontend/${feOut} /usr/share/nginx/html
+
+# nginx config: serve frontend + proxy /api to node on port 4000
+RUN printf 'server {\n  listen 3000;\n  root /usr/share/nginx/html;\n  index index.html;\n  location /api/ {\n    proxy_pass http://127.0.0.1:4000;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection upgrade;\n    proxy_set_header Host $host;\n  }\n  location /socket.io/ {\n    proxy_pass http://127.0.0.1:4000;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection upgrade;\n  }\n  location / {\n    try_files $uri $uri/ /index.html;\n  }\n}\n' > /etc/nginx/conf.d/default.conf
+
+# Entrypoint: start node backend then nginx
+RUN printf '#!/bin/sh\ncd /app/backend && PORT=4000 ${beStartCmd} &\nnginx -g "daemon off;"\n' > /start.sh && chmod +x /start.sh
+
 EXPOSE 3000
-${runCmd}`;
+CMD ["/start.sh"]`;
     }
 
     case 'node':
