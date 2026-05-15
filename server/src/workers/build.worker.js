@@ -121,7 +121,8 @@ buildQueue.process(async (job) => {
     const dockerfile = generateDockerfile(stack, repoDir, {
       installCommand: project.installCommand,
       buildCommand:   project.buildCommand,
-      outputDir:      project.outputDir
+      outputDir:      project.outputDir,
+      envVars:        rawEnvs
     });
     fs.writeFileSync(path.join(repoDir, 'Dockerfile'), dockerfile);
     await log(`   ✅ Dockerfile generated for ${stack.toUpperCase()} environment.`);

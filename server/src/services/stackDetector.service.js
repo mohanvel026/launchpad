@@ -91,11 +91,11 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
   if (pm.name === 'pnpm') pmSetup = 'RUN corepack enable && corepack prepare pnpm@latest --activate';
   if (pm.name === 'bun')  pmSetup = 'RUN npm install -g bun';
 
-  const envArgs = `\
-ARG VITE_API_URL=""
-ARG REACT_APP_API_URL=""
-ENV VITE_API_URL=$VITE_API_URL
-ENV REACT_APP_API_URL=$REACT_APP_API_URL`;
+  // Dynamically generate ARG and ENV blocks for all user-defined variables
+  const envVars = options.envVars || [];
+  const envArgs = envVars
+    .map(e => `ARG ${e.key}=""\nENV ${e.key}=$${e.key}`)
+    .join('\n');
 
   const nginxHeredocBlock = (includeProxy = false) => `\
 RUN MAIN_HTML=$(find /usr/share/nginx/html -maxdepth 1 -name "*.html" -exec basename {} \\; | sort | head -1) && \\
