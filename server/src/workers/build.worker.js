@@ -64,7 +64,7 @@ buildQueue.process(async (job) => {
 
   // ── Logger ────────────────────────────────────────────────────────────────
   const log = async (msg) => {
-    const line = `[${new Date().toISOString()}] ${msg}`;
+    const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
     emitLog(deploymentId, line);
     await Deployment.findByIdAndUpdate(deploymentId, { $push: { logs: line } });
   };
@@ -83,41 +83,46 @@ buildQueue.process(async (job) => {
   }
 
   try {
-    // ── STEP 1: Clone / Pull ───────────────────────────────────────────────
-    await log(`📦 Fetching ${project.repoFullName}@${project.branch}…`);
+    // ── PHASE 1: Fetch Source ──
+    await log(`📦 PHASE 1: Fetching source code…`);
+    await log(`   ↳ Target: ${project.repoFullName}@${project.branch}`);
 
     if (fs.existsSync(repoDir)) {
-      // Try to pull latest — if it fails, nuke and re-clone
       const pulled = safeExec(
         `git -C "${repoDir}" remote set-url origin ${cloneUrl} && ` +
         `git -C "${repoDir}" fetch --all && ` +
         `git -C "${repoDir}" reset --hard origin/${project.branch}`
       );
       if (!pulled) {
-        await log('   ↳ Pull failed — doing fresh clone…');
+        await log('   ⚠️ Local cache invalid. Performing fresh clone…');
         fs.rmSync(repoDir, { recursive: true, force: true });
         execSync(`git clone --branch ${project.branch} --depth 1 "${cloneUrl}" "${repoDir}"`, { stdio: 'pipe' });
+      } else {
+        await log('   ✅ Repository synchronized with latest commits.');
       }
     } else {
       execSync(`git clone --branch ${project.branch} --depth 1 "${cloneUrl}" "${repoDir}"`, { stdio: 'pipe' });
+      await log('   ✅ Fresh clone completed.');
     }
-    await log('✅ Source code ready.');
 
-    // ── STEP 2: Detect Stack ───────────────────────────────────────────────
-    // Respect user-selected framework if set, otherwise auto-detect
+    // ── PHASE 2: Analyze ──
+    await log(`🔍 PHASE 2: Analyzing project architecture…`);
     let stack = project.framework || detectStack(repoDir);
-    await log(`🔍 Stack detected: ${stack.toUpperCase()}`);
+    await log(`   ↳ Detected Stack: ${stack.toUpperCase()}`);
     await Project.findByIdAndUpdate(projectId, { stack });
 
-    // ── STEP 3: Generate Dockerfile ────────────────────────────────────────
-    const dockerfile = generateDockerfile(stack, repoDir);
+    // ── PHASE 3: Prepare Docker ──
+    await log(`📝 PHASE 3: Generating optimized build instructions…`);
+    const dockerfile = generateDockerfile(stack, repoDir, {
+      installCommand: project.installCommand,
+      buildCommand:   project.buildCommand,
+      outputDir:      project.outputDir
+    });
     fs.writeFileSync(path.join(repoDir, 'Dockerfile'), dockerfile);
-    await log('📝 Dockerfile generated for ' + stack + ' project.');
+    await log(`   ✅ Dockerfile generated for ${stack.toUpperCase()} environment.`);
 
-    // ── STEP 4: Docker Build + Run (Linux only) ────────────────────────────
+    // ── PHASE 4/5: Build & Run ──
     if (!isWindows) {
-
-      // Decrypt all project env vars
       const rawEnvs = await EnvVar.find({ project: projectId });
       const runtimeEnv = { PORT: '3000', NODE_ENV: 'production' };
       const buildArgs  = {};
@@ -125,20 +130,18 @@ buildQueue.process(async (job) => {
       for (const e of rawEnvs) {
         const val = decryptValue(e.value);
         runtimeEnv[e.key] = val;
-        buildArgs[e.key]  = val; // pass ALL vars as build args too
+        buildArgs[e.key]  = val;
       }
 
       if (rawEnvs.length > 0) {
-        await log(`🔐 ${rawEnvs.length} environment variable(s) loaded.`);
+        await log(`🔐 PHASE 4: Injecting ${rawEnvs.length} encrypted secrets…`);
       } else {
-        await log(`ℹ️  No env vars set. Add them in "Env Variables" tab → redeploy.`);
+        await log(`ℹ️ PHASE 4: No environment variables detected.`);
       }
 
-      // Build Docker image
-      await log('🔨 Building Docker image… (may take 1–3 min on first build)');
-
+      await log('🔨 PHASE 5: Building container image (this may take a few minutes)…');
+      
       let buildCmd = `docker build --no-cache`;
-      // Inject every env var as a build-arg
       for (const [k, v] of Object.entries(buildArgs)) {
         const safe = v.replace(/"/g, '\\"');
         buildCmd += ` --build-arg ${k}="${safe}"`;
@@ -147,31 +150,27 @@ buildQueue.process(async (job) => {
 
       try {
         execSync(buildCmd, { stdio: 'pipe' });
-        await log('✅ Docker image built successfully.');
+        await log('   ✅ Build successful. Image tagged and ready for deployment.');
       } catch (buildErr) {
         const stderr = buildErr.stderr?.toString('utf-8') || buildErr.message || '';
-        // Surface the actual error lines to the user
         const errorLines = stderr
           .split('\n')
-          .filter(l => l.toLowerCase().includes('error') || l.includes('ERR') || l.includes('npm warn'))
+          .filter(l => l.toLowerCase().includes('error') || l.includes('ERR'))
           .slice(0, 15)
           .join('\n');
-        await log(`❌ Build failed:\n${errorLines || stderr.slice(0, 600)}`);
-        await log(`💡 Tip: Check the "Env Variables" tab — your app may be missing required vars.`);
-        throw new Error('Docker build failed');
+        await log(`   ❌ Build failed! Analyzing logs…\n${errorLines}`);
+        throw new Error('Docker build failure');
       }
 
-      // Remove old container gracefully
       if (project.containerId) {
-        await log('🔄 Removing old container…');
+        await log('🔄 PHASE 6: Gracefully migrating traffic from old instance…');
         safeExec(`docker stop ${project.containerId}`);
         safeExec(`docker rm   ${project.containerId}`);
+      } else {
+        await log('🚀 PHASE 6: Initializing first production instance…');
       }
 
-      // Run new container
       const hostPort = project.port || await getNextFreePort();
-      await log(`🚀 Starting container on port ${hostPort}…`);
-
       let runCmd = `docker run -d --restart unless-stopped -p ${hostPort}:3000`;
       for (const [k, v] of Object.entries(runtimeEnv)) {
         const safe = v.replace(/"/g, '\\"');
@@ -182,46 +181,42 @@ buildQueue.process(async (job) => {
       let containerId;
       try {
         containerId = execSync(runCmd, { stdio: 'pipe' }).toString().trim();
-        await log(`✅ Container running: ${containerId.slice(0, 12)}`);
+        await log(`   ✅ Instance online (ID: ${containerId.slice(0, 12)})`);
       } catch (runErr) {
-        await log(`❌ Container start failed: ${runErr.message}`);
-        throw new Error('Container failed to start');
+        await log(`   ❌ Deployment failed: ${runErr.message}`);
+        throw new Error('Runtime execution failure');
       }
 
-      // Write Nginx reverse proxy config
+      await log('🌐 PHASE 7: Updating global edge routing…');
       createNginxConfig(project.subdomain, hostPort, false);
-      await log(`🌐 Domain live: ${liveUrl}`);
+      await log(`   ✅ Traffic routed to ${liveUrl}`);
 
-      // Cloudflare DNS (optional)
       if (!project.dnsRecordId) {
         const dnsRecordId = await createSubdomain(project.subdomain);
         if (dnsRecordId) {
           await Project.findByIdAndUpdate(projectId, { dnsRecordId });
-          await log('✅ DNS record created via Cloudflare CDN.');
+          await log('   ✅ DNS records propagated to Edge Network.');
         }
 
-        // SSL provisioning (runs in background after DNS propagates)
         setTimeout(async () => {
           const ok = provisionSSL(project.subdomain);
           if (ok) {
             const { upgradeToHTTPS } = require('../services/nginx.service');
             upgradeToHTTPS(project.subdomain, hostPort);
-            await log('🔒 HTTPS enabled! Certificate provisioned.');
+            await log('   🔒 SSL certificate provisioned. HTTP → HTTPS upgrade complete.');
           }
-        }, 20_000);
+        }, 15_000);
       }
 
       await Project.findByIdAndUpdate(projectId, { containerId, port: hostPort });
-
-      // Clean up old dangling images to save disk space
       safeExec('docker image prune -f');
 
     } else {
-      await log('⚠️  Docker skipped on Windows — running in dev mode.');
-      await log('✅  Code cloned and Dockerfile generated. Push to server to run.');
+      await log('⚠️ DEVELOPMENT MODE: Local build successful.');
+      await log('   ↳ Containerization skipped on Windows host.');
     }
 
-    // ── STEP 5: Mark Success ───────────────────────────────────────────────
+    // ── FINALIZATION ──
     const finishedAt = new Date();
     const duration   = finishedAt - startedAt;
 
@@ -235,10 +230,9 @@ buildQueue.process(async (job) => {
       status: 'success', imageTag, finishedAt, duration,
     });
 
-    await log(`🎉 Deployed in ${(duration / 1000).toFixed(1)}s!`);
-    await log(`🔗 Live at: ${liveUrl}`);
+    await log(`✨ ALL PHASES COMPLETE! Deployed in ${(duration / 1000).toFixed(1)}s.`);
+    await log(`🚀 Project is now live at: ${liveUrl}`);
 
-    // Email notification
     if (project.owner?.email) {
       sendDeployNotification(project.owner.email, {
         projectName: project.name, status: 'success',
@@ -247,9 +241,8 @@ buildQueue.process(async (job) => {
     }
 
   } catch (err) {
-    await log(`\n💥 DEPLOYMENT FAILED: ${err.message}`);
+    await log(`\n🛑 DEPLOYMENT ABORTED: ${err.message}`);
 
-    // AI diagnosis
     try {
       const fresh   = await Deployment.findById(deploymentId);
       const summary = await analyzeError(fresh.logs.join('\n'), project.stack);

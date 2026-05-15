@@ -2,7 +2,7 @@ const express = require('express');
 const { protect, getUserWithToken } = require('../middleware/auth.middleware');
 const {
   getProjects, createProject, getProject,
-  deleteProject, getUserRepos, registerWebhook
+  deleteProject, getUserRepos, registerWebhook, updateProject
 } = require('../controllers/project.controller');
 
 const router = express.Router();
@@ -18,6 +18,9 @@ router.post('/',             getUserWithToken,  createProject);
 
 // GET  /api/projects/:id
 router.get('/:id',           protect,          getProject);
+
+// PATCH /api/projects/:id
+router.patch('/:id',         protect,          updateProject);
 
 // DELETE /api/projects/:id
 router.delete('/:id',        protect,          deleteProject);

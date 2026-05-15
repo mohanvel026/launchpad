@@ -132,7 +132,24 @@ const registerWebhook = async (req, res) => {
   }
 };
 
+// ─── PATCH /api/projects/:id ──────────────────────────────────────────────────
+const updateProject = async (req, res) => {
+  const { name, installCommand, buildCommand, outputDir } = req.body;
+  try {
+    const project = await Project.findOneAndUpdate(
+      { _id: req.params.id, owner: req.user._id },
+      { name, installCommand, buildCommand, outputDir },
+      { new: true }
+    );
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+    res.json({ project });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   getUserRepos, getProjects, createProject,
   getProject, deleteProject, registerWebhook,
+  updateProject,
 };
