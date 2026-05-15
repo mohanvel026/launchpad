@@ -138,10 +138,11 @@ EOF`;
   switch (type) {
     case 'react': {
       const outDir = options.outputDir || (repoPath ? getBuildOutput(repoPath) : 'dist');
+      const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
       return `FROM node:20-alpine AS builder
 WORKDIR /app
 ${pmSetup}
-COPY package*.json ${pm.lockfile || ''} ./
+COPY package*.json ${lockFile} ./
 RUN ${installCmd}
 COPY . .
 ${envArgs}
@@ -157,11 +158,12 @@ ${healthCheck}
 CMD ["nginx", "-g", "daemon off;"]`;
     }
 
-    case 'next':
+    case 'next': {
+      const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
       return `FROM node:20-alpine AS builder
 WORKDIR /app
 ${pmSetup}
-COPY package*.json ${pm.lockfile || ''} ./
+COPY package*.json ${lockFile} ./
 RUN ${installCmd}
 COPY . .
 ${envArgs}
@@ -178,6 +180,7 @@ COPY --from=builder /app/node_modules ./node_modules
 EXPOSE 3000
 ${healthCheck}
 CMD ["${pm.name}", "start"]`;
+    }
 
     case 'static':
       return `FROM nginx:alpine
@@ -195,6 +198,9 @@ CMD ["nginx", "-g", "daemon off;"]`;
       const beDir = exists(repoPath, 'server') ? 'server' : (exists(repoPath, 'backend') ? 'backend' : '.');
       const feOut = options.outputDir || (repoPath ? getBuildOutput(path.join(repoPath, feDir)) : 'dist');
       
+      const feLock = exists(path.join(repoPath, feDir), pm.lockfile) ? `${feDir}/${pm.lockfile}` : '';
+      const beLock = exists(path.join(repoPath, beDir), pm.lockfile) ? `${beDir}/${pm.lockfile}` : '';
+
       const start = getStartCommand(path.join(repoPath, beDir), pm.name);
       const beStartCmd = start.isScript ? `${pm.name} start` : `node ${start.args[0]}`;
 
@@ -202,7 +208,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
 FROM node:20-alpine AS fe-builder
 WORKDIR /app/frontend
 ${pmSetup}
-COPY ${feDir}/package*.json ${pm.lockfile ? `${feDir}/${pm.lockfile}` : ''} ./
+COPY ${feDir}/package*.json ${feLock} ./
 RUN ${installCmd}
 COPY ${feDir}/ .
 ${envArgs}
@@ -211,7 +217,7 @@ RUN ${buildCmd} 2>/dev/null || echo "no-build"
 # ── Stage 2: Build Backend deps ──
 FROM node:20-alpine AS be-builder
 WORKDIR /app/backend
-COPY ${beDir}/package*.json ./
+COPY ${beDir}/package*.json ${beLock} ./
 RUN npm install --only=production --legacy-peer-deps || npm install --only=production
 
 # ── Stage 3: Final image (nginx + node) ──
