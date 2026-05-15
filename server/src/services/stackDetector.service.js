@@ -201,6 +201,9 @@ CMD ["nginx", "-g", "daemon off;"]`;
       const feLock = exists(path.join(repoPath, feDir), pm.lockfile) ? `${feDir}/${pm.lockfile}` : '';
       const beLock = exists(path.join(repoPath, beDir), pm.lockfile) ? `${beDir}/${pm.lockfile}` : '';
 
+      const feLockStr = feLock ? ` ${feLock}` : '';
+      const beLockStr = beLock ? ` ${beLock}` : '';
+
       const start = getStartCommand(path.join(repoPath, beDir), pm.name);
       const beStartCmd = start.isScript ? `${pm.name} start` : `node ${start.args[0]}`;
 
@@ -208,7 +211,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
 FROM node:20-alpine AS fe-builder
 WORKDIR /app/frontend
 ${pmSetup}
-COPY ${feDir}/package*.json ${feLock} ./
+COPY ${feDir}/package*.json${feLockStr} ./
 RUN ${installCmd}
 COPY ${feDir}/ .
 ${envArgs}
@@ -217,7 +220,7 @@ RUN ${buildCmd} 2>/dev/null || echo "no-build"
 # ── Stage 2: Build Backend deps ──
 FROM node:20-alpine AS be-builder
 WORKDIR /app/backend
-COPY ${beDir}/package*.json ${beLock} ./
+COPY ${beDir}/package*.json${beLockStr} ./
 RUN npm install --only=production --legacy-peer-deps || npm install --only=production
 
 # ── Stage 3: Final image (nginx + node) ──

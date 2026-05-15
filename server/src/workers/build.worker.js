@@ -231,7 +231,9 @@ buildQueue.process(async (job) => {
       invalidateProjectCache(project.subdomain);
       await log(`   ✅ Internal proxy updated. Traffic routed to ${liveUrl}`);
 
-      if (!project.dnsRecordId) {
+      const isNipIo = DOMAIN.includes('nip.io');
+
+      if (!project.dnsRecordId && !isNipIo) {
         const dnsRecordId = await createSubdomain(project.subdomain);
         if (dnsRecordId) {
           await Project.findByIdAndUpdate(projectId, { dnsRecordId });
@@ -246,6 +248,8 @@ buildQueue.process(async (job) => {
             await log('   🔒 SSL certificate provisioned. HTTP → HTTPS upgrade complete.');
           }
         }, 15_000);
+      } else if (isNipIo) {
+        await log('   ℹ️ nip.io domain detected. Skipping DNS and SSL provisioning.');
       }
 
       await Project.findByIdAndUpdate(projectId, { containerId, port: hostPort });
