@@ -76,7 +76,7 @@ const createNginxConfig = (subdomain, port, useSSL = false) => {
   const filePath = path.join(NGINX_SITES, `${subdomain}.conf`);
   try {
     fs.writeFileSync(filePath, config);
-    execSync('nginx -t && nginx -s reload', { stdio: 'pipe' });
+    execSync('sudo nginx -t && sudo nginx -s reload', { stdio: 'pipe' });
     console.log(`Nginx config written: ${subdomain}.${DOMAIN} -> :${port} (SSL: ${useSSL})`);
   } catch (err) {
     console.warn('Nginx config skipped (dev mode):', err.message.slice(0, 120));
@@ -94,7 +94,7 @@ const removeNginxConfig = (subdomain) => {
   try {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
-      execSync('nginx -s reload', { stdio: 'pipe' });
+      execSync('sudo nginx -s reload', { stdio: 'pipe' });
     }
   } catch (err) {
     console.warn('Nginx remove skipped:', err.message.slice(0, 80));
