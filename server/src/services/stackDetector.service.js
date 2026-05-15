@@ -66,15 +66,28 @@ const detectStack = (repoPath) => {
   return hasIndexHtml ? 'static' : 'node';
 };
 
-const nginxConf = (port = 3000) => `
-server {
-    listen ${port};
-    root /usr/share/nginx/html;
-    index index.html;
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}`.trim();
+// Writes nginx config inside a Docker image using reliable one-echo-per-line approach.
+// Single-quoted echo means shell NEVER expands $uri, $host, etc.
+// Far more reliable than printf with multi-line strings across sh/ash/bash.
+const nginxWriteCmd = (port = 3000) => [
+  `echo 'server {'`,
+  `echo '    listen ${port};'`,
+  `echo '    root /usr/share/nginx/html;'`,
+  `echo '    index index.html;'`,
+  `echo '    gzip on;'`,
+  `echo '    gzip_types text/plain text/css application/json application/javascript text/xml;'`,
+  `echo '    location ~* .(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {'`,
+  `echo '        expires 1y;'`,
+  `echo '        add_header Cache-Control public;'`,
+  `echo '    }'`,
+  `echo '    location / {'`,
+  `echo '        try_files $uri $uri/ /index.html;'`,
+  `echo '    }'`,
+  `echo '}'`,
+]
+  .map((cmd, i) => `${cmd} ${i === 0 ? '>' : '>>'} /etc/nginx/conf.d/app.conf`)
+  .join(' \
+ && ');
 
 // ─── Dockerfile Generation ────────────────────────────────────────────────────
 const generateDockerfile = (stack, repoPath = '', options = {}) => {
@@ -102,7 +115,7 @@ ${buildArgBlock}
 RUN ${buildCommand}
 FROM nginx:alpine
 RUN rm -f /etc/nginx/conf.d/default.conf
-RUN printf '${nginxConf(3000)}' > /etc/nginx/conf.d/default.conf
+RUN ${nginxWriteCmd(3000)}
 COPY --from=builder /app/${outDir} /usr/share/nginx/html
 EXPOSE 3000
 CMD ["nginx", "-g", "daemon off;"]`;
@@ -129,7 +142,7 @@ CMD ["npm", "start"]`;
     case 'static':
       return `FROM nginx:alpine
 RUN rm -f /etc/nginx/conf.d/default.conf
-RUN printf '${nginxConf(3000)}' > /etc/nginx/conf.d/default.conf
+RUN ${nginxWriteCmd(3000)}
 COPY . /usr/share/nginx/html
 EXPOSE 3000
 CMD ["nginx", "-g", "daemon off;"]`;
