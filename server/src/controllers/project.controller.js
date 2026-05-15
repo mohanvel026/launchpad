@@ -29,7 +29,7 @@ const getProjects = async (req, res) => {
 
 // ─── POST /api/projects ───────────────────────────────────────────────────────
 const createProject = async (req, res) => {
-  const { repoFullName, branch = 'main', name, framework } = req.body;
+  const { repoFullName, branch = 'main', name, framework, installCommand, buildCommand, outputDir } = req.body;
   if (!repoFullName) return res.status(400).json({ message: 'repoFullName is required' });
 
   try {
@@ -51,6 +51,9 @@ const createProject = async (req, res) => {
       branch,
       subdomain,
       ...(framework && framework !== 'auto' ? { framework } : {}),
+      ...(installCommand ? { installCommand } : {}),
+      ...(buildCommand   ? { buildCommand }   : {}),
+      ...(outputDir      ? { outputDir }      : {}),
     });
 
     res.status(201).json({ project });
@@ -134,11 +137,15 @@ const registerWebhook = async (req, res) => {
 
 // ─── PATCH /api/projects/:id ──────────────────────────────────────────────────
 const updateProject = async (req, res) => {
-  const { name, installCommand, buildCommand, outputDir } = req.body;
+  const allowed = ['name', 'branch', 'installCommand', 'buildCommand', 'outputDir'];
+  const updates = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
   try {
     const project = await Project.findOneAndUpdate(
       { _id: req.params.id, owner: req.user._id },
-      { name, installCommand, buildCommand, outputDir },
+      updates,
       { new: true }
     );
     if (!project) return res.status(404).json({ message: 'Project not found' });

@@ -11,15 +11,16 @@ export default function AuthCallback() {
 
     if (token) {
       localStorage.setItem('lp_token', token);
-      navigate('/dashboard');
+      navigate('/dashboard', { replace: true });
     } else {
-      navigate('/login?error=' + (error || 'unknown'));
+      navigate(`/login?error=${error || 'auth_failed'}`, { replace: true });
     }
-  }, []);
+  }, [navigate]);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-      <p>Signing you in…</p>
+    <div className="launchpad-container flex-center" style={{ minHeight: '100vh', flexDirection: 'column', gap: 16 }}>
+      <div className="loading-spinner" style={{ width: 40, height: 40 }} />
+      <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Signing you in…</p>
     </div>
   );
 }
