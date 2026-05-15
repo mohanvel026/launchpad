@@ -74,8 +74,11 @@ server {
 const createNginxConfig = (subdomain, port, useSSL = false) => {
   const config   = useSSL ? httpsTemplate(subdomain, port) : httpTemplate(subdomain, port);
   const filePath = path.join(NGINX_SITES, `${subdomain}.conf`);
+  const tmpPath  = `/tmp/${subdomain}.conf`;
   try {
-    fs.writeFileSync(filePath, config);
+    // Write to a temporary file first, then use sudo to move it into place
+    fs.writeFileSync(tmpPath, config);
+    execSync(`sudo mv ${tmpPath} ${filePath}`, { stdio: 'pipe' });
     execSync('sudo nginx -t && sudo nginx -s reload', { stdio: 'pipe' });
     console.log(`Nginx config written: ${subdomain}.${DOMAIN} -> :${port} (SSL: ${useSSL})`);
   } catch (err) {
@@ -93,7 +96,7 @@ const removeNginxConfig = (subdomain) => {
   const filePath = path.join(NGINX_SITES, `${subdomain}.conf`);
   try {
     if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+      execSync(`sudo rm -f ${filePath}`, { stdio: 'pipe' });
       execSync('sudo nginx -s reload', { stdio: 'pipe' });
     }
   } catch (err) {
