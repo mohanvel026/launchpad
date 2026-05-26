@@ -10,7 +10,7 @@ const EnvVar     = require('../models/EnvVar.model');
 
 const { buildImage, runContainer, stopContainer } = require('../services/docker.service');
 const { detectStack, generateDockerfile }         = require('../services/stackDetector.service');
-const { analyzeError, predictDeploymentHealth, summarizeBuild } = require('../services/ai.service');
+const { analyzeError, predictDeploymentHealth, summarizeBuild, auditLeakedSecrets } = require('../services/ai.service');
 const { createNginxConfig }                       = require('../services/nginx.service');
 const { createSubdomain }                         = require('../services/cloudflare.service');
 const { provisionSSL }                            = require('../services/ssl.service');
@@ -237,6 +237,42 @@ buildQueue.process(async (job) => {
       } catch {}
     }
     const containerPort = detectContainerPort(repoDir, stack, runtimeEnv);
+
+    // ── Pre-flight Leaked Secrets Shield ──
+    try {
+      let aggregatedCode = '';
+      const scanFiles = (dir, depth = 0) => {
+        if (depth > 2) return;
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const fullPath = path.join(dir, file);
+          if (fs.statSync(fullPath).isDirectory()) {
+            if (file !== 'node_modules' && file !== '.git' && file !== 'dist') {
+              scanFiles(fullPath, depth + 1);
+            }
+          } else if (/\.(js|ts|py|json|env|config|yaml|yml)$/i.test(file)) {
+            if (aggregatedCode.length < 15000) {
+              aggregatedCode += fs.readFileSync(fullPath, 'utf8').slice(0, 1500);
+            }
+          }
+        }
+      };
+      
+      scanFiles(repoDir);
+      
+      const leaks = auditLeakedSecrets(aggregatedCode);
+      if (leaks.length > 0) {
+        await log(`🛑 [SECURITY AUDIT ALERT] Exposed Secrets Detected in repository!`);
+        for (const leak of leaks) {
+          await log(`   ↳ ⚠️ WARNING: Hardcoded ${leak.type} found (${leak.leakedValue}).`);
+        }
+        await log(`   💡 SRE Suggestion: Instantly remove this hardcoded secret and save it inside your LaunchPad Dashboard Env panel instead!`);
+      } else {
+        await log(`✅ [SECURITY AUDIT] Pre-flight secrets check passed. No leaked keys found.`);
+      }
+    } catch (secErr) {
+      console.warn('[Security Shield Check Failed]:', secErr.message);
+    }
 
     // ── PHASE 3: Prepare Docker ──
     await log(`📝 PHASE 3: Generating optimized build instructions…`);
