@@ -72,9 +72,41 @@ const detectContainerPort = (repoDir, stack, runtimeEnv) => {
       if (match) return parseInt(match[1]);
     }
   }
+
+  // Source Code Port Scanner Fallback (detects hardcoded ports in express/node entrypoints)
+  const entryFiles = [
+    path.join(repoDir, 'server.js'),
+    path.join(repoDir, 'app.js'),
+    path.join(repoDir, 'index.js'),
+    path.join(repoDir, 'backend', 'server.js'),
+    path.join(repoDir, 'backend', 'app.js'),
+    path.join(repoDir, 'backend', 'index.js'),
+    path.join(repoDir, 'server', 'server.js'),
+    path.join(repoDir, 'server', 'app.js'),
+    path.join(repoDir, 'server', 'index.js'),
+  ];
+  for (const file of entryFiles) {
+    if (fs.existsSync(file)) {
+      try {
+        const content = fs.readFileSync(file, 'utf-8');
+        // Match .listen(5000)
+        const listenMatch = content.match(/\.listen\(\s*(\d+)\s*\)/);
+        if (listenMatch) return parseInt(listenMatch[1]);
+        
+        // Match .listen(PORT || 5000) or .listen(process.env.PORT || 5000)
+        const listenOrMatch = content.match(/\.listen\(\s*(?:process\.env\.)?PORT\s*\|\|\s*(\d+)\s*\)/i);
+        if (listenOrMatch) return parseInt(listenOrMatch[1]);
+
+        // Match const PORT = 5000
+        const portConstMatch = content.match(/(?:const|let|var)\s+PORT\s*=\s*(\d+)/i);
+        if (portConstMatch) return parseInt(portConstMatch[1]);
+      } catch {}
+    }
+  }
+
   // Stack defaults — static/react use nginx on 3000, node apps often use 3000 or 5000
   if (stack === 'static' || stack === 'react' || stack === 'next') return 3000;
-  if (stack === 'fullstack-split' || stack === 'mern') return 3000; // our Dockerfile uses nginx on 3000
+  if (stack === 'fullstack-split' || stack === 'mern') return 3000;
   return 3000;
 };
 
@@ -146,16 +178,25 @@ buildQueue.process(async (job) => {
 
     const rawEnvs = await EnvVar.find({ project: projectId });
 
+    const runtimeEnv = { PORT: '3000', NODE_ENV: 'production' };
+    for (const e of rawEnvs) {
+      try {
+        runtimeEnv[e.key] = decryptValue(e.value);
+      } catch {}
+    }
+    const containerPort = detectContainerPort(repoDir, stack, runtimeEnv);
+
     // ── PHASE 3: Prepare Docker ──
     await log(`📝 PHASE 3: Generating optimized build instructions…`);
     const dockerfile = generateDockerfile(stack, repoDir, {
       installCommand: project.installCommand,
       buildCommand:   project.buildCommand,
       outputDir:      project.outputDir,
-      envVars:        rawEnvs
+      envVars:        rawEnvs,
+      containerPort:  containerPort
     });
     fs.writeFileSync(path.join(repoDir, 'Dockerfile'), dockerfile);
-    await log(`   ✅ Dockerfile generated for ${stack.toUpperCase()} environment.`);
+    await log(`   ✅ Dockerfile generated for ${stack.toUpperCase()} environment (Internal Port: ${containerPort}).`);
 
     // ── PHASE 4/5: Build & Run ──
     if (!isWindows) {

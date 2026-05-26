@@ -135,6 +135,8 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
   // Detect package manager directly here instead of relying on detectStack
   const pm = detectPackageManager(repoPath);
 
+  const containerPort = options.containerPort || 3000;
+
   const installCmd = options.installCommand || pm.install;
   const buildCmd = options.buildCommand || `${pm.run} build`;
 
@@ -257,7 +259,7 @@ HTML
     fi && \\
     cat << EOF > /etc/nginx/conf.d/default.conf
 server {
-    listen 3000;
+    listen ${containerPort};
     root /usr/share/nginx/html;
     index $MAIN_HTML;
 
@@ -303,7 +305,7 @@ server {
 }
 EOF`;
 
-  const healthCheck = 'HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:3000/ || exit 1';
+  const healthCheck = `HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:${containerPort}/ || exit 1`;
 
   switch (type) {
     case 'react':
@@ -327,7 +329,7 @@ RUN apk add --no-cache curl
 RUN rm -rf /usr/share/nginx/html/*
 COPY --from=builder /app/${outDir} /usr/share/nginx/html
 ${nginxHeredocBlock(false)}
-EXPOSE 3000
+EXPOSE ${containerPort}
 ${healthCheck}
 CMD ["nginx", "-g", "daemon off;"]`;
     }
@@ -346,12 +348,12 @@ RUN ${buildCmd}
 FROM node:20-alpine
 RUN apk add --no-cache curl tini
 WORKDIR /app
-ENV PORT=3000
+ENV PORT=${containerPort}
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/node_modules ./node_modules
-EXPOSE 3000
+EXPOSE ${containerPort}
 ${healthCheck}
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["${pm.name}", "start"]`;
@@ -363,7 +365,7 @@ RUN apk add --no-cache curl
 RUN rm -rf /usr/share/nginx/html/*
 COPY . /usr/share/nginx/html
 ${nginxHeredocBlock(false)}
-EXPOSE 3000
+EXPOSE ${containerPort}
 ${healthCheck}
 CMD ["nginx", "-g", "daemon off;"]`;
 
@@ -403,9 +405,9 @@ COPY ${beDir}/ .
 # Copy frontend static build to backend's public directories for serving
 COPY --from=fe-builder /app/frontend/${feOut} ./public
 
-ENV PORT=3000
+ENV PORT=${containerPort}
 ENV NODE_ENV=production
-EXPOSE 3000
+EXPOSE ${containerPort}
 ${healthCheck}
 ENTRYPOINT ["/sbin/tini", "--"]
 ${runCmd}`;
@@ -421,8 +423,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --only=production --legacy-peer-deps || npm install --only=production
 COPY . .
-ENV PORT=3000
-EXPOSE 3000
+ENV PORT=${containerPort}
+EXPOSE ${containerPort}
 ${healthCheck}
 ENTRYPOINT ["/sbin/tini", "--"]
 ${runCmd}`;
