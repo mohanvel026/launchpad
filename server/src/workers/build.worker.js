@@ -200,14 +200,13 @@ buildQueue.process(async (job) => {
 
     // ── PHASE 4/5: Build & Run ──
     if (!isWindows) {
-      const runtimeEnv = { PORT: '3000', NODE_ENV: 'production' };
-      const buildArgs  = {};
-
+      // Build-time args for --build-arg injection
+      const buildArgs = {};
       for (const e of rawEnvs) {
-        const val = decryptValue(e.value);
-        runtimeEnv[e.key] = val;
-        buildArgs[e.key]  = val;
+        buildArgs[e.key] = decryptValue(e.value);
       }
+      // Ensure runtime env PORT reflects what container actually listens on
+      runtimeEnv.PORT = String(containerPort);
 
       if (rawEnvs.length > 0) {
         await log(`🔐 PHASE 4: Injecting ${rawEnvs.length} encrypted secrets…`);
@@ -248,35 +247,34 @@ buildQueue.process(async (job) => {
       safeExec(`docker rm -f ${containerName} 2>/dev/null`);
       if (project.containerId) safeExec(`docker rm -f ${project.containerId} 2>/dev/null`);
 
-      // Detect the EXPOSE port from the built image (so Node apps on 5000 work correctly)
-      let containerPort = detectContainerPort(repoDir, stack, runtimeEnv);
+      // Verify EXPOSE port from the built image matches what we detected
+      // containerPort is already computed above — this step reconciles any mismatch
+      let finalContainerPort = containerPort;
       try {
         const exposedRaw = execSync(
           `docker inspect --format='{{json .Config.ExposedPorts}}' ${imageTag}`,
           { stdio: 'pipe' }
         ).toString().trim();
         const exposed = JSON.parse(exposedRaw);
-        const firstPort = Object.keys(exposed || {})[0]; // e.g. "3000/tcp"
+        const firstPort = Object.keys(exposed || {})[0]; // e.g. "5000/tcp"
         if (firstPort) {
           const imagePort = parseInt(firstPort.split('/')[0]);
-          // Use image's EXPOSE port unless user explicitly set PORT env var
-          if (imagePort && !rawEnvs.find(e => e.key === 'PORT')) {
-            containerPort = imagePort;
-          }
+          // The Dockerfile EXPOSE port is the ground truth — use it
+          if (imagePort) finalContainerPort = imagePort;
         }
       } catch { /* keep detected default */ }
 
       const hostPort = project.port || await getNextFreePort();
-      await log(`   ↳ Container port ${containerPort} → Host port ${hostPort}`);
+      await log(`   ↳ Container port ${finalContainerPort} → Host port ${hostPort}`);
 
       // Build docker run with all env vars
-      let runCmd = `docker run -d --restart unless-stopped -p ${hostPort}:${containerPort}`;
+      let runCmd = `docker run -d --restart unless-stopped -p ${hostPort}:${finalContainerPort}`;
       for (const [k, v] of Object.entries(runtimeEnv)) {
         const safe = v.replace(/"/g, '\\"');
         runCmd += ` -e "${k}=${safe}"`;
       }
       // Ensure PORT env var matches what the container actually listens on
-      runCmd += ` -e "PORT=${containerPort}"`;
+      runCmd += ` -e "PORT=${finalContainerPort}"`;
       runCmd += ` --name ${containerName} ${imageTag}`;
 
       let containerId;
