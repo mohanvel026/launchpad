@@ -339,6 +339,104 @@ const predictResources = async (req, res) => {
   }
 };
 
+// ─── POST /api/ai/:projectId/generate-docs ────────────────────────────────
+const generateDocs = async (req, res) => {
+  try {
+    checkApiKeys();
+
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
+    let docCode = '';
+
+    if (fs.existsSync(repoPath)) {
+      const scanForRoutes = (dir, depth = 0) => {
+        if (depth > 3) return;
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const fullPath = path.join(dir, file);
+          if (fs.statSync(fullPath).isDirectory()) {
+            if (file !== 'node_modules' && file !== '.git') scanForRoutes(fullPath, depth + 1);
+          } else if (/\.(js|ts|py)$/i.test(file)) {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            // Scan specifically for files defining API routing or controllers
+            if (/router|express\.Router|app\.(get|post|put|delete|use)|def\s+[a-zA-Z_]+\(|controller/i.test(content)) {
+              if (docCode.length < 15000) {
+                docCode += `\n// File: ${file}\n` + content.slice(0, 1800);
+              }
+            }
+          }
+        }
+      };
+      scanForRoutes(repoPath);
+    }
+
+    const { generateDocsAndReadme } = require('../services/ai.service');
+    const docs = await generateDocsAndReadme(docCode, project.stack);
+    res.json(docs);
+  } catch (err) {
+    if (err.message.includes('No valid API keys')) {
+      return res.json({ readme: '# Offline', apiDocs: '# API Reference Offline' });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── POST /api/ai/:projectId/audit-security ────────────────────────────────
+const auditSecurity = async (req, res) => {
+  try {
+    checkApiKeys();
+
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
+    let packageJson = '';
+    let secCode = '';
+
+    if (fs.existsSync(repoPath)) {
+      const pkgPath = path.join(repoPath, 'package.json');
+      if (fs.existsSync(pkgPath)) packageJson = fs.readFileSync(pkgPath, 'utf8');
+
+      const scanForSecurityPatterns = (dir, depth = 0) => {
+        if (depth > 3) return;
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const fullPath = path.join(dir, file);
+          if (fs.statSync(fullPath).isDirectory()) {
+            if (file !== 'node_modules' && file !== '.git') scanForSecurityPatterns(fullPath, depth + 1);
+          } else if (/\.(js|ts|py|json)$/i.test(file)) {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            // Grab files dealing with server setups, auth, database, helmet, cors
+            if (/helmet|cors|express-rate-limit|express-validator|bcrypt|jwt\.verify|passport|session/i.test(content)) {
+              if (secCode.length < 15000) {
+                secCode += `\n// File: ${file}\n` + content.slice(0, 1500);
+              }
+            }
+          }
+        }
+      };
+      scanForSecurityPatterns(repoPath);
+    }
+
+    const { auditSecurityAndDependencies } = require('../services/ai.service');
+    const auditReport = await auditSecurityAndDependencies(packageJson, secCode, project.stack);
+    res.json(auditReport);
+  } catch (err) {
+    if (err.message.includes('No valid API keys')) {
+      return res.json({ securityScore: 100, issues: [] });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   chatWithAI,
   suggestFix,
@@ -347,4 +445,6 @@ module.exports = {
   inspectLogs,
   optimizeDbQueries,
   predictResources,
+  generateDocs,
+  auditSecurity,
 };

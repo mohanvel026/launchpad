@@ -7,7 +7,9 @@ const {
   discoverEnv,
   inspectLogs,
   optimizeDbQueries,
-  predictResources
+  predictResources,
+  generateDocs,
+  auditSecurity
 } = require('../controllers/ai.controller');
 
 const router = express.Router();
@@ -32,5 +34,11 @@ router.post('/:projectId/optimize-queries', protect, optimizeDbQueries);
 
 // POST /api/ai/:projectId/predict-resources — predict memory limit, CPU, and cache allocations
 router.post('/:projectId/predict-resources', protect, predictResources);
+
+// POST /api/ai/:projectId/generate-docs — auto-generate README and full REST API endpoint docs
+router.post('/:projectId/generate-docs', protect, generateDocs);
+
+// POST /api/ai/:projectId/audit-security — scan dependencies and source patterns for CVEs and vulnerabilities
+router.post('/:projectId/audit-security', protect, auditSecurity);
 
 module.exports = router;
