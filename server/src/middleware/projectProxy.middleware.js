@@ -21,13 +21,14 @@ const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || '129.159.22.142.nip.io').toLowe
 const portCache = new Map(); // subdomain → { port, ts }
 const CACHE_TTL = 30_000;   // 30 seconds
 
-const lookupPort = async (subdomain) => {
-  const cached = portCache.get(subdomain);
+const lookupPort = async (identifier, isCustomDomain = false) => {
+  const cached = portCache.get(identifier);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.port;
 
-  const project = await Project.findOne({ subdomain }, 'port status').lean();
+  const query = isCustomDomain ? { customDomain: identifier } : { subdomain: identifier };
+  const project = await Project.findOne(query, 'port status').lean();
   const port    = project?.port || null;
-  if (port) portCache.set(subdomain, { port, ts: Date.now() });
+  if (port) portCache.set(identifier, { port, ts: Date.now() });
   return port;
 };
 
@@ -173,18 +174,30 @@ const selfHealingPage = (host) => `<!DOCTYPE html>
 const projectProxyMiddleware = async (req, res, next) => {
   const host = (req.headers.host || '').toLowerCase().split(':')[0]; // strip port
 
-  // Only intercept project subdomains, not the root LaunchPad domain
-  if (host === DOMAIN || !host.endsWith(`.${DOMAIN}`)) return next();
+  // 1. Let the root LaunchPad dashboard domain pass through
+  if (host === DOMAIN) return next();
 
-  const subdomain = host.slice(0, -(DOMAIN.length + 1)); // strip ".domain"
+  let subdomain = null;
+  let isCustomDomain = false;
 
-  // Sanity check — project subdomains are flat (no dots)
-  if (!subdomain || subdomain.includes('.')) return next();
+  // 2. Check if this is a LaunchPad subdomain
+  if (host.endsWith(`.${DOMAIN}`)) {
+    subdomain = host.slice(0, -(DOMAIN.length + 1));
+    // Sanity check
+    if (!subdomain || subdomain.includes('.')) return next();
+  } else {
+    // 3. Otherwise, treat it as a potential custom domain
+    subdomain = host;
+    isCustomDomain = true;
+  }
 
   try {
-    const port = await lookupPort(subdomain);
+    const port = await lookupPort(subdomain, isCustomDomain);
 
     if (!port) {
+      // If it doesn't match any registered custom domain, fall back to the LaunchPad dashboard
+      if (isCustomDomain) return next();
+
       return res
         .status(502)
         .set('Content-Type', 'text/html')
