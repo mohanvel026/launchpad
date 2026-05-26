@@ -378,6 +378,72 @@ ${safeDocker}`;
 
 // ─── Feature 6: AI Env Auto-Discovery ──────────────────────────────────────────
 /**
+ * Local Static Analysis Fallback
+ * Scans source code patterns with high-speed regex to extract keys if the external AI service fails or is rate-limited.
+ */
+const extractEnvVarsLocally = (code = '') => {
+  const regex = /process\.env\.([A-Z_0-9]+)/g;
+  const discoveredKeys = new Set();
+  let match;
+  while ((match = regex.exec(code)) !== null) {
+    const key = match[1];
+    // Exclude common global environment keys that developers don't usually set manually
+    if (!['NODE_ENV', 'PORT', 'PATH', 'HOME', 'USER'].includes(key)) {
+      discoveredKeys.add(key);
+    }
+  }
+
+  const crypto = require('crypto');
+  return Array.from(discoveredKeys).map(key => {
+    let suggestedValue = '';
+    let validationPattern = '';
+    let validationErrorMessage = '';
+
+    // Generate high-entropy suggested value for secrets
+    if (key.includes('SECRET') || key.includes('TOKEN') || key.includes('KEY') || key.includes('PASSWORD')) {
+      if (!key.includes('URI') && !key.includes('URL') && !key.includes('PATH')) {
+        suggestedValue = crypto.randomBytes(32).toString('hex');
+      }
+    }
+
+    // Set connection validators
+    if (key.includes('MONGO')) {
+      validationPattern = '^(mongodb(?:\\+srv)?):\\/\\/.+$';
+      validationErrorMessage = 'Must be a valid MongoDB connection string starting with mongodb:// or mongodb+srv://';
+    } else if (key.includes('PORT')) {
+      validationPattern = '^\\d{2,5}$';
+      validationErrorMessage = 'Must be a valid port number (e.g. 3000 to 65535)';
+    } else if (key.includes('URL') || key.includes('URI')) {
+      validationPattern = '^https?:\\/\\/.+$';
+      validationErrorMessage = 'Must be a valid URL starting with http:// or https://';
+    }
+
+    return {
+      key,
+      required: true,
+      description: 'Auto-detected via host Static Code Analysis.',
+      placeholder: '',
+      suggestedValue,
+      validationPattern,
+      validationErrorMessage
+    };
+  });
+};
+
+/**
+ * Aggressive JSON Cleanser
+ * Strips markdown code fences, trailing commas, and resolves malformed formatting before parsing.
+ */
+const cleanJson = (str = '') => {
+  let cleaned = str.trim();
+  // Remove markdown block backticks if present
+  cleaned = cleaned.replace(/^```json\s*/i, '').replace(/```$/, '');
+  // Remove trailing commas before closing brackets/braces
+  cleaned = cleaned.replace(/,\s*([\]}])/g, '$1');
+  return cleaned.trim();
+};
+
+/**
  * Scans project files or aggregated code patterns to find and list all expected environment variables.
  * Returns a JSON array of: { key, required, description, placeholder, suggestedValue, validationPattern, validationErrorMessage }
  */
@@ -403,11 +469,21 @@ Only return variables that are actually used in the code. Do not include markdow
   const safeCode = (codeSnippets || '').slice(0, CONFIG.MAX_LOG_CHARS);
   const userPrompt = `Stack: ${stack}\nSource Code Snippets:\n${safeCode}`;
 
-  const raw = await callAI(systemPrompt, userPrompt, 800, true);
-  if (!raw) return { detectedVars: [] };
+  let raw = '';
+  try {
+    raw = await callAI(systemPrompt, userPrompt, 800, true);
+  } catch (aiErr) {
+    console.warn('[AI Env Discovery] External AI call failed. Falling back to local static analysis...', aiErr.message);
+    return { detectedVars: extractEnvVarsLocally(codeSnippets) };
+  }
+
+  if (!raw) {
+    return { detectedVars: extractEnvVarsLocally(codeSnippets) };
+  }
 
   try {
-    const parsed = JSON.parse(raw);
+    const cleanedJson = cleanJson(raw);
+    const parsed = JSON.parse(cleanedJson);
     const vars = Array.isArray(parsed.detectedVars) ? parsed.detectedVars : [];
     
     // Upgrade keys with cryptographically secure suggestions and validators
@@ -450,8 +526,8 @@ Only return variables that are actually used in the code. Do not include markdow
 
     return { detectedVars: upgradedVars };
   } catch (err) {
-    console.error('[AI Env Discovery Upgrade] JSON parse failed:', err.message);
-    return { detectedVars: [] };
+    console.warn('[AI Env Discovery] JSON parse failed, falling back to local static analysis. Error:', err.message);
+    return { detectedVars: extractEnvVarsLocally(codeSnippets) };
   }
 };
 
