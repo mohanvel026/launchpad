@@ -176,7 +176,59 @@ buildQueue.process(async (job) => {
     await log(`   ↳ Detected Stack: ${stack.toUpperCase()}`);
     await Project.findByIdAndUpdate(projectId, { stack });
 
-    const rawEnvs = await EnvVar.find({ project: projectId });
+    let rawEnvs = await EnvVar.find({ project: projectId });
+
+    // Zero-Touch Autonomous AI Auto-Config: If project has no environment variables, discover and save them automatically on first deploy!
+    if (rawEnvs.length === 0) {
+      await log(`🔍 [AI Auto-Config] No environment variables set. Automatically scanning codebase for requirements…`);
+      let aggregatedCode = '';
+      
+      try {
+        const scanForEnv = (dir, depth = 0) => {
+          if (depth > 3) return;
+          const files = fs.readdirSync(dir);
+          for (const file of files) {
+            const fullPath = path.join(dir, file);
+            if (fs.statSync(fullPath).isDirectory()) {
+              if (file !== 'node_modules' && file !== '.git' && file !== 'dist') {
+                scanForEnv(fullPath, depth + 1);
+              }
+            } else if (/\.(js|ts|py|json|config)$/i.test(file)) {
+              if (aggregatedCode.length < 10000) {
+                aggregatedCode += fs.readFileSync(fullPath, 'utf8').slice(0, 1000);
+              }
+            }
+          }
+        };
+        
+        scanForEnv(repoDir);
+        
+        const { discoverRequiredEnvVars } = require('../services/ai.service');
+        const discovery = await discoverRequiredEnvVars(aggregatedCode, stack);
+        
+        if (discovery.detectedVars && discovery.detectedVars.length > 0) {
+          for (const v of discovery.detectedVars) {
+            const defaultValue = v.suggestedValue || v.placeholder || `your_${v.key.toLowerCase()}_placeholder`;
+            const encryptedValue = CryptoJS.AES.encrypt(defaultValue, process.env.ENCRYPTION_KEY).toString();
+            
+            await EnvVar.create({
+              project: projectId,
+              key: v.key,
+              value: encryptedValue,
+              isSecret: true
+            });
+          }
+          await log(`   ✅ [AI Auto-Config] Successfully discovered and securely configured ${discovery.detectedVars.length} variables!`);
+          
+          // Reload newly created variables to continue build seamlessly
+          rawEnvs = await EnvVar.find({ project: projectId });
+        } else {
+          await log(`   ℹ️ [AI Auto-Config] Scan complete: No environment variable references found.`);
+        }
+      } catch (discoverErr) {
+        await log(`   ⚠️ [AI Auto-Config] Automatic configuration skipped: ${discoverErr.message}`);
+      }
+    }
 
     const runtimeEnv = { PORT: '3000', NODE_ENV: 'production' };
     for (const e of rawEnvs) {
