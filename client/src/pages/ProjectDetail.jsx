@@ -235,7 +235,9 @@ export default function ProjectDetail() {
           </button>
           <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
           <span style={{ fontWeight: 700, fontSize: 15 }}>{project.name}</span>
-          <span className={`lp-badge ${project.status || 'idle'}`}>{project.status || 'idle'}</span>
+          <span className={`lp-badge ${deploying ? 'building' : (project.status || 'idle')}`}>
+            {deploying ? 'building' : (project.status || 'idle')}
+          </span>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {deployUrl && (

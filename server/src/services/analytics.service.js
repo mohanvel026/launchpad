@@ -4,14 +4,29 @@ let redisClient;
 
 const getRedis = async () => {
   if (!redisClient) {
-    redisClient = redis.createClient({
+    const client = redis.createClient({
       socket: {
         host: process.env.REDIS_HOST || '127.0.0.1',
         port: parseInt(process.env.REDIS_PORT) || 6379,
+        connectTimeout: 1500,
       },
     });
-    redisClient.on('error', (err) => console.warn('Redis analytics error:', err.message));
-    await redisClient.connect();
+    client.on('error', (err) => console.warn('Redis analytics error:', err.message));
+    try {
+      await client.connect();
+      redisClient = client;
+    } catch (e) {
+      console.warn('Redis connect failed, falling back to mock analytics client:', e.message);
+      redisClient = {
+        hIncrBy: async () => 1,
+        hGet: async () => null,
+        hSet: async () => {},
+        hGetAll: async () => ({}),
+        expire: async () => {},
+        del: async () => {},
+        connect: async () => {},
+      };
+    }
   }
   return redisClient;
 };

@@ -53,13 +53,14 @@ If analyzing build logs, focus strictly on the root cause and remediation.`;
 
     res.json({ reply });
   } catch (err) {
-    console.error('[AI Chat Error]:', err.message);
-    if (err.message.includes('No valid API keys')) {
+    const errMsg = err?.message || 'Unknown server error';
+    console.error('[AI Chat Error]:', errMsg);
+    if (errMsg.includes('No valid API keys')) {
       return res.json({
         reply: "Sorry, I can't chat right now! 🤖\n\nTo activate me, please add a `GEMINI_API_KEY` or `GROQ_API_KEY` to your `server/.env` file and restart the server.\n\n*(Tip: Both are completely FREE to get!)*"
       });
     }
-    res.status(500).json({ message: 'AI assistant unavailable: ' + err.message });
+    res.status(500).json({ message: 'AI assistant unavailable: ' + errMsg });
   }
 };
 

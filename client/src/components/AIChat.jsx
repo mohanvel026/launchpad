@@ -40,6 +40,27 @@ export default function AIChat({ projectId }) {
       setLoading(false);
     }
   };
+ 
+  const handleQuickQuestion = async (q) => {
+    if (loading) return;
+    const userMsg = { role: 'user', content: q };
+    setMessages((prev) => [...prev, userMsg]);
+    setLoading(true);
+    try {
+      const res = await api.post(`/ai/${projectId}/chat`, {
+        message: q,
+        history: messages.slice(-6),
+      });
+      setMessages((prev) => [...prev, { role: 'assistant', content: res.data.reply }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role:    'assistant',
+        content: 'Neural link temporarily unstable. Please verify your system configuration or try again in a moment.',
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const quickQuestions = [
     'Analyze last build failure',
@@ -85,7 +106,7 @@ export default function AIChat({ projectId }) {
 
       <div style={{ padding: '0 24px', display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '20px' }}>
         {quickQuestions.map((q) => (
-          <button key={q} onClick={() => { setInput(q); }} className="lp-btn-secondary" style={{ fontSize: '12px', padding: '6px 14px', borderRadius: 100 }}>
+          <button key={q} onClick={() => handleQuickQuestion(q)} className="lp-btn-secondary" style={{ fontSize: '12px', padding: '6px 14px', borderRadius: 100 }}>
             {q}
           </button>
         ))}
