@@ -53,6 +53,7 @@ export default function ProjectDetail() {
   const [showBulk, setShowBulk] = useState(false);
   const [bulkEnv,  setBulkEnv]  = useState('');
   const [showVal,  setShowVal]  = useState({});
+  const [aiScanning, setAiScanning] = useState(false);
 
   // Settings
   const [settings, setSettings] = useState({ installCommand: '', buildCommand: '', outputDir: '', branch: '' });
@@ -201,6 +202,24 @@ export default function ProjectDetail() {
       }
       setBulkEnv(''); setShowBulk(false); loadEnvVars();
     } catch { setError('Bulk import partially failed. Check your format.'); }
+  };
+
+  const handleAiAutoDetect = async () => {
+    setAiScanning(true);
+    setError('');
+    try {
+      const res = await api.post(`/ai/${id}/discover-env`);
+      if (res.data.detectedVars && res.data.detectedVars.length > 0) {
+        loadEnvVars();
+        alert(`Successfully auto-detected and configured ${res.data.detectedVars.length} variables!`);
+      } else {
+        alert("No new environment variables detected in the codebase.");
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'AI detection failed');
+    } finally {
+      setAiScanning(false);
+    }
   };
 
   const handleDeleteEnv = async (key) => {
@@ -375,6 +394,9 @@ export default function ProjectDetail() {
                   <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Encrypted secrets injected at build and runtime.</p>
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
+                  <button className="lp-btn-secondary" style={{ padding: '7px 14px', fontSize: 13, background: 'linear-gradient(135deg, rgba(56,189,248,0.1) 0%, rgba(59,130,246,0.1) 100%)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8' }} onClick={handleAiAutoDetect} disabled={aiScanning}>
+                    {aiScanning ? 'Scanning...' : '🔍 AI Auto-Detect'}
+                  </button>
                   <button className="lp-btn-secondary" style={{ padding: '7px 14px', fontSize: 13 }} onClick={() => setShowBulk(!showBulk)}>
                     {showBulk ? 'Manual' : '📋 Bulk Import'}
                   </button>
