@@ -379,7 +379,7 @@ ${safeDocker}`;
 // ─── Feature 6: AI Env Auto-Discovery ──────────────────────────────────────────
 /**
  * Scans project files or aggregated code patterns to find and list all expected environment variables.
- * Returns a JSON array of: { key, required, description, placeholder }
+ * Returns a JSON array of: { key, required, description, placeholder, suggestedValue, validationPattern, validationErrorMessage }
  */
 const discoverRequiredEnvVars = async (codeSnippets = '', stack = 'unknown') => {
   const systemPrompt = `You are a DevOps security auditor.
@@ -392,7 +392,8 @@ Respond ONLY with a valid JSON object matching this exact schema:
       "key": "VARIABLE_NAME",
       "required": true | false,
       "description": "Brief explanation of what this variable is used for.",
-      "placeholder": "A safe example or placeholder value."
+      "placeholder": "A safe example or placeholder value.",
+      "validationRule": "mongodb" | "url" | "port" | "jwt" | "none"
     }
   ]
 }
@@ -407,11 +408,49 @@ Only return variables that are actually used in the code. Do not include markdow
 
   try {
     const parsed = JSON.parse(raw);
-    return {
-      detectedVars: Array.isArray(parsed.detectedVars) ? parsed.detectedVars : []
-    };
+    const vars = Array.isArray(parsed.detectedVars) ? parsed.detectedVars : [];
+    
+    // Upgrade keys with cryptographically secure suggestions and validators
+    const crypto = require('crypto');
+    const upgradedVars = vars.map(v => {
+      const key = v.key.toUpperCase();
+      let suggestedValue = '';
+      let validationPattern = '';
+      let validationErrorMessage = '';
+
+      // 1. Auto-generate high-entropy secure keys for secrets/tokens/keys
+      if (key.includes('SECRET') || key.includes('TOKEN') || key.includes('KEY') || key.includes('PASSWORD')) {
+        if (!key.includes('URI') && !key.includes('URL') && !key.includes('PATH')) {
+          suggestedValue = crypto.randomBytes(32).toString('hex');
+        }
+      }
+
+      // 2. Assign industry-grade validations
+      if (v.validationRule === 'mongodb' || key.includes('MONGO')) {
+        validationPattern = '^(mongodb(?:\\+srv)?):\\/\\/.+$';
+        validationErrorMessage = 'Must be a valid MongoDB connection string starting with mongodb:// or mongodb+srv://';
+      } else if (v.validationRule === 'port' || key.includes('PORT')) {
+        validationPattern = '^\\d{2,5}$';
+        validationErrorMessage = 'Must be a valid port number (e.g. 3000 to 65535)';
+      } else if (v.validationRule === 'url' || key.includes('URL') || key.includes('URI')) {
+        validationPattern = '^https?:\\/\\/.+$';
+        validationErrorMessage = 'Must be a valid URL starting with http:// or https://';
+      }
+
+      return {
+        key: v.key,
+        required: !!v.required,
+        description: v.description || 'Application environment configuration.',
+        placeholder: v.placeholder || '',
+        suggestedValue,
+        validationPattern,
+        validationErrorMessage
+      };
+    });
+
+    return { detectedVars: upgradedVars };
   } catch (err) {
-    console.error('[AI Env Discovery] JSON parse failed:', err.message);
+    console.error('[AI Env Discovery Upgrade] JSON parse failed:', err.message);
     return { detectedVars: [] };
   }
 };
