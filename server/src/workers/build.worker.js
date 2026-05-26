@@ -207,6 +207,8 @@ buildQueue.process(async (job) => {
     }
 
     // ── PHASE 4/5: Build & Run ──
+    const tempEnvFile = path.join(repoDir, '.env');
+    
     if (!isWindows) {
       // Build-time args for --build-arg injection
       const buildArgs = {};
@@ -216,8 +218,18 @@ buildQueue.process(async (job) => {
       // Ensure runtime env PORT reflects what container actually listens on
       runtimeEnv.PORT = String(containerPort);
 
+      // Elite SRE addition: Auto-write a secure build-time .env file so client-side builders (Vite, Next, etc.) can compile constants correctly
       if (rawEnvs.length > 0) {
-        await log(`🔐 PHASE 4: Injecting ${rawEnvs.length} encrypted secrets…`);
+        await log(`🔐 PHASE 4: Injecting ${rawEnvs.length} encrypted secrets into temporary .env…`);
+        try {
+          let envContent = '';
+          for (const [k, v] of Object.entries(buildArgs)) {
+            envContent += `${k}="${v.replace(/"/g, '\\"')}"\n`;
+          }
+          fs.writeFileSync(tempEnvFile, envContent, 'utf-8');
+        } catch (envErr) {
+          await log(`   ⚠️ Failed to generate build-time .env file: ${envErr.message}`);
+        }
       } else {
         await log(`ℹ️ PHASE 4: No environment variables detected.`);
       }
@@ -246,6 +258,16 @@ buildQueue.process(async (job) => {
           await log(`   💻 Suggested commands:\n${diagnosis.commands.map(c => '      $ ' + c).join('\n')}`);
         }
         throw new Error('Docker build failure');
+      } finally {
+        // Clean up temporary .env to maintain total secret security on the server
+        if (fs.existsSync(tempEnvFile)) {
+          try {
+            fs.unlinkSync(tempEnvFile);
+            await log(`   🧹 Cleaned up temporary build-time .env file successfully.`);
+          } catch (unlinkErr) {
+            console.warn(`[Build Worker] Failed to unlink temp env file: ${unlinkErr.message}`);
+          }
+        }
       }
 
       // Use a stable container name per project so re-deploys cleanly replace the old one
