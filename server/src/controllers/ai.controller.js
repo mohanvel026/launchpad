@@ -182,28 +182,53 @@ const discoverEnv = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
-    let aggregatedCode = '';
+    const detectedKeys = new Set();
 
-    // Aggressive but safe scanner: read .js, .ts, .py files up to 10 files to extract process.env calls
     if (fs.existsSync(repoPath)) {
       const readFilesRecursively = (dir, depth = 0) => {
-        if (depth > 3) return; // avoid deep nested structures
+        if (depth > 5) return;
         const files = fs.readdirSync(dir);
         for (const file of files) {
           const fullPath = path.join(dir, file);
           if (fs.statSync(fullPath).isDirectory()) {
-            if (file !== 'node_modules' && file !== '.git' && file !== 'dist') {
+            if (file !== 'node_modules' && file !== '.git' && file !== 'dist' && file !== 'build') {
               readFilesRecursively(fullPath, depth + 1);
             }
-          } else if (/\.(js|ts|py|json|env|config)$/i.test(file)) {
-            if (aggregatedCode.length < 15000) {
-              aggregatedCode += `\n// File: ${file}\n` + fs.readFileSync(fullPath, 'utf8').slice(0, 1500);
+          } else if (/\.(js|ts|py|json|env|config|env\.example)$/i.test(file)) {
+            try {
+              const content = fs.readFileSync(fullPath, 'utf8');
+              const nodeMatches = content.matchAll(/process\.env\.([A-Z_0-9]+)/g);
+              for (const m of nodeMatches) {
+                if (m[1] && !['NODE_ENV', 'PORT', 'PATH', 'HOME'].includes(m[1])) {
+                  detectedKeys.add(m[1]);
+                }
+              }
+              if (file.includes('env')) {
+                const lines = content.split('\n');
+                lines.forEach(line => {
+                  const clean = line.trim();
+                  if (clean && !clean.startsWith('#') && clean.includes('=')) {
+                    const key = clean.split('=')[0].trim();
+                    if (/^[A-Z_0-9]+$/.test(key) && !['NODE_ENV', 'PORT'].includes(key)) {
+                      detectedKeys.add(key);
+                    }
+                  }
+                });
+              }
+              const pyMatches = content.matchAll(/os\.environ(?:\[['"]|\.get\(['"])([A-Z_0-9]+)/g);
+              for (const m of pyMatches) {
+                if (m[1]) detectedKeys.add(m[1]);
+              }
+            } catch (err) {
+              console.warn(`[AI Env Discovery] Skipping file read: ${file}`, err.message);
             }
           }
         }
       };
       readFilesRecursively(repoPath);
     }
+
+    const aggregatedCode = Array.from(detectedKeys).map(k => `process.env.${k}`).join('\n');
 
     const { discoverRequiredEnvVars } = require('../services/ai.service');
     const result = await discoverRequiredEnvVars(aggregatedCode, project.stack);
