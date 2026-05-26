@@ -155,8 +155,31 @@ const updateProject = async (req, res) => {
   }
 };
 
+// ─── POST /api/projects/:id/clear-stuck ──────────────────────────────────────
+const clearProjectStuckBuild = async (req, res) => {
+  try {
+    const Deployment = require('../models/Deployment.model');
+    const project = await Project.findOneAndUpdate(
+      { _id: req.params.id, $or: [{ owner: req.user._id }, { collaborators: req.user._id }] },
+      { status: 'failed' },
+      { returnDocument: 'after' }
+    );
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    // Mark active/queued builds as failed/aborted
+    await Deployment.updateMany(
+      { project: project._id, status: { $in: ['queued', 'building'] } },
+      { $set: { status: 'failed', aiErrorSummary: 'Build aborted by developer (Force reset)' } }
+    );
+
+    res.json({ message: 'Build status successfully reset to unblock deployment.', project });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   getUserRepos, getProjects, createProject,
   getProject, deleteProject, registerWebhook,
-  updateProject,
+  updateProject, clearProjectStuckBuild,
 };

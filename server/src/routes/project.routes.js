@@ -2,7 +2,8 @@ const express = require('express');
 const { protect, getUserWithToken } = require('../middleware/auth.middleware');
 const {
   getProjects, createProject, getProject,
-  deleteProject, getUserRepos, registerWebhook, updateProject
+  deleteProject, getUserRepos, registerWebhook, updateProject,
+  clearProjectStuckBuild
 } = require('../controllers/project.controller');
 
 const router = express.Router();
@@ -27,5 +28,8 @@ router.delete('/:id',        protect,          deleteProject);
 
 // POST /api/projects/:id/webhook — register GitHub push webhook
 router.post('/:id/webhook',  getUserWithToken,  registerWebhook);
+
+// POST /api/projects/:id/clear-stuck — clear stuck build statuses
+router.post('/:id/clear-stuck', protect,        clearProjectStuckBuild);
 
 module.exports = router;

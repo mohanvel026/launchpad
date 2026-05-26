@@ -153,6 +153,17 @@ export default function ProjectDetail() {
     }
   };
 
+  const handleClearStuck = async () => {
+    try {
+      await api.post(`/projects/${id}/clear-stuck`);
+      setError('');
+      loadProject();
+      loadDeployments();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to reset build status');
+    }
+  };
+
   const viewLogs = async (dep) => {
     setActiveTab('logs');
     try {
@@ -263,8 +274,26 @@ export default function ProjectDetail() {
 
       <main className="lp-main" style={{ maxWidth: 1200, margin: '0 auto', width: '100%' }}>
         {error && (
-          <div className="lp-status-bar error" style={{ marginBottom: 20 }}>
+          <div className="lp-status-bar error" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
             <span>⚠️ {error}</span>
+            {error.toLowerCase().includes('in progress') && (
+              <button 
+                onClick={handleClearStuck} 
+                className="lp-btn-secondary" 
+                style={{ 
+                  marginLeft: 16, 
+                  padding: '4px 12px', 
+                  fontSize: 12, 
+                  background: 'rgba(239, 68, 68, 0.2)', 
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#fca5a5',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                ⚡ Force Reset Build State
+              </button>
+            )}
             <button onClick={() => setError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}>✕</button>
           </div>
         )}
