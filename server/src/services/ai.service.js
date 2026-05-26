@@ -444,6 +444,62 @@ const cleanJson = (str = '') => {
 };
 
 /**
+ * GitGuardian-style exposed credentials detector
+ * Analyzes code for accidentally hardcoded secrets (API keys, private keys, database connections).
+ */
+const auditLeakedSecrets = (code = '') => {
+  const leaks = [];
+  
+  // 1. Google API Key Pattern
+  const googleMatch = code.match(/AIzaSy[A-Za-z0-9_-]{35}/g);
+  if (googleMatch) {
+    googleMatch.forEach(key => leaks.push({ type: 'Google API Key', leakedValue: key.slice(0, 8) + '...' }));
+  }
+
+  // 2. MongoDB connection string with embedded password pattern
+  const mongoMatch = code.match(/mongodb(?:\+srv)?:\/\/[^:]+:[^@]+@/g);
+  if (mongoMatch) {
+    leaks.push({ type: 'MongoDB Connection Credentials (Embedded Password)', leakedValue: 'mongodb://[user]:[pass]@...' });
+  }
+
+  // 3. AWS Access Key / Secret Match
+  const awsKeyMatch = code.match(/(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/g);
+  if (awsKeyMatch) {
+    awsKeyMatch.forEach(key => leaks.push({ type: 'AWS Access Key ID', leakedValue: key }));
+  }
+
+  // 4. Hardcoded private/secret token strings
+  const secretAssignmentMatch = code.match(/(?:jwt_secret|jwtSecret|sessionSecret|cookieSecret|api_key|apiKey)\s*=\s*['"`]([a-zA-Z0-9_\-!@#$]{8,64})['"`]/gi);
+  if (secretAssignmentMatch) {
+    secretAssignmentMatch.forEach(match => leaks.push({ type: 'Hardcoded Cryptographic Secret/Key Assignment', leakedValue: match }));
+  }
+
+  return leaks;
+};
+
+/**
+ * Detects variable collisions (e.g. MONGO_URI vs MONGODB_URI)
+ */
+const findVariableCollisions = (keys = []) => {
+  const collisions = [];
+  const upperKeys = keys.map(k => k.toUpperCase());
+
+  if (upperKeys.includes('MONGO_URI') && upperKeys.includes('MONGODB_URI')) {
+    collisions.push({
+      type: 'Database URI redundancy',
+      message: 'Detected both MONGO_URI and MONGODB_URI. This may cause connection discrepancies depending on which library runs.'
+    });
+  }
+  if (upperKeys.includes('JWT_SECRET') && upperKeys.includes('JWT_TOKEN')) {
+    collisions.push({
+      type: 'JSON Web Token secret redundancy',
+      message: 'Detected both JWT_SECRET and JWT_TOKEN. Standardize on JWT_SECRET for consistency.'
+    });
+  }
+  return collisions;
+};
+
+/**
  * Scans project files or aggregated code patterns to find and list all expected environment variables.
  * Returns a JSON array of: { key, required, description, placeholder, suggestedValue, validationPattern, validationErrorMessage }
  */
@@ -469,66 +525,74 @@ Only return variables that are actually used in the code. Do not include markdow
   const safeCode = (codeSnippets || '').slice(0, CONFIG.MAX_LOG_CHARS);
   const userPrompt = `Stack: ${stack}\nSource Code Snippets:\n${safeCode}`;
 
+  let detectedVars = [];
   let raw = '';
   try {
     raw = await callAI(systemPrompt, userPrompt, 800, true);
   } catch (aiErr) {
     console.warn('[AI Env Discovery] External AI call failed. Falling back to local static analysis...', aiErr.message);
-    return { detectedVars: extractEnvVarsLocally(codeSnippets) };
+    detectedVars = extractEnvVarsLocally(codeSnippets);
   }
 
-  if (!raw) {
-    return { detectedVars: extractEnvVarsLocally(codeSnippets) };
-  }
+  if (raw) {
+    try {
+      const cleanedJson = cleanJson(raw);
+      const parsed = JSON.parse(cleanedJson);
+      const vars = Array.isArray(parsed.detectedVars) ? parsed.detectedVars : [];
+      
+      const crypto = require('crypto');
+      detectedVars = vars.map(v => {
+        const key = v.key.toUpperCase();
+        let suggestedValue = '';
+        let validationPattern = '';
+        let validationErrorMessage = '';
 
-  try {
-    const cleanedJson = cleanJson(raw);
-    const parsed = JSON.parse(cleanedJson);
-    const vars = Array.isArray(parsed.detectedVars) ? parsed.detectedVars : [];
-    
-    // Upgrade keys with cryptographically secure suggestions and validators
-    const crypto = require('crypto');
-    const upgradedVars = vars.map(v => {
-      const key = v.key.toUpperCase();
-      let suggestedValue = '';
-      let validationPattern = '';
-      let validationErrorMessage = '';
-
-      // 1. Auto-generate high-entropy secure keys for secrets/tokens/keys
-      if (key.includes('SECRET') || key.includes('TOKEN') || key.includes('KEY') || key.includes('PASSWORD')) {
-        if (!key.includes('URI') && !key.includes('URL') && !key.includes('PATH')) {
-          suggestedValue = crypto.randomBytes(32).toString('hex');
+        if (key.includes('SECRET') || key.includes('TOKEN') || key.includes('KEY') || key.includes('PASSWORD')) {
+          if (!key.includes('URI') && !key.includes('URL') && !key.includes('PATH')) {
+            suggestedValue = crypto.randomBytes(32).toString('hex');
+          }
         }
-      }
 
-      // 2. Assign industry-grade validations
-      if (v.validationRule === 'mongodb' || key.includes('MONGO')) {
-        validationPattern = '^(mongodb(?:\\+srv)?):\\/\\/.+$';
-        validationErrorMessage = 'Must be a valid MongoDB connection string starting with mongodb:// or mongodb+srv://';
-      } else if (v.validationRule === 'port' || key.includes('PORT')) {
-        validationPattern = '^\\d{2,5}$';
-        validationErrorMessage = 'Must be a valid port number (e.g. 3000 to 65535)';
-      } else if (v.validationRule === 'url' || key.includes('URL') || key.includes('URI')) {
-        validationPattern = '^https?:\\/\\/.+$';
-        validationErrorMessage = 'Must be a valid URL starting with http:// or https://';
-      }
+        if (v.validationRule === 'mongodb' || key.includes('MONGO')) {
+          validationPattern = '^(mongodb(?:\\+srv)?):\\/\\/.+$';
+          validationErrorMessage = 'Must be a valid MongoDB connection string starting with mongodb:// or mongodb+srv://';
+        } else if (v.validationRule === 'port' || key.includes('PORT')) {
+          validationPattern = '^\\d{2,5}$';
+          validationErrorMessage = 'Must be a valid port number (e.g. 3000 to 65535)';
+        } else if (v.validationRule === 'url' || key.includes('URL') || key.includes('URI')) {
+          validationPattern = '^https?:\\/\\/.+$';
+          validationErrorMessage = 'Must be a valid URL starting with http:// or https://';
+        }
 
-      return {
-        key: v.key,
-        required: !!v.required,
-        description: v.description || 'Application environment configuration.',
-        placeholder: v.placeholder || '',
-        suggestedValue,
-        validationPattern,
-        validationErrorMessage
-      };
-    });
-
-    return { detectedVars: upgradedVars };
-  } catch (err) {
-    console.warn('[AI Env Discovery] JSON parse failed, falling back to local static analysis. Error:', err.message);
-    return { detectedVars: extractEnvVarsLocally(codeSnippets) };
+        return {
+          key: v.key,
+          required: !!v.required,
+          description: v.description || 'Application environment configuration.',
+          placeholder: v.placeholder || '',
+          suggestedValue,
+          validationPattern,
+          validationErrorMessage
+        };
+      });
+    } catch (err) {
+      console.warn('[AI Env Discovery] JSON parse failed, falling back to local static analysis. Error:', err.message);
+      detectedVars = extractEnvVarsLocally(codeSnippets);
+    }
   }
+
+  if (detectedVars.length === 0) {
+    detectedVars = extractEnvVarsLocally(codeSnippets);
+  }
+
+  // Inject Leaked Secrets Audit & Collisions for Enterprise-grade security
+  const leakedSecrets = auditLeakedSecrets(codeSnippets);
+  const collisions = findVariableCollisions(detectedVars.map(v => v.key));
+
+  return {
+    detectedVars,
+    securityWarnings: leakedSecrets,
+    collisions
+  };
 };
 
 // ─── Feature 7: AI Runtime Log Health Inspector ───────────────────────────────
