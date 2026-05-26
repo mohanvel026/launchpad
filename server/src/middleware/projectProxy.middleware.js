@@ -88,7 +88,13 @@ const projectProxyMiddleware = async (req, res, next) => {
         port,
         path:     req.url,
         method:   req.method,
-        headers:  { ...req.headers, host: req.headers.host },
+        headers:  {
+          ...req.headers,
+          host: req.headers.host,
+          'X-Forwarded-For':   req.ip || req.connection.remoteAddress,
+          'X-Forwarded-Proto': req.secure ? 'https' : 'http',
+          'X-Real-IP':         req.ip || req.connection.remoteAddress,
+        },
       },
       (proxyRes) => {
         res.writeHead(proxyRes.statusCode, proxyRes.headers);

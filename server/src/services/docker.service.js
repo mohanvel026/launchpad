@@ -44,19 +44,29 @@ const buildImage = (contextDir, imageTag, deploymentId) => {
  * @param {number} hostPort
  * @param {object} envVars   - { KEY: 'value', ... }
  * @param {string} deploymentId
+ * @param {number} [containerPort=3000]
  * @returns {string} containerId
  */
-const runContainer = async (imageTag, hostPort, envVars = {}, deploymentId) => {
+const runContainer = async (imageTag, hostPort, envVars = {}, deploymentId, containerPort = 3000) => {
   const env = Object.entries(envVars).map(([k, v]) => `${k}=${v}`);
+
+  // Ensure PORT env var matches what the container actually listens on
+  if (!env.find(e => e.startsWith('PORT='))) {
+    env.push(`PORT=${containerPort}`);
+  }
+
+  const portBinding = {};
+  portBinding[`${containerPort}/tcp`] = [{ HostPort: String(hostPort) }];
+
+  const exposedPorts = {};
+  exposedPorts[`${containerPort}/tcp`] = {};
 
   const container = await docker.createContainer({
     Image:        imageTag,
     Env:          env,
-    ExposedPorts: { '3000/tcp': {} },
+    ExposedPorts: exposedPorts,
     HostConfig: {
-      PortBindings: {
-        '3000/tcp': [{ HostPort: String(hostPort) }],
-      },
+      PortBindings:  portBinding,
       RestartPolicy: { Name: 'unless-stopped' },
       Memory:        512 * 1024 * 1024,   // 512 MB cap
       NanoCpus:      500_000_000,          // 0.5 CPU cap

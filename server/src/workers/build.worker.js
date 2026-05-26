@@ -50,6 +50,34 @@ const safeExec = (cmd, opts = {}) => {
 
 const isWindows = process.platform === 'win32';
 
+// Detect what port the app actually exposes inside the container
+// Priority: 1) User env var PORT, 2) App's own .env file PORT, 3) Stack default
+const detectContainerPort = (repoDir, stack, runtimeEnv) => {
+  // If user explicitly set PORT in LaunchPad env vars, respect it
+  if (runtimeEnv.PORT && runtimeEnv.PORT !== '3000') {
+    return parseInt(runtimeEnv.PORT);
+  }
+  // Check backend/.env or root .env for PORT
+  const envFiles = [
+    path.join(repoDir, 'backend', '.env'),
+    path.join(repoDir, 'server', '.env'),
+    path.join(repoDir, '.env'),
+    path.join(repoDir, 'backend', '.env.example'),
+    path.join(repoDir, '.env.example'),
+  ];
+  for (const envFile of envFiles) {
+    if (fs.existsSync(envFile)) {
+      const content = fs.readFileSync(envFile, 'utf-8');
+      const match = content.match(/^PORT\s*=\s*(\d+)/m);
+      if (match) return parseInt(match[1]);
+    }
+  }
+  // Stack defaults — static/react use nginx on 3000, node apps often use 3000 or 5000
+  if (stack === 'static' || stack === 'react' || stack === 'next') return 3000;
+  if (stack === 'fullstack-split' || stack === 'mern') return 3000; // our Dockerfile uses nginx on 3000
+  return 3000;
+};
+
 // ─── Build Process ────────────────────────────────────────────────────────────
 buildQueue.process(async (job) => {
   const { deploymentId, projectId } = job.data;
@@ -180,7 +208,7 @@ buildQueue.process(async (job) => {
       if (project.containerId) safeExec(`docker rm -f ${project.containerId} 2>/dev/null`);
 
       // Detect the EXPOSE port from the built image (so Node apps on 5000 work correctly)
-      let containerPort = 3000;
+      let containerPort = detectContainerPort(repoDir, stack, runtimeEnv);
       try {
         const exposedRaw = execSync(
           `docker inspect --format='{{json .Config.ExposedPorts}}' ${imageTag}`,
@@ -188,17 +216,27 @@ buildQueue.process(async (job) => {
         ).toString().trim();
         const exposed = JSON.parse(exposedRaw);
         const firstPort = Object.keys(exposed || {})[0]; // e.g. "3000/tcp"
-        if (firstPort) containerPort = parseInt(firstPort.split('/')[0]) || 3000;
-      } catch { /* keep default 3000 */ }
+        if (firstPort) {
+          const imagePort = parseInt(firstPort.split('/')[0]);
+          // Use image's EXPOSE port unless user explicitly set PORT env var
+          if (imagePort && !rawEnvs.find(e => e.key === 'PORT')) {
+            containerPort = imagePort;
+          }
+        }
+      } catch { /* keep detected default */ }
 
       const hostPort = project.port || await getNextFreePort();
+      await log(`   ↳ Container port ${containerPort} → Host port ${hostPort}`);
+
+      // Build docker run with all env vars
       let runCmd = `docker run -d --restart unless-stopped -p ${hostPort}:${containerPort}`;
       for (const [k, v] of Object.entries(runtimeEnv)) {
         const safe = v.replace(/"/g, '\\"');
-        runCmd += ` -e ${k}="${safe}"`;
+        runCmd += ` -e "${k}=${safe}"`;
       }
+      // Ensure PORT env var matches what the container actually listens on
+      runCmd += ` -e "PORT=${containerPort}"`;
       runCmd += ` --name ${containerName} ${imageTag}`;
-      await log(`   ↳ Mapping host:${hostPort} → container:${containerPort}`);
 
       let containerId;
       try {
@@ -227,6 +265,9 @@ buildQueue.process(async (job) => {
       }
 
       await log('🌐 PHASE 7: Updating routing engine…');
+      // Write nginx config for this subdomain (used as fallback)
+      createNginxConfig(project.subdomain, hostPort, false);
+
       const { invalidateProjectCache } = require('../middleware/projectProxy.middleware');
       invalidateProjectCache(project.subdomain);
       await log(`   ✅ Internal proxy updated. Traffic routed to ${liveUrl}`);

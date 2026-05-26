@@ -205,7 +205,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
       const beLockStr = beLock ? ` ${beLock}` : '';
 
       const start = getStartCommand(path.join(repoPath, beDir), pm.name);
-      const beStartCmd = start.isScript ? `${pm.name} start` : `node ${start.args[0]}`;
+      const runCmd = start.isScript ? `CMD ["${pm.name}", "start"]` : `CMD ["node", "${start.args[0]}"]`;
 
       return `# ── Stage 1: Build Frontend ──
 FROM node:20-alpine AS fe-builder
@@ -215,36 +215,26 @@ COPY ${feDir}/package*.json${feLockStr} ./
 RUN ${installCmd}
 COPY ${feDir}/ .
 ${envArgs}
-RUN ${buildCmd} 2>/dev/null || echo "no-build"
+RUN ${buildCmd} 2>/dev/null || npx vite build || true
 
-# ── Stage 2: Build Backend deps ──
-FROM node:20-alpine AS be-builder
-WORKDIR /app/backend
+# ── Stage 2: Final single-process backend image ──
+FROM node:20-alpine
+RUN apk add --no-cache curl
+WORKDIR /app
 COPY ${beDir}/package*.json${beLockStr} ./
-RUN npm install --only=production --legacy-peer-deps || npm install --only=production
-
-# ── Stage 3: Final image (nginx + node) ──
-FROM nginx:alpine
-RUN apk add --no-cache nodejs npm curl
-
-WORKDIR /app/backend
-COPY --from=be-builder /app/backend/node_modules ./node_modules
+RUN npm install --only=production --legacy-peer-deps 2>/dev/null || npm install --only=production || ${installCmd}
 COPY ${beDir}/ .
 
-COPY --from=fe-builder /app/frontend/${feOut} /usr/share/nginx/html
+# Copy frontend static build to backend's public directories for serving
+COPY --from=fe-builder /app/frontend/${feOut} ./public
+COPY --from=fe-builder /app/frontend/build ./public 2>/dev/null || true
+COPY --from=fe-builder /app/frontend/dist ./public 2>/dev/null || true
 
-${nginxHeredocBlock(true)}
-
-RUN cat << 'EOF' > /start.sh
-#!/bin/sh
-cd /app/backend && PORT=4000 ${beStartCmd} &
-nginx -g "daemon off;"
-EOF
-RUN chmod +x /start.sh
-
+ENV PORT=3000
+ENV NODE_ENV=production
 EXPOSE 3000
 ${healthCheck}
-CMD ["/start.sh"]`;
+${runCmd}`;
     }
 
     case 'node':

@@ -4,13 +4,23 @@ import { io } from 'socket.io-client';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 
+// Advanced LaunchPad Sub-components
+import MetricsChart from '../components/MetricsChart';
+import AnalyticsDashboard from '../components/AnalyticsDashboard';
+import DomainManager from '../components/DomainManager';
+import TeamManager from '../components/TeamManager';
+import AIChat from '../components/AIChat';
+
 const TABS = [
   { id: 'deployments', label: 'Deployments' },
   { id: 'logs',        label: 'Build Logs' },
   { id: 'env',         label: 'Environment' },
-  { id: 'settings',    label: 'Settings' },
   { id: 'domains',     label: 'Domains' },
-  { id: 'metrics',     label: 'Metrics' },
+  { id: 'metrics',     label: 'Live Metrics' },
+  { id: 'analytics',   label: 'Analytics' },
+  { id: 'team',        label: 'Team' },
+  { id: 'ai',          label: 'AI Co-Pilot' },
+  { id: 'settings',    label: 'Settings' },
 ];
 
 function LogLine({ line }) {
@@ -435,33 +445,14 @@ export default function ProjectDetail() {
         {/* ── Domains ── */}
         {activeTab === 'domains' && (
           <div className="fade-in">
-            <div className="lp-card" style={{ padding: 24 }}>
-              <h3 style={{ fontSize: 16, marginBottom: 4 }}>Domain Settings</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>Your app is accessible at the following addresses.</p>
-
-              {project.subdomain ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div className="lp-env-row flex-between">
-                    <span className="mono" style={{ color: 'var(--accent-primary)', fontSize: 14 }}>{project.subdomain}.{domain}</span>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <span className="lp-badge success">Active</span>
-                      <a href={`http://${project.subdomain}.${domain}`} target="_blank" rel="noreferrer" className="lp-btn-secondary" style={{ padding: '5px 14px', fontSize: 12 }}>Open</a>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-                  No domain assigned yet. Deploy your project first.
-                </div>
-              )}
-            </div>
+            <DomainManager project={project} />
           </div>
         )}
 
-        {/* ── Metrics ── */}
+        {/* ── Live Metrics ── */}
         {activeTab === 'metrics' && (
-          <div className="fade-in">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
               {[
                 { label: 'Total Deployments', value: deployments.length },
                 { label: 'Successful', value: deployments.filter(d => d.status === 'success').length, color: 'var(--accent-success)' },
@@ -474,6 +465,28 @@ export default function ProjectDetail() {
                 </div>
               ))}
             </div>
+            <MetricsChart projectId={id} />
+          </div>
+        )}
+
+        {/* ── Edge Analytics ── */}
+        {activeTab === 'analytics' && (
+          <div className="fade-in">
+            <AnalyticsDashboard projectId={id} />
+          </div>
+        )}
+
+        {/* ── Team Permissions ── */}
+        {activeTab === 'team' && (
+          <div className="fade-in">
+            <TeamManager project={project} currentUser={user} />
+          </div>
+        )}
+
+        {/* ── AI Co-Pilot ── */}
+        {activeTab === 'ai' && (
+          <div className="fade-in">
+            <AIChat projectId={id} />
           </div>
         )}
       </main>
