@@ -376,6 +376,171 @@ ${safeDocker}`;
   }
 };
 
+// ─── Feature 6: AI Env Auto-Discovery ──────────────────────────────────────────
+/**
+ * Scans project files or aggregated code patterns to find and list all expected environment variables.
+ * Returns a JSON array of: { key, required, description, placeholder }
+ */
+const discoverRequiredEnvVars = async (codeSnippets = '', stack = 'unknown') => {
+  const systemPrompt = `You are a DevOps security auditor.
+Analyze the source code snippets and list all environment variables (e.g. process.env.XYZ) that the application expects.
+
+Respond ONLY with a valid JSON object matching this exact schema:
+{
+  "detectedVars": [
+    {
+      "key": "VARIABLE_NAME",
+      "required": true | false,
+      "description": "Brief explanation of what this variable is used for.",
+      "placeholder": "A safe example or placeholder value."
+    }
+  ]
+}
+
+Only return variables that are actually used in the code. Do not include markdown or extra text.`;
+
+  const safeCode = (codeSnippets || '').slice(0, CONFIG.MAX_LOG_CHARS);
+  const userPrompt = `Stack: ${stack}\nSource Code Snippets:\n${safeCode}`;
+
+  const raw = await callAI(systemPrompt, userPrompt, 800, true);
+  if (!raw) return { detectedVars: [] };
+
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      detectedVars: Array.isArray(parsed.detectedVars) ? parsed.detectedVars : []
+    };
+  } catch (err) {
+    console.error('[AI Env Discovery] JSON parse failed:', err.message);
+    return { detectedVars: [] };
+  }
+};
+
+// ─── Feature 7: AI Runtime Log Health Inspector ───────────────────────────────
+/**
+ * Scans live running stdout/stderr output from active containers to detect silent health issues.
+ * Returns: { isHealthy: bool, anomalies: [{ severity, message, fix }] }
+ */
+const inspectRuntimeLogs = async (runtimeLogs = '', stack = 'unknown') => {
+  const systemPrompt = `You are an elite SRE engineer.
+Scan the active runtime container logs and check for unhandled exceptions, database connection timeouts, memory leaks, high latency, or server crashes.
+
+Respond ONLY with a valid JSON object matching this exact schema:
+{
+  "isHealthy": true | false,
+  "anomalies": [
+    {
+      "severity": "CRITICAL" | "WARNING" | "INFO",
+      "message": "Specific description of the anomaly found.",
+      "fix": "Actionable instructions to resolve this."
+    }
+  ]
+}
+
+If no issues are found, return isHealthy: true and anomalies: []. Do not include markdown.`;
+
+  const safeLogs = compressLogs(runtimeLogs, 3000);
+  const userPrompt = `Stack: ${stack}\nRuntime Logs:\n${safeLogs}`;
+
+  const raw = await callAI(systemPrompt, userPrompt, 600, true);
+  if (!raw) return { isHealthy: true, anomalies: [] };
+
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      isHealthy: parsed.isHealthy !== false,
+      anomalies: Array.isArray(parsed.anomalies) ? parsed.anomalies : []
+    };
+  } catch (err) {
+    console.error('[AI Log Inspector] JSON parse failed:', err.message);
+    return { isHealthy: true, anomalies: [] };
+  }
+};
+
+// ─── Feature 8: AI Database Query Optimizer ───────────────────────────────────
+/**
+ * Scans source code snippets containing database operations (Mongoose, Prisma, SQL) to offer index and query optimizations.
+ * Returns: { recommendations: [{ file, query, indexAdvice, speedImpact }] }
+ */
+const optimizeQueries = async (codeSnippets = '', stack = 'unknown') => {
+  const systemPrompt = `You are a Database Performance Expert.
+Analyze the source code queries (Mongoose schemas, find(), SQL select/joins, etc.) and suggest index improvements and pipeline tuning.
+
+Respond ONLY with a valid JSON object matching this exact schema:
+{
+  "recommendations": [
+    {
+      "file": "Name of the file (or 'unknown').",
+      "query": "The code snippet of the query.",
+      "indexAdvice": "Specific database index to create (e.g. { owner: 1, status: -1 }).",
+      "speedImpact": "Estimated impact: 'HIGH' | 'MEDIUM' | 'LOW'"
+    }
+  ]
+}
+
+If no optimization is needed, return recommendations: []. Do not include markdown.`;
+
+  const safeCode = (codeSnippets || '').slice(0, CONFIG.MAX_LOG_CHARS);
+  const userPrompt = `Stack: ${stack}\nDatabase Code Snippets:\n${safeCode}`;
+
+  const raw = await callAI(systemPrompt, userPrompt, 800, true);
+  if (!raw) return { recommendations: [] };
+
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : []
+    };
+  } catch (err) {
+    console.error('[AI Query Optimizer] JSON parse failed:', err.message);
+    return { recommendations: [] };
+  }
+};
+
+// ─── Feature 9: AI Resource Predictor ──────────────────────────────────────────
+/**
+ * Predicts container OCPU and RAM resources required for healthy running.
+ * Returns: { cpuLimit, ramLimitMB, needsRedis, suggestions[] }
+ */
+const predictResourceRequirements = async (packageJsonContent = '', stack = 'unknown') => {
+  const systemPrompt = `You are a Cloud Capacity Planning Specialist.
+Analyze the framework stack and package.json to estimate the best container resource allocations.
+
+Respond ONLY with a valid JSON object matching this exact schema:
+{
+  "cpuLimit": "Number of OCPUs to allocate (e.g. '0.5' or '1.0').",
+  "ramLimitMB": <RAM allocation in MB (number between 128 and 1024)>,
+  "needsRedis": true | false,
+  "suggestions": [
+    "One sentence capacity/caching advice."
+  ]
+}
+
+Do not include markdown or extra text.`;
+
+  const safePkg = typeof packageJsonContent === 'object'
+    ? JSON.stringify(packageJsonContent).slice(0, CONFIG.MAX_PKG_CHARS)
+    : String(packageJsonContent || '').slice(0, CONFIG.MAX_PKG_CHARS);
+
+  const userPrompt = `Stack: ${stack}\npackage.json:\n${safePkg}`;
+
+  const raw = await callAI(systemPrompt, userPrompt, 400, true);
+  if (!raw) return { cpuLimit: '0.5', ramLimitMB: 256, needsRedis: false, suggestions: [] };
+
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      cpuLimit: parsed.cpuLimit || '0.5',
+      ramLimitMB: parsed.ramLimitMB || 256,
+      needsRedis: !!parsed.needsRedis,
+      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : []
+    };
+  } catch (err) {
+    console.error('[AI Resource Predictor] JSON parse failed:', err.message);
+    return { cpuLimit: '0.5', ramLimitMB: 256, needsRedis: false, suggestions: [] };
+  }
+};
+
 // ─── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
   callAI,
@@ -384,4 +549,8 @@ module.exports = {
   predictDeploymentHealth,
   summarizeBuild,
   generateOptimizationAdvice,
+  discoverRequiredEnvVars,
+  inspectRuntimeLogs,
+  optimizeQueries,
+  predictResourceRequirements,
 };

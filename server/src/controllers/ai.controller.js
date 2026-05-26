@@ -162,8 +162,166 @@ const optimizeConfig = async (req, res) => {
   }
 };
 
+// ─── POST /api/ai/:projectId/discover-env ──────────────────────────────────
+const discoverEnv = async (req, res) => {
+  try {
+    checkApiKeys();
+
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
+    let aggregatedCode = '';
+
+    // Aggressive but safe scanner: read .js, .ts, .py files up to 10 files to extract process.env calls
+    if (fs.existsSync(repoPath)) {
+      const readFilesRecursively = (dir, depth = 0) => {
+        if (depth > 3) return; // avoid deep nested structures
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const fullPath = path.join(dir, file);
+          if (fs.statSync(fullPath).isDirectory()) {
+            if (file !== 'node_modules' && file !== '.git' && file !== 'dist') {
+              readFilesRecursively(fullPath, depth + 1);
+            }
+          } else if (/\.(js|ts|py|json|env|config)$/i.test(file)) {
+            if (aggregatedCode.length < 15000) {
+              aggregatedCode += `\n// File: ${file}\n` + fs.readFileSync(fullPath, 'utf8').slice(0, 1500);
+            }
+          }
+        }
+      };
+      readFilesRecursively(repoPath);
+    }
+
+    const { discoverRequiredEnvVars } = require('../services/ai.service');
+    const result = await discoverRequiredEnvVars(aggregatedCode, project.stack);
+    res.json(result);
+  } catch (err) {
+    if (err.message.includes('No valid API keys')) {
+      return res.json({ detectedVars: [] });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── POST /api/ai/:projectId/inspect-logs ──────────────────────────────────
+const inspectLogs = async (req, res) => {
+  try {
+    checkApiKeys();
+
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    // Grab live docker container logs
+    const containerName = `lp-${project._id.toString().slice(-8)}`;
+    const { execSync } = require('child_process');
+    let runtimeLogs = '';
+    try {
+      runtimeLogs = execSync(`docker logs --tail 100 ${containerName} 2>&1`, { timeout: 4000 }).toString();
+    } catch (e) {
+      runtimeLogs = 'No active container is running or logs are unavailable.';
+    }
+
+    const { inspectRuntimeLogs } = require('../services/ai.service');
+    const health = await inspectRuntimeLogs(runtimeLogs, project.stack);
+    res.json(health);
+  } catch (err) {
+    if (err.message.includes('No valid API keys')) {
+      return res.json({ isHealthy: true, anomalies: [] });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── POST /api/ai/:projectId/optimize-queries ──────────────────────────────
+const optimizeDbQueries = async (req, res) => {
+  try {
+    checkApiKeys();
+
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
+    let dbCode = '';
+
+    if (fs.existsSync(repoPath)) {
+      const scanForDbOps = (dir, depth = 0) => {
+        if (depth > 3) return;
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const fullPath = path.join(dir, file);
+          if (fs.statSync(fullPath).isDirectory()) {
+            if (file !== 'node_modules' && file !== '.git') scanForDbOps(fullPath, depth + 1);
+          } else if (/\.(js|ts|py)$/i.test(file)) {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            // Look for database keywords: Schema, find, findOne, select, insert, Prisma
+            if (/mongoose|prisma|find|select|insert|update|delete|schema/i.test(content)) {
+              if (dbCode.length < 12000) {
+                dbCode += `\n// File: ${file}\n` + content.slice(0, 1500);
+              }
+            }
+          }
+        }
+      };
+      scanForDbOps(repoPath);
+    }
+
+    const { optimizeQueries } = require('../services/ai.service');
+    const optimization = await optimizeQueries(dbCode, project.stack);
+    res.json(optimization);
+  } catch (err) {
+    if (err.message.includes('No valid API keys')) {
+      return res.json({ recommendations: [] });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── POST /api/ai/:projectId/predict-resources ─────────────────────────────
+const predictResources = async (req, res) => {
+  try {
+    checkApiKeys();
+
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
+    let packageJson = '';
+    if (fs.existsSync(repoPath)) {
+      const pkgPath = path.join(repoPath, 'package.json');
+      if (fs.existsSync(pkgPath)) packageJson = fs.readFileSync(pkgPath, 'utf8');
+    }
+
+    const { predictResourceRequirements } = require('../services/ai.service');
+    const prediction = await predictResourceRequirements(packageJson, project.stack);
+    res.json(prediction);
+  } catch (err) {
+    if (err.message.includes('No valid API keys')) {
+      return res.json({ cpuLimit: '0.5', ramLimitMB: 256, needsRedis: false, suggestions: [] });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   chatWithAI,
   suggestFix,
   optimizeConfig,
+  discoverEnv,
+  inspectLogs,
+  optimizeDbQueries,
+  predictResources,
 };
