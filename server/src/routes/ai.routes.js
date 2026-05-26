@@ -9,7 +9,8 @@ const {
   optimizeDbQueries,
   predictResources,
   generateDocs,
-  auditSecurity
+  auditSecurity,
+  devopsSummary
 } = require('../controllers/ai.controller');
 
 const router = express.Router();
@@ -40,5 +41,8 @@ router.post('/:projectId/generate-docs', protect, generateDocs);
 
 // POST /api/ai/:projectId/audit-security — scan dependencies and source patterns for CVEs and vulnerabilities
 router.post('/:projectId/audit-security', protect, auditSecurity);
+
+// POST /api/ai/:projectId/devops-summary — fetch aggregate single-endpoint health and capacity overview
+router.post('/:projectId/devops-summary', protect, devopsSummary);
 
 module.exports = router;

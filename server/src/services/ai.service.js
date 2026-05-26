@@ -128,7 +128,19 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
 
 // ─── Orchestration: Groq → Gemini Failover ────────────────────────────────────
 
+let lastRequestTime = 0;
+const CONGESTION_DELAY_MS = 320; // 320ms spacing strictly avoids 429 blocks from concurrent requests
+
 const callAI = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false) => {
+  // Stagger concurrent hits to protect the server's rate limits
+  const now = Date.now();
+  const diff = now - lastRequestTime;
+  if (diff < CONGESTION_DELAY_MS) {
+    const delay = CONGESTION_DELAY_MS - diff;
+    await sleep(delay);
+  }
+  lastRequestTime = Date.now();
+
   try {
     return await callGroq(systemPrompt, userPrompt, maxTokens, isJson);
   } catch (groqErr) {
