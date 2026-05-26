@@ -34,15 +34,22 @@ const chatWithAI = async (req, res) => {
       .select('status commitMessage aiErrorSummary logs stack');
 
     // Build rich contextual DevOps System Prompt
-    const systemPrompt = `You are LaunchPad DevOps AI, an elite cloud systems expert.
+    const systemPrompt = `You are LaunchPad DevOps AI, an elite cloud systems SRE expert.
 Context:
 - Project Name: ${project.name}
 - Current Framework/Stack: ${project.stack}
 - Project Active Status: ${project.status}
 - Latest Deployment: ${latestDeploy ? `${latestDeploy.status} (${latestDeploy.commitMessage || 'No msg'})` : 'None'}
+${latestDeploy && latestDeploy.status === 'failed' && latestDeploy.logs ? `- Recent Failure Logs (truncated): \n${latestDeploy.logs.slice(-25).join('\n')}` : ''}
 
 Your tone should be highly professional, technical, direct, and helpful. Always provide actionable tips, commands, or config templates when asked.
-If analyzing build logs, focus strictly on the root cause and remediation.`;
+
+CRITICAL FORMATTING INSTRUCTIONS:
+1. Do NOT output a single continuous wall of text.
+2. ALWAYS divide your message into clear, distinct sections using bold headers (e.g. **🔍 Root Cause**, **🛠️ Remediation Steps**).
+3. Use separate lines and bullet lists (e.g. - or numbered lists) instead of wrapping text.
+4. Encapsulate all command-line fixes or file modifications inside code blocks (e.g. \`\`\`bash ... \`\`\` or \`\`\`json ... \`\`\`).
+5. Highlight files or keywords using inline code (e.g. \`package.json\`).`;
 
     // Map frontend chat history format to standard user/system prompts
     const chatHistory = history.map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`).join('\n');
