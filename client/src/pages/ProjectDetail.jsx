@@ -222,6 +222,16 @@ export default function ProjectDetail() {
     }
   };
 
+  const handleEditClick = (key) => {
+    setEnvKey(key);
+    setEnvValue('');
+    setShowBulk(false);
+    setTimeout(() => {
+      const valInput = document.querySelector('input[placeholder="value"]');
+      if (valInput) valInput.focus();
+    }, 50);
+  };
+
   const handleDeleteEnv = async (key) => {
     if (!window.confirm(`Delete ${key}?`)) return;
     await api.delete(`/env/${id}/${key}`);
@@ -440,9 +450,10 @@ export default function ProjectDetail() {
                     <span style={{ flex: 2, fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-dim)', letterSpacing: showVal[e._id] ? 0 : 4 }}>
                       {showVal[e._id] ? '(value hidden)' : '••••••••••••'}
                     </span>
-                    <button onClick={() => setShowVal(prev => ({ ...prev, [e._id]: !prev[e._id] }))} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 12 }}>
+                    <button onClick={() => setShowVal(prev => ({ ...prev, [e._id]: !prev[e._id] }))} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 12, marginRight: 8 }}>
                       {showVal[e._id] ? 'Hide' : 'Show'}
                     </button>
+                    <button onClick={() => handleEditClick(e.key)} style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, marginRight: 8 }}>Edit</button>
                     <button onClick={() => handleDeleteEnv(e.key)} style={{ background: 'none', border: 'none', color: 'var(--accent-danger)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Remove</button>
                   </div>
                 ))}
