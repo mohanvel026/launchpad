@@ -1,6 +1,87 @@
 import { useState, useRef, useEffect } from 'react';
 import api from '../lib/api';
 
+function formatMessageContent(content) {
+  if (typeof content !== 'string') return content;
+
+  // Split by code blocks first
+  const parts = content.split(/(```[\s\S]*?```)/g);
+
+  return parts.map((part, index) => {
+    // Code block detection
+    if (part.startsWith('```')) {
+      const match = part.match(/```(\w*)\n([\s\S]*?)```/);
+      const language = match ? match[1] : '';
+      const code = match ? match[2].trim() : part.slice(3, -3).trim();
+
+      return (
+        <div key={index} style={{
+          background: '#09090e',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+          borderRadius: '8px',
+          margin: '12px 0',
+          fontFamily: 'var(--font-mono, monospace)',
+          fontSize: '13px',
+          overflow: 'hidden',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)'
+        }}>
+          {language && (
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.02)',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+              padding: '6px 12px',
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              fontWeight: 700
+            }}>
+              {language}
+            </div>
+          )}
+          <pre style={{ margin: 0, padding: '12px', overflowX: 'auto', color: '#e2e8f0', lineHeight: 1.5 }}>
+            <code>{code}</code>
+          </pre>
+        </div>
+      );
+    }
+
+    // Process paragraphs, bold highlighting, and inline code badges
+    const lines = part.split('\n');
+    return lines.map((line, lineIndex) => {
+      const tokens = line.split(/(\*\*.*?\*\*|`.*?`)/g);
+
+      const parsedLine = tokens.map((token, tokenIndex) => {
+        if (token.startsWith('**') && token.endsWith('**')) {
+          return <strong key={tokenIndex} style={{ color: 'var(--text-main)', fontWeight: 700 }}>{token.slice(2, -2)}</strong>;
+        }
+        if (token.startsWith('`') && token.endsWith('`')) {
+          return (
+            <code key={tokenIndex} style={{
+              fontFamily: 'var(--font-mono, monospace)',
+              background: 'rgba(255, 255, 255, 0.08)',
+              color: '#38bdf8',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: '12.5px',
+              border: '1px solid rgba(255, 255, 255, 0.04)'
+            }}>
+              {token.slice(1, -1)}
+            </code>
+          );
+        }
+        return token;
+      });
+
+      return (
+        <div key={`${index}-${lineIndex}`} style={{ minHeight: '1.2em', marginBottom: lineIndex < lines.length - 1 ? '8px' : 0 }}>
+          {parsedLine}
+        </div>
+      );
+    });
+  });
+}
+
 export default function AIChat({ projectId }) {
   const [messages, setMessages] = useState([
     {
@@ -90,7 +171,7 @@ export default function AIChat({ projectId }) {
               boxShadow: msg.role === 'user' ? '0 8px 24px rgba(56, 189, 248, 0.2)' : 'none',
               border: msg.role === 'user' ? 'none' : '1px solid var(--border)'
             }}>
-              {msg.content}
+              {formatMessageContent(msg.content)}
             </div>
           </div>
         ))}
