@@ -720,10 +720,12 @@ Do not include markdown or extra text.`;
   }
 };
 
+
+
 // ─── Feature 10: AI Auto-Doc & README Generator ──────────────────────────────
 /**
  * Scans routes, controllers, and project files to automatically generate API reference and a professional README.
- * Returns: { readme: string, apiDocs: string }
+ * Returns: { readme: string, apiDocs: string, apiEndpoints: [{ method, route, description, params }] }
  */
 const generateDocsAndReadme = async (codeSnippets = '', stack = 'unknown') => {
   const systemPrompt = `You are a Technical Writer and Developer Advocate.
@@ -732,7 +734,16 @@ Analyze the source code snippets and generate a comprehensive documentation suit
 Respond ONLY with a valid JSON object matching this exact schema:
 {
   "readme": "A beautiful, complete markdown-formatted README.md for this repository. Include description, local installation steps, scripts, and build instructions.",
-  "apiDocs": "Detailed markdown REST API reference documentation listing all detected HTTP routes, methods (GET/POST/etc.), header requirements, body parameters, and example JSON response payloads."
+  "apiDocs": "Detailed markdown REST API reference documentation listing all detected HTTP routes.",
+  "apiEndpoints": [
+    {
+      "method": "GET" | "POST" | "PUT" | "DELETE",
+      "route": "/api/users",
+      "description": "Brief explanation of this endpoint's purpose.",
+      "requestPayload": "Description or example of expected request body payload, or 'none'.",
+      "responsePayload": "Description or example of standard JSON response."
+    }
+  ]
 }
 
 Do not include markdown blocks or extra text around the JSON object.`;
@@ -741,25 +752,26 @@ Do not include markdown blocks or extra text around the JSON object.`;
   const userPrompt = `Stack: ${stack}\nSource Code:\n${safeCode}`;
 
   const raw = await callAI(systemPrompt, userPrompt, 1500, true);
-  if (!raw) return { readme: 'README generation offline.', apiDocs: 'API Docs generation offline.' };
+  if (!raw) return { readme: 'README generation offline.', apiDocs: 'API Docs generation offline.', apiEndpoints: [] };
 
   try {
     const cleanedJson = cleanJson(raw);
     const parsed = JSON.parse(cleanedJson);
     return {
       readme: parsed.readme || '# Project README',
-      apiDocs: parsed.apiDocs || '# REST API Docs'
+      apiDocs: parsed.apiDocs || '# REST API Docs',
+      apiEndpoints: Array.isArray(parsed.apiEndpoints) ? parsed.apiEndpoints : []
     };
   } catch (err) {
     console.error('[AI Doc Gen] JSON parse failed:', err.message);
-    return { readme: '# Project README\nAI Doc generation failed to parse.', apiDocs: '# API Reference\nAI Reference failed to parse.' };
+    return { readme: '# Project README\nAI Doc generation failed to parse.', apiDocs: '# API Reference\nAI Reference failed to parse.', apiEndpoints: [] };
   }
 };
 
 // ─── Feature 11: AI Security & Dependency Auditor ─────────────────────────────
 /**
  * Audits package.json dependencies and security setup for CVEs, helmet, rate-limiters, or SQL injections.
- * Returns: { securityScore, issues: [{ type, severity, description, fix }] }
+ * Returns: { securityScore, securityGrade, issues: [{ type, severity, description, fix, cliCommand }] }
  */
 const auditSecurityAndDependencies = async (packageJsonContent = '', codeSnippets = '', stack = 'unknown') => {
   const systemPrompt = `You are a Cybersecurity Pen-Tester and Dependency Auditor.
@@ -768,17 +780,20 @@ Analyze the package.json and code snippets for potential vulnerabilities, outdat
 Respond ONLY with a valid JSON object matching this exact schema:
 {
   "securityScore": <Integer score between 0 and 100>,
+  "securityGrade": "A+" | "A" | "B" | "C" | "D" | "F",
   "issues": [
     {
       "type": "Dependency Vulnerability" | "Missing Security Header" | "CORS Risk" | "No Rate Limiter" | "SQL/NoSQL Injection Path",
       "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+      "cveCode": "e.g. CVE-2023-XYZ or OWASP-A1",
       "description": "Specific explanation of the threat.",
-      "fix": "Specific, actionable remediation instructions or npm commands."
+      "fix": "Specific, actionable remediation instructions.",
+      "cliCommand": "Exact NPM/Yarn CLI command to run to remediate (e.g. 'npm install helmet --save' or 'npm audit fix')"
     }
   ]
 }
 
-If the application is secure, return score: 100 and issues: []. Do not include markdown fences.`;
+If the application is secure, return score: 100, securityGrade: 'A+' and issues: []. Do not include markdown fences.`;
 
   const safePkg = typeof packageJsonContent === 'object'
     ? JSON.stringify(packageJsonContent).slice(0, CONFIG.MAX_PKG_CHARS)
@@ -788,18 +803,23 @@ If the application is secure, return score: 100 and issues: []. Do not include m
   const userPrompt = `Stack: ${stack}\npackage.json:\n${safePkg}\nSource Code Snippets:\n${safeCode}`;
 
   const raw = await callAI(systemPrompt, userPrompt, 1000, true);
-  if (!raw) return { securityScore: 80, issues: [] };
+  if (!raw) return { securityScore: 80, securityGrade: 'B', issues: [] };
 
   try {
     const cleanedJson = cleanJson(raw);
     const parsed = JSON.parse(cleanedJson);
     return {
       securityScore: parsed.securityScore || 85,
+      securityGrade: parsed.securityGrade || 'B',
       issues: Array.isArray(parsed.issues) ? parsed.issues : []
     };
   } catch (err) {
     console.error('[AI Security Auditor] JSON parse failed:', err.message);
-    return { securityScore: 90, issues: [{ type: "Auditor", severity: "LOW", description: "Audit completed but response formatting erred.", fix: "Retry auditing again." }] };
+    return { 
+      securityScore: 90, 
+      securityGrade: 'A',
+      issues: [{ type: "Auditor", severity: "LOW", description: "Audit completed but response formatting erred.", fix: "Retry auditing again.", cliCommand: "" }] 
+    };
   }
 };
 

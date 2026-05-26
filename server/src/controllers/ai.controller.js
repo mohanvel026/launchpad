@@ -377,10 +377,21 @@ const generateDocs = async (req, res) => {
 
     const { generateDocsAndReadme } = require('../services/ai.service');
     const docs = await generateDocsAndReadme(docCode, project.stack);
+
+    // Auto-commit generated README.md file directly into cloned workspace root
+    if (docs.readme && fs.existsSync(repoPath)) {
+      try {
+        fs.writeFileSync(path.join(repoPath, 'README.md'), docs.readme, 'utf8');
+        console.log(`[AI Doc Gen] Saved README.md to ${project.name} repo successfully.`);
+      } catch (writeErr) {
+        console.warn('[AI Doc Gen] Failed to write README.md:', writeErr.message);
+      }
+    }
+
     res.json(docs);
   } catch (err) {
     if (err.message.includes('No valid API keys')) {
-      return res.json({ readme: '# Offline', apiDocs: '# API Reference Offline' });
+      return res.json({ readme: '# Offline', apiDocs: '# API Reference Offline', apiEndpoints: [] });
     }
     res.status(500).json({ message: err.message });
   }
