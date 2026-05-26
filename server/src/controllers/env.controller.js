@@ -47,7 +47,7 @@ const setEnvVar = async (req, res) => {
     const envVar = await EnvVar.findOneAndUpdate(
       { project: project._id, key },
       { value: encryptedValue, isSecret },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     // Return without the encrypted value

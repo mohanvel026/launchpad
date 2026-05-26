@@ -146,7 +146,7 @@ const updateProject = async (req, res) => {
     const project = await Project.findOneAndUpdate(
       { _id: req.params.id, owner: req.user._id },
       updates,
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!project) return res.status(404).json({ message: 'Project not found' });
     res.json({ project });
