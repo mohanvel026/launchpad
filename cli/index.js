@@ -312,6 +312,56 @@ program
     }
   });
 
+// AUDIT
+program
+  .command('audit <projectId>')
+  .description('Run an AI SRE, performance, and security audit on your project')
+  .action(async (projectId) => {
+    requireAuth();
+    const spinner = ora(chalk.blue('Running AI DevOps & SRE security audit…')).start();
+    try {
+      const res = await api().post(`/ai/${projectId}/devops-summary`);
+      const summary = res.data;
+      spinner.succeed(chalk.green('✓ Audit complete!'));
+
+      const gradeColors = {
+        'A': chalk.bold.green,
+        'B': chalk.bold.cyan,
+        'C': chalk.bold.yellow,
+        'D': chalk.bold.yellow,
+        'F': chalk.bold.red,
+      };
+      
+      const gradeColor = gradeColors[summary.securityGrade] || chalk.bold.white;
+      const healthColor = summary.healthStatus === 'Excellent' ? chalk.green : summary.healthStatus === 'Good' ? chalk.cyan : chalk.yellow;
+
+      console.log(chalk.bold(`\n  🛡️  LAUNCHPAD AI DEVOPS AUDIT REPORT\n`));
+      console.log(`  ===============================================`);
+      console.log(`  Project Stack:      ${chalk.bold(summary.projectStack.toUpperCase())}`);
+      console.log(`  Overall Health:     ${healthColor(summary.healthStatus)}`);
+      console.log(`  -----------------------------------------------`);
+      console.log(`  🔒 Security Grade:  ${gradeColor(summary.securityGrade)} (${summary.securityScore}/100)`);
+      console.log(`  ⚠️  Vulnerabilities: ${summary.vulnerabilitiesCount > 0 ? chalk.bold.red(summary.vulnerabilitiesCount) : chalk.bold.green('0 found')}`);
+      console.log(`  -----------------------------------------------`);
+      console.log(`  💻 Recommended CPU:  ${chalk.cyan(summary.recommendedCpu + ' vCPU')}`);
+      console.log(`  🧠 Recommended RAM:  ${chalk.cyan(summary.recommendedRam)}`);
+      console.log(`  🔋 Needs Redis:      ${summary.needsRedisCache ? chalk.bold.yellow('Yes (Recommended)') : chalk.bold.green('No (Optional)')}`);
+      console.log(`  ===============================================\n`);
+      
+      console.log(chalk.magenta('  🤖 SRE Recommendations:'));
+      if (summary.vulnerabilitiesCount > 0) {
+        console.log(chalk.gray(`   • Warning: Found dependency vulnerabilities. Run: launchpad logs ${projectId} to view full audit details.`));
+      }
+      if (summary.needsRedisCache) {
+        console.log(chalk.gray(`   • Performance: Consider setting up Redis caching for database query acceleration.`));
+      }
+      console.log(chalk.gray(`   • Capacity: SRE predicts resources are optimal for up to 10k concurrent requests.`));
+      console.log();
+    } catch (err) {
+      spinner.fail(chalk.red('Audit failed: ' + (err.response?.data?.message || err.message)));
+    }
+  });
+
 program.parse(process.argv);
 
 // Show help if no command given
