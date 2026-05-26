@@ -10,7 +10,7 @@ const EnvVar     = require('../models/EnvVar.model');
 
 const { buildImage, runContainer, stopContainer } = require('../services/docker.service');
 const { detectStack, generateDockerfile }         = require('../services/stackDetector.service');
-const { analyzeError }                            = require('../services/ai.service');
+const { analyzeError, predictDeploymentHealth, summarizeBuild } = require('../services/ai.service');
 const { createNginxConfig }                       = require('../services/nginx.service');
 const { createSubdomain }                         = require('../services/cloudflare.service');
 const { provisionSSL }                            = require('../services/ssl.service');
@@ -198,6 +198,14 @@ buildQueue.process(async (job) => {
     fs.writeFileSync(path.join(repoDir, 'Dockerfile'), dockerfile);
     await log(`   ✅ Dockerfile generated for ${stack.toUpperCase()} environment (Internal Port: ${containerPort}).`);
 
+    // ── AI Pre-flight Health Check ──
+    const envVarKeys = rawEnvs.map(e => e.key);
+    const health = await predictDeploymentHealth(dockerfile, envVarKeys, stack);
+    if (health.willFail && health.confidence >= 70) {
+      await log(`   ⚠️  AI Pre-flight Warning (${health.confidence}% confidence): ${health.reason}`);
+      await log(`   💡 Suggestion: ${health.suggestion}`);
+    }
+
     // ── PHASE 4/5: Build & Run ──
     if (!isWindows) {
       // Build-time args for --build-arg injection
@@ -228,12 +236,15 @@ buildQueue.process(async (job) => {
         await log('   ✅ Build successful. Image tagged and ready for deployment.');
       } catch (buildErr) {
         const stderr = buildErr.stderr?.toString('utf-8') || buildErr.message || '';
-        const errorLines = stderr
-          .split('\n')
-          .filter(l => l.toLowerCase().includes('error') || l.includes('ERR'))
-          .slice(0, 15)
-          .join('\n');
-        await log(`   ❌ Build failed! Analyzing logs…\n${errorLines}`);
+        await log(`   ❌ Build failed! Analyzing logs…`);
+        // Use structured AI analysis
+        const diagnosis = await analyzeError(stderr, stack);
+        await log(`   🤖 AI Diagnosis: ${diagnosis.summary}`);
+        await log(`   🔍 Root Cause: ${diagnosis.cause}`);
+        await log(`   🛠️  Fix: ${diagnosis.fix}`);
+        if (diagnosis.commands?.length) {
+          await log(`   💻 Suggested commands:\n${diagnosis.commands.map(c => '      $ ' + c).join('\n')}`);
+        }
         throw new Error('Docker build failure');
       }
 
@@ -282,23 +293,59 @@ buildQueue.process(async (job) => {
         containerId = execSync(runCmd, { stdio: 'pipe' }).toString().trim();
         await log(`   ✅ Container started (ID: ${containerId.slice(0, 12)}) — verifying...`);
 
-        // Wait 4 seconds then confirm container is still running (catches immediate crashes)
-        await new Promise(r => setTimeout(r, 4000));
-        const state = safeExec(`docker inspect --format '{{.State.Status}}' ${containerId}`);
-        const status = state ? state.toString().trim() : 'unknown';
+        // ── Real HTTP Health Check with retries ──
+        // Give the app time to initialize (DB connections, env setup, etc.)
+        const maxAttempts = 8;
+        let appHealthy = false;
+        let lastStatus = 'unknown';
 
-        if (status !== 'running') {
-          // Grab container logs to help debug
-          const crashLogs = safeExec(`docker logs --tail 30 ${containerId}`) || '';
-          await log(`   ❌ Container exited immediately (status: ${status})`);
-          await log(`   📋 Container logs:\n${crashLogs.toString().slice(0, 800)}`);
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          await new Promise(r => setTimeout(r, attempt === 1 ? 5000 : 3000));
+
+          // First check container is still running (catches immediate exits)
+          const stateRaw = safeExec(`docker inspect --format '{{.State.Status}}' ${containerId}`);
+          lastStatus = stateRaw ? stateRaw.toString().trim() : 'unknown';
+
+          if (lastStatus !== 'running') break; // Container crashed — stop retrying
+
+          // Then do a real HTTP probe against the host port
+          const probe = safeExec(`curl -sf --max-time 4 http://127.0.0.1:${hostPort}/`);
+          if (probe !== null) {
+            appHealthy = true;
+            break;
+          }
+
+          await log(`   ⏳ Waiting for app to be ready... (attempt ${attempt}/${maxAttempts})`);
+        }
+
+        if (!appHealthy) {
+          // Collect container logs for diagnosis
+          const crashLogs = safeExec(`docker logs --tail 50 ${containerId} 2>&1`) || '';
+          const logText = crashLogs.toString().slice(0, 1200);
+
+          if (lastStatus !== 'running') {
+            await log(`   ❌ Container exited unexpectedly (status: ${lastStatus})`);
+          } else {
+            await log(`   ❌ App did not respond after ${maxAttempts} attempts — likely crashing inside container`);
+          }
+          await log(`   📋 Container logs:\n${logText}`);
+
+          // AI diagnosis on container logs
+          const diagnosis = await analyzeError(logText, stack);
+          await log(`   🤖 AI Diagnosis: ${diagnosis.summary}`);
+          await log(`   🔍 Root Cause: ${diagnosis.cause}`);
+          await log(`   🛠️  Fix: ${diagnosis.fix}`);
+          if (diagnosis.commands?.length) {
+            await log(`   💻 Suggested commands:\n${diagnosis.commands.map(c => '      $ ' + c).join('\n')}`);
+          }
+
           safeExec(`docker rm -f ${containerId}`);
-          throw new Error(`Container exited with status: ${status}`);
+          throw new Error('App health check failed after container started');
         }
 
         await log(`   ✅ Instance online and healthy (ID: ${containerId.slice(0, 12)})`);
       } catch (runErr) {
-        if (runErr.message.startsWith('Container exited')) throw runErr;
+        if (runErr.message.includes('health check failed') || runErr.message.includes('exited')) throw runErr;
         await log(`   ❌ docker run failed: ${runErr.message}`);
         throw new Error('Runtime execution failure');
       }
