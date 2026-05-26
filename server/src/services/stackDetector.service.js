@@ -227,8 +227,6 @@ COPY ${beDir}/ .
 
 # Copy frontend static build to backend's public directories for serving
 COPY --from=fe-builder /app/frontend/${feOut} ./public
-COPY --from=fe-builder /app/frontend/build ./public 2>/dev/null || true
-COPY --from=fe-builder /app/frontend/dist ./public 2>/dev/null || true
 
 ENV PORT=3000
 ENV NODE_ENV=production
