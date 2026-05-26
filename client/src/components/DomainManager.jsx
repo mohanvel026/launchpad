@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../lib/api';
 
 export default function DomainManager({ project }) {
@@ -7,6 +7,10 @@ export default function DomainManager({ project }) {
   const [ssl,          setSsl]          = useState(false);
   const [message,      setMessage]      = useState('');
   const [error,        setError]        = useState('');
+
+  useEffect(() => {
+    setCustomDomain(project.customDomain || '');
+  }, [project.customDomain]);
 
   const domain = import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io';
   const subUrl = `http://${project.subdomain}.${domain}`;
