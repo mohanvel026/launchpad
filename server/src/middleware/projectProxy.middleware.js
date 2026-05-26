@@ -53,6 +53,122 @@ const errorPage = (title, body) => `<!DOCTYPE html>
   <h1>🚀</h1><h2>${title}</h2><p>${body}</p>
 </div></body></html>`;
 
+const selfHealingPage = (host) => `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="3">
+  <title>Self-Healing Recovery — LaunchPad</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: radial-gradient(circle at center, #0f0f18 0%, #050508 100%);
+      color: #f8fafc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    .container {
+      background: rgba(18, 18, 30, 0.4);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 24px;
+      padding: 48px;
+      max-width: 500px;
+      text-align: center;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      position: relative;
+    }
+    .ring-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 32px;
+      position: relative;
+    }
+    .ring {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: 3px solid rgba(56, 189, 248, 0.1);
+      border-top-color: #38bdf8;
+      animation: spin 1s linear infinite;
+    }
+    .pulse-glow {
+      position: absolute;
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.2) 0%, transparent 70%);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    p {
+      color: #94a3b8;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .status-box {
+      background: rgba(56, 189, 248, 0.05);
+      border: 1px solid rgba(56, 189, 248, 0.15);
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-size: 0.85rem;
+      color: #38bdf8;
+      font-family: monospace;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #38bdf8;
+      box-shadow: 0 0 8px #38bdf8;
+      animation: blink 1.5s infinite;
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.3; }
+      50% { transform: scale(1.3); opacity: 0.8; }
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="ring-container">
+      <div class="pulse-glow"></div>
+      <div class="ring"></div>
+    </div>
+    <h1>Self-Healing App Recovery</h1>
+    <p>Your application at <code style="color: #e2e8f0; font-weight: 600;">${host}</code> went offline. LaunchPad SRE is automatically rebuilding and restarting the container.</p>
+    <div class="status-box">
+      <div class="status-dot"></div>
+      <span>Auto-restarting container... Reloading in 3s</span>
+    </div>
+  </div>
+</body>
+</html>`;
+
 // ── Middleware ─────────────────────────────────────────────────────────────────
 const projectProxyMiddleware = async (req, res, next) => {
   const host = (req.headers.host || '').toLowerCase().split(':')[0]; // strip port
@@ -106,13 +222,27 @@ const projectProxyMiddleware = async (req, res, next) => {
       console.error(`[proxy] ${subdomain}:${port} error:`, err.message);
       // Invalidate cache so next request re-checks the DB
       portCache.delete(subdomain);
-
+ 
       if (!res.headersSent) {
-        res.status(502).set('Content-Type', 'text/html').send(errorPage(
-          'Application Not Responding',
-          `Your app at <code style="color:#38bdf8">${host}</code> is not responding.<br>
-           It may still be starting up — try again in a few seconds.`
-        ));
+        // Asynchronously trigger self-healing restart of the docker container
+        Project.findOne({ subdomain }).then(async (project) => {
+          if (project && project.containerId) {
+            try {
+              const Docker = require('dockerode');
+              const docker = new Docker({ socketPath: '/var/run/docker.sock' });
+              const container = docker.getContainer(project.containerId);
+              const info = await container.inspect();
+              if (!info.State.Running) {
+                console.log(`[proxy SRE Self-Healing] Auto-starting stopped container ${project.containerId} for ${project.name}`);
+                await container.start();
+              }
+            } catch (restartErr) {
+              console.warn('[proxy SRE Self-Healing] Failed to auto-restart container:', restartErr.message);
+            }
+          }
+        }).catch(err => console.error('[proxy SRE Self-Healing] DB fetch failed:', err.message));
+
+        res.status(502).set('Content-Type', 'text/html').send(selfHealingPage(host));
       }
     });
 
