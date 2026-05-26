@@ -325,7 +325,9 @@ CMD ["nginx", "-g", "daemon off;"]`;
       const beLockStr = beLock ? ` ${beLock}` : '';
 
       const start = getStartCommand(path.join(repoPath, beDir), pm.name);
-      const runCmd = start.isScript ? `CMD ["${pm.name}", "start"]` : `CMD ["node", "${start.args[0]}"]`;
+      const backendCmd = start.isScript
+        ? `pm2 start ${pm.name} --name "backend" -- start`
+        : `pm2 start ${start.args[0]} --name "backend"`;
 
       return `# ── Stage 1: Build Frontend ──
 FROM node:20-alpine AS fe-builder
@@ -337,23 +339,27 @@ COPY ${feDir}/ .
 ${envArgs}
 RUN ${buildCmd} 2>/dev/null || npx vite build || true
 
-# ── Stage 2: Final single-process backend image ──
+# ── Stage 2: Final SRE dual-process container ──
 FROM node:20-alpine
-RUN apk add --no-cache curl tini
+RUN apk add --no-cache curl nginx tini
+RUN npm install -g pm2 --silent
+
 WORKDIR /app
 COPY ${beDir}/package*.json${beLockStr} ./
 RUN npm install --only=production --legacy-peer-deps 2>/dev/null || npm install --only=production || ${installCmd}
 COPY ${beDir}/ .
+# Copy built frontend to Nginx default html directory
+COPY --from=fe-builder /app/frontend/${feOut} /usr/share/nginx/html
 
-# Copy frontend static build to backend's public directories for serving
-COPY --from=fe-builder /app/frontend/${feOut} ./public
+# Write Nginx configuration with reverse proxy enabled for /api and /socket.io
+${nginxHeredocBlock(true)}
 
-ENV PORT=${containerPort}
+ENV PORT=4000
 ENV NODE_ENV=production
 EXPOSE ${containerPort}
 ${healthCheck}
 ENTRYPOINT ["/sbin/tini", "--"]
-${runCmd}`;
+CMD ["sh", "-c", "${backendCmd} && nginx -g 'daemon off;'"]`;
     }
 
     case 'node':
