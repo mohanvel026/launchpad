@@ -236,10 +236,11 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
     const b64Nginx   = Buffer.from(nginxConf).toString('base64');
     const b64Html    = Buffer.from(fallbackHtml).toString('base64');
 
-    // Single RUN command — no heredocs, no Docker parse errors
+    // Single RUN command — no heredocs, no xargs, works on all Alpine/BusyBox Docker versions
     return `RUN chmod -R 755 /usr/share/nginx/html && \\
-    MAIN_HTML=$(find /usr/share/nginx/html -name "index.html" | head -1 | xargs basename 2>/dev/null) && \\
-    if [ -z "$MAIN_HTML" ]; then MAIN_HTML=$(find /usr/share/nginx/html -name "*.html" | head -1 | xargs basename 2>/dev/null); fi && \\
+    _LP_F=$(find /usr/share/nginx/html -name "index.html" 2>/dev/null | head -1) && \\
+    if [ -z "$_LP_F" ]; then _LP_F=$(find /usr/share/nginx/html -name "*.html" 2>/dev/null | head -1); fi && \\
+    if [ -n "$_LP_F" ]; then MAIN_HTML=$(basename "$_LP_F"); else MAIN_HTML=""; fi && \\
     if [ -z "$MAIN_HTML" ]; then \\
         printf '%s' '${b64Html}' | base64 -d > /usr/share/nginx/html/index.html && \\
         MAIN_HTML="index.html"; \\
