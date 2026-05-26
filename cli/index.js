@@ -10,7 +10,7 @@ const path        = require('path');
 const fs          = require('fs');
 
 const config  = new Conf({ projectName: 'launchpad-cli' });
-const API_URL = process.env.LAUNCHPAD_API || 'https://api.launchpad.dev/api';
+const API_URL = process.env.LAUNCHPAD_API || 'http://129.159.22.142.nip.io/api';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
