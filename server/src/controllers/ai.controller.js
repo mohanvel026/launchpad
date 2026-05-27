@@ -255,6 +255,12 @@ const discoverEnv = async (req, res) => {
                     detectedKeys.add(m[1].toUpperCase());
                   }
                 }
+
+                // 5. Fallback SRE Audit: Extract hardcoded MongoDB connections or mongoose calls
+                if (content.includes('mongodb://') || content.includes('mongodb+srv://') || /mongoose\.connect|mongodb\.connect/i.test(content)) {
+                  detectedKeys.add('MONGODB_URI');
+                  detectedKeys.add('MONGO_URI');
+                }
               }
             } catch (fileErr) {
               console.warn(`[AI Env Discovery] Skipping file scan error on ${file}:`, fileErr.message);
