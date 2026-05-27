@@ -237,14 +237,14 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
     const b64Html    = Buffer.from(fallbackHtml).toString('base64');
 
     // Single RUN command — no heredocs, no xargs, works on all Alpine/BusyBox Docker versions
-    return `RUN chmod -R 755 /usr/share/nginx/html && \\
-    _LP_F=$(find /usr/share/nginx/html -name "index.html" 2>/dev/null | head -1) && \\
-    if [ -z "$_LP_F" ]; then _LP_F=$(find /usr/share/nginx/html -name "*.html" 2>/dev/null | head -1); fi && \\
-    if [ -n "$_LP_F" ]; then MAIN_HTML=$(basename "$_LP_F"); else MAIN_HTML=""; fi && \\
+    return `RUN chmod -R 755 /usr/share/nginx/html; \\
+    _LP_F=$(find /usr/share/nginx/html -name "index.html" 2>/dev/null | head -1); \\
+    if [ -z "$_LP_F" ]; then _LP_F=$(find /usr/share/nginx/html -name "*.html" 2>/dev/null | head -1); fi; \\
+    if [ -n "$_LP_F" ]; then MAIN_HTML=$(basename "$_LP_F"); else MAIN_HTML=""; fi; \\
     if [ -z "$MAIN_HTML" ]; then \\
-        printf '%s' '${b64Html}' | base64 -d > /usr/share/nginx/html/index.html && \\
+        printf '%s' '${b64Html}' | base64 -d > /usr/share/nginx/html/index.html; \\
         MAIN_HTML="index.html"; \\
-    fi && \\
+    fi; \\
     printf '%s' '${b64Nginx}' | base64 -d | sed "s|MAIN_HTML_PLACEHOLDER|$MAIN_HTML|g" > /etc/nginx/conf.d/default.conf`;
   };
 
