@@ -58,6 +58,11 @@ export default function ProjectDetail() {
   // Settings
   const [settings, setSettings] = useState({ installCommand: '', buildCommand: '', outputDir: '', branch: '' });
 
+  // SRE Container Limits
+  const [cpuLimit, setCpuLimit] = useState(0.5);
+  const [ramLimitMB, setRamLimitMB] = useState(256);
+  const [resizing, setResizing] = useState(false);
+
   const logsEndRef = useRef(null);
   const socketRef  = useRef(null);
   const pollRef    = useRef(null);
@@ -67,6 +72,8 @@ export default function ProjectDetail() {
       const r = await api.get(`/projects/${id}`);
       const p = r.data.project;
       setProject(p);
+      setCpuLimit(p.cpuLimit || 0.5);
+      setRamLimitMB(p.ramLimitMB || 256);
       setSettings({
         installCommand: p.installCommand || '',
         buildCommand:   p.buildCommand   || '',
@@ -242,6 +249,23 @@ export default function ProjectDetail() {
     if (!window.confirm(`Permanently delete "${project?.name}"? This cannot be undone.`)) return;
     await api.delete(`/projects/${id}`);
     navigate('/dashboard');
+  };
+
+  const handleResizeLimits = async () => {
+    setResizing(true);
+    setError('');
+    try {
+      const res = await api.post(`/projects/${id}/resize-limits`, {
+        cpuLimit: parseFloat(cpuLimit),
+        ramLimitMB: parseInt(ramLimitMB)
+      });
+      alert(res.data.message || 'Container capacity limits resized successfully!');
+      loadProject();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to apply new resource limits');
+    } finally {
+      setResizing(false);
+    }
   };
 
   if (!project) return (
@@ -493,6 +517,92 @@ export default function ProjectDetail() {
                   {!saveStatus && <div />}
                   <button className="lp-btn-primary" onClick={handleSaveSettings} disabled={saveStatus === 'saving'}>
                     {saveStatus === 'saving' ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="lp-card glass" style={{ 
+              padding: 28,
+              borderLeft: '4px solid var(--accent-secondary)',
+              background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.05) 0%, rgba(56, 189, 248, 0.02) 100%)'
+            }}>
+              <h3 style={{ fontSize: 16, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                ⚡ SRE Zero-Downtime Container Scaling
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>
+                Scale container capacity boundaries on-the-fly. This triggers an automated hot-swap rebuild with zero service downtime.
+              </p>
+
+              <div style={{ display: 'grid', gap: 24 }}>
+                <div>
+                  <div className="flex-between" style={{ marginBottom: 8 }}>
+                    <div className="lp-section-label" style={{ margin: 0 }}>CPU ALLOCATION</div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-secondary)' }}>
+                      {cpuLimit} Cores
+                    </span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0.1" 
+                    max="2.0" 
+                    step="0.1"
+                    value={cpuLimit} 
+                    onChange={e => setCpuLimit(parseFloat(e.target.value))}
+                    style={{ width: '100%', accentColor: 'var(--accent-secondary)' }}
+                  />
+                  <div className="flex-between" style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
+                    <span>0.1 Cores (Micro)</span>
+                    <span>1.0 Cores (Standard)</span>
+                    <span>2.0 Cores (Production)</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex-between" style={{ marginBottom: 8 }}>
+                    <div className="lp-section-label" style={{ margin: 0 }}>RAM ALLOCATION</div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-secondary)' }}>
+                      {ramLimitMB} MB
+                    </span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="128" 
+                    max="1024" 
+                    step="128"
+                    value={ramLimitMB} 
+                    onChange={e => setRamLimitMB(parseInt(e.target.value))}
+                    style={{ width: '100%', accentColor: 'var(--accent-secondary)' }}
+                  />
+                  <div className="flex-between" style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
+                    <span>128 MB</span>
+                    <span>512 MB</span>
+                    <span>1024 MB</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 8 }}>
+                  <button 
+                    className="lp-btn-primary" 
+                    onClick={handleResizeLimits} 
+                    disabled={resizing}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 8, 
+                      padding: '12px 24px',
+                      background: 'var(--accent-secondary)',
+                      boxShadow: '0 0 20px rgba(129, 140, 248, 0.2)'
+                    }}
+                  >
+                    {resizing ? (
+                      <>
+                        <div className="loading-spinner" style={{ width: 16, height: 16, borderColor: '#fff', borderTopColor: 'transparent' }} />
+                        Executing Hot-Swap...
+                      </>
+                    ) : (
+                      <>⚡ Apply SRE Resize Limits</>
+                    )}
                   </button>
                 </div>
               </div>
