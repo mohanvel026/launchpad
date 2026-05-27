@@ -203,9 +203,34 @@ function DocsReportWidget({ data }) {
 
   const copyReadme = () => {
     if (!data.readme) return;
-    navigator.clipboard.writeText(data.readme);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    // Use modern clipboard API with execCommand fallback for HTTP (non-HTTPS) sites
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(data.readme).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      }).catch(() => fallbackCopy());
+    } else {
+      fallbackCopy();
+    }
+  };
+
+  const fallbackCopy = () => {
+    const el = document.createElement('textarea');
+    el.value = data.readme;
+    el.style.position = 'fixed';
+    el.style.left = '-9999px';
+    el.style.top = '-9999px';
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    try {
+      document.execCommand('copy');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch (err) {
+      console.warn('Copy failed:', err);
+    }
+    document.body.removeChild(el);
   };
 
   return (
@@ -241,9 +266,22 @@ function DocsReportWidget({ data }) {
               {copied ? '✅ Copied!' : '📋 Copy File'}
             </button>
           </div>
-          <pre style={{ margin: 0, fontSize: 11.5, color: 'var(--text-dim)', background: '#050508', padding: 10, borderRadius: 6, maxHeight: 120, overflowY: 'auto', border: '1px solid rgba(255,255,255,0.03)' }}>
-            <code>{data.readme}</code>
-          </pre>
+          {/* Render README as formatted markdown preview */}
+          <div style={{ fontSize: 12.5, color: '#e2e8f0', lineHeight: 1.7, maxHeight: 320, overflowY: 'auto', padding: '4px 0' }}>
+            {data.readme.split('\n').map((line, i) => {
+              if (line.startsWith('# '))  return <div key={i} style={{ fontSize: 16, fontWeight: 800, color: '#fff', margin: '8px 0 4px' }}>{line.slice(2)}</div>;
+              if (line.startsWith('## ')) return <div key={i} style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-primary)', margin: '10px 0 4px', borderBottom: '1px solid rgba(56,189,248,0.15)', paddingBottom: 3 }}>{line.slice(3)}</div>;
+              if (line.startsWith('### ')) return <div key={i} style={{ fontSize: 12.5, fontWeight: 700, color: '#c084fc', margin: '6px 0 2px' }}>{line.slice(4)}</div>;
+              if (line.startsWith('```')) return <div key={i} style={{ background: '#050508', borderRadius: 6, padding: '2px 8px', fontFamily: 'monospace', color: '#38bdf8', fontSize: 11.5, margin: '2px 0', border: '1px solid rgba(255,255,255,0.04)' }}>{line}</div>;
+              if (line.startsWith('- ') || line.startsWith('* ')) return <div key={i} style={{ paddingLeft: 14, position: 'relative' }}>{'• ' + line.slice(2)}</div>;
+              if (line.startsWith('|')) return <div key={i} style={{ fontFamily: 'monospace', fontSize: 11.5, color: '#94a3b8', padding: '1px 0' }}>{line}</div>;
+              if (line.startsWith('> ')) return <div key={i} style={{ borderLeft: '3px solid var(--accent-primary)', paddingLeft: 10, color: '#94a3b8', margin: '4px 0' }}>{line.slice(2)}</div>;
+              if (line.trim() === '') return <div key={i} style={{ height: 6 }} />;
+              // Inline bold & code
+              const rendered = line.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#fff">$1</strong>').replace(/`(.+?)`/g, '<code style="background:rgba(56,189,248,0.1);color:#38bdf8;padding:1px 5px;border-radius:3px;font-size:11.5px">$1</code>');
+              return <div key={i} dangerouslySetInnerHTML={{ __html: rendered }} />;
+            })}
+          </div>
         </div>
       )}
     </div>
