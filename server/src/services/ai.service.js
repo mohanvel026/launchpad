@@ -67,39 +67,58 @@ const compressLogs = (raw = '', maxChars = CONFIG.MAX_LOG_CHARS) => {
     : filtered;
 };
 
-// ─── AI API Callers with Exponential Retry ─────────────────────────────────────
+// ─── Groq Key Pool: rotates across all configured keys on rate-limit hits ──────
+const getGroqKeyPool = () => {
+  const keys = [
+    process.env.GROQ_API_KEY,
+    process.env.GROQ_API_KEY_2,
+    process.env.GROQ_API_KEY_3,
+  ].filter(k => k && k !== 'placeholder' && k.length > 10);
+  return keys;
+};
 
-const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, attempt = 0) => {
-  if (!process.env.GROQ_API_KEY) throw new Error('GROQ_API_KEY not configured.');
-  try {
-    const res = await httpClient.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model: CONFIG.GROQ_MODEL,
-        max_tokens: maxTokens,
-        temperature: 0.2,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user',   content: userPrompt   },
-        ],
-        ...(isJson && { response_format: { type: 'json_object' } }),
-      },
-      { 
-        headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-        timeout: 4000 // Fast 4-second timeout to failover instantly if Groq is slow
+let groqKeyIndex = 0; // Round-robin cursor across the key pool
+
+const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false) => {
+  const keyPool = getGroqKeyPool();
+  if (keyPool.length === 0) throw new Error('No GROQ_API_KEY configured.');
+
+  // Try each key in the pool before giving up
+  for (let attempt = 0; attempt < keyPool.length; attempt++) {
+    const key = keyPool[groqKeyIndex % keyPool.length];
+    groqKeyIndex = (groqKeyIndex + 1) % keyPool.length; // Advance cursor for next call
+
+    try {
+      const res = await httpClient.post(
+        'https://api.groq.com/openai/v1/chat/completions',
+        {
+          model: CONFIG.GROQ_MODEL,
+          max_tokens: maxTokens,
+          temperature: 0.2,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user',   content: userPrompt   },
+          ],
+          ...(isJson && { response_format: { type: 'json_object' } }),
+        },
+        {
+          headers: { Authorization: `Bearer ${key}` },
+          timeout: 4000
+        }
+      );
+      return res.data.choices[0].message.content;
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 429 && attempt < keyPool.length - 1) {
+        // Rate limited on this key — rotate to next key immediately
+        console.warn(`[Groq] Key #${attempt + 1} rate-limited (429), rotating to next key...`);
+        continue;
       }
-    );
-    return res.data.choices[0].message.content;
-  } catch (err) {
-    // Retry on rate-limit (429) or server errors (5xx) with exponential backoff + jitter
-    if (attempt < CONFIG.MAX_RETRIES && (err.response?.status === 429 || err.response?.status >= 500)) {
-      const delay = CONFIG.RETRY_BASE_MS * Math.pow(2, attempt) + Math.random() * 200;
-      console.warn(`[Groq] Retry ${attempt + 1} in ${Math.round(delay)}ms...`);
-      await sleep(delay);
-      return callGroq(systemPrompt, userPrompt, maxTokens, isJson, attempt + 1);
+      // For 5xx or last key exhausted — rethrow to trigger Gemini failover
+      throw err;
     }
-    throw err;
   }
+  throw new Error('All Groq keys exhausted or rate-limited.');
 };
 
 const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, attempt = 0) => {
