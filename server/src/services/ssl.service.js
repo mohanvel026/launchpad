@@ -1,20 +1,27 @@
 const { execSync } = require('child_process');
 const fs           = require('path');
 
-// Provision an SSL certificate for a subdomain using certbot
+// Provision an SSL certificate for a subdomain and optional custom domain using certbot
 // Requires: certbot installed on the Oracle VM, port 80 open
-const provisionSSL = (subdomain) => {
+const provisionSSL = (subdomain, customDomain = null) => {
   const domain    = process.env.CLOUDFLARE_DOMAIN || 'launchpad.dev';
   const fullDomain = `${subdomain}.${domain}`;
   const email     = process.env.SSL_EMAIL || process.env.SMTP_USER;
 
   try {
     const emailArg = (email && email !== 'placeholder') ? `-m ${email}` : '--register-unsafely-without-email';
+    
+    // Add custom domain to certbot request if provided for multi-domain SSL coverage
+    let domainArgs = `-d ${fullDomain}`;
+    if (customDomain) {
+      domainArgs += ` -d ${customDomain}`;
+    }
+
     execSync(
-      `certbot certonly --nginx -d ${fullDomain} --non-interactive --agree-tos ${emailArg} --redirect`,
+      `certbot certonly --nginx ${domainArgs} --non-interactive --agree-tos ${emailArg} --redirect --expand`,
       { stdio: 'pipe' }
     );
-    console.log(`SSL certificate provisioned for ${fullDomain}`);
+    console.log(`SSL certificate provisioned for ${fullDomain}${customDomain ? ' and ' + customDomain : ''}`);
     return true;
   } catch (err) {
     // In dev mode certbot won't exist — log and continue, don't crash the deploy

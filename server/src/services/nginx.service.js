@@ -16,10 +16,10 @@ try {
 }
 
 // ─── Templates ────────────────────────────────────────────────────────────────
-const httpTemplate = (subdomain, port) => `
+const httpTemplate = (subdomain, port, customDomain = null) => `
 server {
     listen 80;
-    server_name ${subdomain}.${DOMAIN};
+    server_name ${subdomain}.${DOMAIN}${customDomain ? ' ' + customDomain : ''};
 
     location /healthz {
         return 200 'ok';
@@ -41,16 +41,16 @@ server {
 }
 `;
 
-const httpsTemplate = (subdomain, port) => `
+const httpsTemplate = (subdomain, port, customDomain = null) => `
 server {
     listen 80;
-    server_name ${subdomain}.${DOMAIN};
+    server_name ${subdomain}.${DOMAIN}${customDomain ? ' ' + customDomain : ''};
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name ${subdomain}.${DOMAIN};
+    server_name ${subdomain}.${DOMAIN}${customDomain ? ' ' + customDomain : ''};
 
     ssl_certificate     /etc/letsencrypt/live/${subdomain}.${DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${subdomain}.${DOMAIN}/privkey.pem;
@@ -83,8 +83,8 @@ server {
 `;
 
 // ─── Core function ─────────────────────────────────────────────────────────────
-const createNginxConfig = (subdomain, port, useSSL = false) => {
-  const config  = useSSL ? httpsTemplate(subdomain, port) : httpTemplate(subdomain, port);
+const createNginxConfig = (subdomain, port, useSSL = false, customDomain = null) => {
+  const config  = useSSL ? httpsTemplate(subdomain, port, customDomain) : httpTemplate(subdomain, port, customDomain);
   const lpFile  = path.join(LP_NGINX_DIR, `${subdomain}.conf`);
   const sysFile = path.join(NGINX_SITES,  `${subdomain}.conf`);
 
@@ -120,20 +120,20 @@ const createNginxConfig = (subdomain, port, useSSL = false) => {
 
   try {
     execSync('sudo nginx -s reload', { stdio: 'pipe' });
-    console.log(`[nginx] Reloaded OK: ${subdomain}.${DOMAIN} -> :${port} (SSL: ${useSSL})`);
+    console.log(`[nginx] Reloaded OK: ${subdomain}.${DOMAIN}${customDomain ? ' (custom: ' + customDomain + ')' : ''} -> :${port} (SSL: ${useSSL})`);
   } catch (reloadErr) {
     console.error(`[nginx] Reload failed:`, reloadErr.message.slice(0, 200));
   }
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const upgradeToHTTPS  = (subdomain, port) => createNginxConfig(subdomain, port, true);
+const upgradeToHTTPS  = (subdomain, port, customDomain = null) => createNginxConfig(subdomain, port, true, customDomain);
 
-const updateNginxPort = (subdomain, newPort) => {
+const updateNginxPort = (subdomain, newPort, customDomain = null) => {
   const useSSL = fs.existsSync(
     `/etc/letsencrypt/live/${subdomain}.${DOMAIN}/fullchain.pem`
   );
-  createNginxConfig(subdomain, newPort, useSSL);
+  createNginxConfig(subdomain, newPort, useSSL, customDomain);
 };
 
 const removeNginxConfig = (subdomain) => {

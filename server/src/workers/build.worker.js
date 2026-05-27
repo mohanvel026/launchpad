@@ -461,8 +461,8 @@ buildQueue.process(async (job) => {
       }
 
       await log('🌐 PHASE 7: Updating routing engine…');
-      // Write nginx config for this subdomain (used as fallback)
-      createNginxConfig(project.subdomain, hostPort, false);
+      // Write nginx config for this subdomain and custom domain if present
+      createNginxConfig(project.subdomain, hostPort, false, project.customDomain);
 
       const { invalidateProjectCache } = require('../middleware/projectProxy.middleware');
       invalidateProjectCache(project.subdomain);
@@ -479,10 +479,10 @@ buildQueue.process(async (job) => {
         }
 
         setTimeout(async () => {
-          const ok = provisionSSL(project.subdomain);
+          const ok = provisionSSL(project.subdomain, project.customDomain);
           if (ok) {
             const { upgradeToHTTPS } = require('../services/nginx.service');
-            upgradeToHTTPS(project.subdomain, hostPort);
+            upgradeToHTTPS(project.subdomain, hostPort, project.customDomain);
             await log('   🔒 SSL certificate provisioned. HTTP → HTTPS upgrade complete.');
           }
         }, 15_000);

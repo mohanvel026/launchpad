@@ -19,8 +19,11 @@ const addCustomDomainToProject = async (req, res) => {
 
     await Project.findByIdAndUpdate(project._id, { customDomain });
 
+    // Rewrite Nginx configuration to support the custom domain immediately
+    updateNginxPort(project.subdomain, project.port, customDomain.trim());
+
     res.json({
-      message: 'Custom domain registered. Point your domain CNAME to your subdomain, then verify.',
+      message: 'Custom domain registered and proxy config updated. Point your domain CNAME to your subdomain, then verify.',
       customDomain,
       cname:   `${project.subdomain}.${process.env.CLOUDFLARE_DOMAIN}`,
       dnsId,
@@ -31,20 +34,20 @@ const addCustomDomainToProject = async (req, res) => {
 };
 
 // POST /api/domains/:projectId/ssl
-// Provisions a Let's Encrypt cert for the project subdomain
+// Provisions a Let's Encrypt cert for the project subdomain and custom domain
 const provisionSSLForProject = async (req, res) => {
   try {
     const project = await Project.findOne({ _id: req.params.projectId, owner: req.user._id });
     if (!project) return res.status(404).json({ message: 'Project not found' });
     if (project.status !== 'live') return res.status(400).json({ message: 'Project must be live to provision SSL' });
 
-    // Run certbot (takes 5-15 seconds) — do it synchronously here so the client gets the result
-    const success = provisionSSL(project.subdomain);
+    // Run certbot (takes 5-15 seconds) to provision multi-domain SSL for both subdomain and custom domain
+    const success = provisionSSL(project.subdomain, project.customDomain);
 
     if (success) {
-      // Rewrite the nginx config with HTTPS blocks
-      upgradeToHTTPS(project.subdomain, project.port);
-      res.json({ message: `SSL certificate provisioned for ${project.subdomain}.${process.env.CLOUDFLARE_DOMAIN}` });
+      // Rewrite the nginx config with HTTPS blocks and custom domain routing
+      upgradeToHTTPS(project.subdomain, project.port, project.customDomain);
+      res.json({ message: `SSL certificate provisioned successfully for ${project.subdomain}.${process.env.CLOUDFLARE_DOMAIN}${project.customDomain ? ' and ' + project.customDomain : ''}` });
     } else {
       res.status(500).json({ message: 'SSL provisioning failed — check server logs' });
     }
