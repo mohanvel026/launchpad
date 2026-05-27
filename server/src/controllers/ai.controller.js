@@ -197,14 +197,18 @@ const discoverEnv = async (req, res) => {
                 if (file !== 'node_modules' && file !== '.git' && file !== 'dist' && file !== 'build') {
                   readFilesRecursively(fullPath, depth + 1);
                 }
-              } else if (/\.(js|ts|py|json|env|config|env\.example)$/i.test(file)) {
+              } else if (/\.(js|jsx|ts|tsx|py|json|config)$/i.test(file) || file.toLowerCase().includes('env')) {
                 const content = fs.readFileSync(fullPath, 'utf8');
                 
-                // 1. Extract process.env.XYZ
-                const nodeMatches = content.matchAll(/process\.env\.([A-Z_0-9]+)/g);
+                // 1. Extract process.env.xyz (case-insensitive for variable names)
+                const nodeMatches = content.matchAll(/process\.env\.([a-zA-Z_0-9]+)/g);
                 for (const m of nodeMatches) {
-                  if (m[1] && !['NODE_ENV', 'PORT', 'PATH', 'HOME'].includes(m[1])) {
-                    detectedKeys.add(m[1]);
+                  if (m[1]) {
+                    const upper = m[1].toUpperCase();
+                    if (!['NODE_ENV', 'PORT', 'PATH', 'HOME'].includes(upper)) {
+                      detectedKeys.add(m[1]);
+                      detectedKeys.add(upper);
+                    }
                   }
                 }
 
@@ -214,31 +218,42 @@ const discoverEnv = async (req, res) => {
                   if (dm[1]) {
                     const keys = dm[1].split(',').map(k => k.trim());
                     keys.forEach(k => {
-                      if (k && /^[A-Z_0-9]+$/.test(k) && !['NODE_ENV', 'PORT', 'PATH', 'HOME'].includes(k)) {
-                        detectedKeys.add(k);
+                      if (k && /^[a-zA-Z_0-9]+$/.test(k)) {
+                        const upper = k.toUpperCase();
+                        if (!['NODE_ENV', 'PORT', 'PATH', 'HOME'].includes(upper)) {
+                          detectedKeys.add(k);
+                          detectedKeys.add(upper);
+                        }
                       }
                     });
                   }
                 }
 
-                // 3. Extract standard .env key=value pairs
-                if (file.includes('env')) {
+                // 3. Extract standard .env key=value pairs (supports mixed-case and all .env.local/development files)
+                if (file.toLowerCase().includes('env')) {
                   const lines = content.split('\n');
                   lines.forEach(line => {
                     const clean = line.trim();
                     if (clean && !clean.startsWith('#') && clean.includes('=')) {
                       const key = clean.split('=')[0].trim();
-                      if (/^[A-Z_0-9]+$/.test(key) && !['NODE_ENV', 'PORT'].includes(key)) {
-                        detectedKeys.add(key);
+                      if (/^[a-zA-Z_0-9]+$/.test(key)) {
+                        const upper = key.toUpperCase();
+                        if (!['NODE_ENV', 'PORT'].includes(upper)) {
+                          detectedKeys.add(key);
+                          detectedKeys.add(upper);
+                        }
                       }
                     }
                   });
                 }
 
-                // 4. Extract Python os.environ.get('XYZ') or os.environ["XYZ"]
-                const pyMatches = content.matchAll(/os\.environ(?:\[['"]|\.get\(['"])([A-Z_0-9]+)/g);
+                // 4. Extract Python os.environ.get('xyz') or os.environ["xyz"]
+                const pyMatches = content.matchAll(/os\.environ(?:\[['"]|\.get\(['"])([a-zA-Z_0-9]+)/g);
                 for (const m of pyMatches) {
-                  if (m[1]) detectedKeys.add(m[1]);
+                  if (m[1]) {
+                    detectedKeys.add(m[1]);
+                    detectedKeys.add(m[1].toUpperCase());
+                  }
                 }
               }
             } catch (fileErr) {
