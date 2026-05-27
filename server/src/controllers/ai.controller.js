@@ -728,6 +728,65 @@ const devopsSummary = async (req, res) => {
   }
 };
 
+// ─── POST /api/ai/:projectId/traffic-insights ────────────────────────────────
+const analyzeTrafficInsights = async (req, res) => {
+  try {
+    checkApiKeys();
+
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    // Retrieve active edge proxy traffic metrics
+    const { getAnalytics } = require('../services/analytics.service');
+    let trafficAnalytics = { totalVisits: 0, totalErrors: 0, avgResponseTime: 0, uptime: '100%', days: [], logs: [], routes: [] };
+    try {
+      trafficAnalytics = await getAnalytics(project._id.toString());
+    } catch (analyticsErr) {
+      console.warn('[AI Traffic Insights] Failed to get project analytics:', analyticsErr.message);
+    }
+
+    const totalVisits = trafficAnalytics.totalVisits || 0;
+    const avgResponseTime = trafficAnalytics.avgResponseTime || 0;
+    const totalErrors = trafficAnalytics.totalErrors || 0;
+    const errorRate = totalVisits > 0 ? ((totalErrors / totalVisits) * 100).toFixed(1) : '0.0';
+
+    const systemPrompt = `You are LaunchPad SRE Traffic Auditor, an elite systems observability AI.
+Your task is to analyze edge traffic request logs, latencies, error distributions, and routing trends for a deployed application.
+Generate a comprehensive, action-backed SRE Traffic Insights report in clean GitHub Flavored Markdown.
+Your tone should be highly professional, technical, direct, and authoritative.
+
+Structure your markdown report exactly with the following sections (use bold titles and styled metrics):
+1. **📊 Executive Traffic Summary**: Summarize the active request volume, average latency, and health error ratios.
+2. **⚡ Performance & Latency Diagnostics**: Assess whether the current avg response speed (${avgResponseTime}ms) is optimal for the stack (${project.stack || 'unknown'}), highlighting any bottlenecks.
+3. **🛡️ Security & Anomaly Scan**: Scans recent request log IPs and endpoints for malicious or abnormal behavior (e.g. DDOS, brute-forcing, extreme scraping spikes).
+4. **🛠️ Actionable SRE Tuning Plan**: Outline concrete optimization steps (e.g. gzip compression, static assets CDN caching, rate limiting paths).
+
+Use clear bullets, tables, and distinct callouts. Provide exact Nginx or configuration adjustments when recommending updates.`;
+
+    const userPrompt = `Project Name: ${project.name}
+Framework Stack: ${project.stack}
+Active Telemetry Snapshot:
+- Total Traffic: ${totalVisits} requests
+- Average Latency: ${avgResponseTime}ms
+- Critical Errors Count: ${totalErrors}
+- Error Rate: ${errorRate}%
+- Top Routing Endpoints Hits: ${JSON.stringify(trafficAnalytics.routes || [])}
+- Recent Edge Ingress Access Logs (Last 20): ${JSON.stringify(trafficAnalytics.logs || [])}
+
+Provide your SRE Traffic Insights audit now:`;
+
+    const reply = await callAI(systemPrompt, userPrompt, 1200, false);
+    if (!reply) throw new Error('AI failed to audit edge traffic.');
+
+    res.json({ reply });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   chatWithAI,
   suggestFix,
@@ -739,4 +798,5 @@ module.exports = {
   generateDocs,
   auditSecurity,
   devopsSummary,
+  analyzeTrafficInsights,
 };

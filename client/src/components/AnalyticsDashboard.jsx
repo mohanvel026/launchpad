@@ -38,6 +38,8 @@ function StatCard({ label, value, sub, color = 'var(--accent-primary)' }) {
 export default function AnalyticsDashboard({ projectId }) {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
+  const [aiReport, setAiReport] = useState('');
+  const [generatingAi, setGeneratingAi] = useState(false);
 
   useEffect(() => {
     const loadData = () => {
@@ -50,6 +52,18 @@ export default function AnalyticsDashboard({ projectId }) {
     const interval = setInterval(loadData, 5000); // 5-second live polling
     return () => clearInterval(interval);
   }, [projectId]);
+
+  const handleGenerateAI = async () => {
+    setGeneratingAi(true);
+    try {
+      const res = await api.post(`/ai/${projectId}/traffic-insights`);
+      setAiReport(res.data.reply);
+    } catch (e) {
+      alert('Failed to generate SRE traffic insights: ' + (e.response?.data?.message || e.message));
+    } finally {
+      setGeneratingAi(false);
+    }
+  };
 
   const handleReset = async () => {
     if (!window.confirm('Reset all analytics for this project? This action is irreversible.')) return;
@@ -86,6 +100,73 @@ export default function AnalyticsDashboard({ projectId }) {
         <StatCard label="Response Latency"   value={`${a?.avgResponseTime || 0}ms`}            color="var(--accent-secondary)" sub="Network Average" />
         <StatCard label="Error Threshold"    value={`${errorRate}%`}                           color={parseFloat(errorRate) > 5 ? 'var(--accent-danger)' : 'var(--accent-success)'} />
         <StatCard label="Critical Errors"    value={a?.totalErrors || 0}                       color="var(--accent-danger)" />
+      </div>
+
+      {/* ── AI Edge Traffic Auditor Card ── */}
+      <div className="lp-card glass" style={{ 
+        padding: 32, 
+        borderLeft: '4px solid var(--accent-primary)',
+        background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, rgba(129, 140, 248, 0.02) 100%)'
+      }}>
+        <div className="flex-between" style={{ gap: 24, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+              🧠 AI Traffic & Security Auditor
+            </h3>
+            <p className="text-muted" style={{ margin: '6px 0 0', fontSize: 13 }}>
+              Audit your edge proxy traffic distributions, request latencies, and scan for malicious DDoS or IP access anomalies using LaunchPad SRE AI.
+            </p>
+          </div>
+          <button 
+            onClick={handleGenerateAI} 
+            disabled={generatingAi} 
+            className="lp-btn-primary" 
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 8, 
+              padding: '12px 24px', 
+              whiteSpace: 'nowrap',
+              boxShadow: '0 0 20px rgba(56, 189, 248, 0.2)'
+            }}
+          >
+            {generatingAi ? (
+              <>
+                <div className="loading-spinner" style={{ width: 16, height: 16, borderColor: '#fff', borderTopColor: 'transparent' }} />
+                Auditing Traffic Patterns...
+              </>
+            ) : (
+              <>🤖 Generate AI SRE Traffic Audit</>
+            )}
+          </button>
+        </div>
+
+        {aiReport && (
+          <div className="fade-in" style={{ 
+            marginTop: 28, 
+            padding: 24, 
+            background: 'rgba(0,0,0,0.2)', 
+            borderRadius: 12, 
+            border: '1px solid rgba(255,255,255,0.05)',
+            fontSize: 14,
+            lineHeight: '1.7',
+            color: '#e2e8f0',
+            whiteSpace: 'pre-line'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12 }}>
+              <strong style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-primary)' }}>
+                🛡️ AI Edge Traffic Insights Report
+              </strong>
+              <button 
+                onClick={() => setAiReport('')} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}
+              >
+                Clear Report
+              </button>
+            </div>
+            {aiReport}
+          </div>
+        )}
       </div>
 
       {/* Traffic Flow Chart */}

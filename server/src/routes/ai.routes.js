@@ -10,7 +10,8 @@ const {
   predictResources,
   generateDocs,
   auditSecurity,
-  devopsSummary
+  devopsSummary,
+  analyzeTrafficInsights,
 } = require('../controllers/ai.controller');
 
 const router = express.Router();
@@ -44,5 +45,8 @@ router.post('/:projectId/audit-security', protect, auditSecurity);
 
 // POST /api/ai/:projectId/devops-summary — fetch aggregate single-endpoint health and capacity overview
 router.post('/:projectId/devops-summary', protect, devopsSummary);
+
+// POST /api/ai/:projectId/traffic-insights — generate smart edge traffic, routing and IP anomaly audit reports
+router.post('/:projectId/traffic-insights', protect, analyzeTrafficInsights);
 
 module.exports = router;
