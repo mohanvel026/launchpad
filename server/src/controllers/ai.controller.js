@@ -71,12 +71,17 @@ CRITICAL FORMATTING INSTRUCTIONS:
 4. Encapsulate all command-line fixes or file modifications inside code blocks (e.g. \`\`\`bash ... \`\`\` or \`\`\`json ... \`\`\`).
 5. Highlight files or keywords using inline code (e.g. \`package.json\`).`;
 
-    // Map frontend chat history format to standard user/system prompts
     const chatHistory = history.map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`).join('\n');
     const userPromptWithHistory = `${chatHistory}\nUser: ${message}`;
 
     const reply = await callAI(systemPrompt, userPromptWithHistory, 800, false);
-    if (!reply) throw new Error('AI service failed to respond.');
+
+    // Return a friendly in-chat message instead of a 500 when AI is temporarily unavailable
+    if (!reply) {
+      return res.json({
+        reply: '⚠️ **AI temporarily rate-limited.** Both Gemini and Groq are cooling down.\n\nPlease wait **20–30 seconds** and try again. This happens when many AI scans run in quick succession. The service will recover automatically.'
+      });
+    }
 
     res.json({ reply });
   } catch (err) {
@@ -87,7 +92,8 @@ CRITICAL FORMATTING INSTRUCTIONS:
         reply: "Sorry, I can't chat right now! 🤖\n\nTo activate me, please add a `GEMINI_API_KEY` or `GROQ_API_KEY` to your `server/.env` file and restart the server.\n\n*(Tip: Both are completely FREE to get!)*"
       });
     }
-    res.status(500).json({ message: 'AI assistant unavailable: ' + errMsg });
+    // Return graceful in-chat error instead of 500
+    return res.json({ reply: `❌ **System error:** ${errMsg}\n\nPlease try again in a moment.` });
   }
 };
 
