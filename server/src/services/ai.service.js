@@ -145,23 +145,24 @@ const callAI = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false)
   }
   lastRequestTime = Date.now();
 
+  // Try Gemini first as it is highly stable, free, and has an active key in .env
   try {
-    return await callGroq(systemPrompt, userPrompt, maxTokens, isJson);
-  } catch (groqErr) {
-    const status = groqErr.response?.status;
-    console.warn(formatApiError('Groq', groqErr));
+    return await callGemini(systemPrompt, userPrompt, maxTokens, isJson);
+  } catch (geminiErr) {
+    const status = geminiErr.response?.status;
+    console.warn(formatApiError('Gemini', geminiErr));
 
     // 400-499 errors (except 429) are client faults — failover won't help
     if (status >= 400 && status < 500 && status !== 429) {
-      console.error('[AI] Unrecoverable client error, skipping failover.');
+      console.error('[AI] Unrecoverable Gemini client error, skipping failover.');
       return null;
     }
 
-    console.info('[AI] Failing over to Gemini...');
+    console.info('[AI] Failing over to Groq...');
     try {
-      return await callGemini(systemPrompt, userPrompt, maxTokens, isJson);
-    } catch (geminiErr) {
-      console.error(formatApiError('Gemini', geminiErr));
+      return await callGroq(systemPrompt, userPrompt, maxTokens, isJson);
+    } catch (groqErr) {
+      console.error(formatApiError('Groq', groqErr));
       return null;
     }
   }
