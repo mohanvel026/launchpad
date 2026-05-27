@@ -843,6 +843,64 @@ If the application is secure, return score: 100, securityGrade: 'A+' and issues:
   }
 };
 
+/**
+ * Analyzes live container CPU/RAM metrics history and web traffic latency analytics.
+ * Returns sizing recommendations, anomalies, and active scaling advice.
+ */
+const analyzeTelemetryAndPredictScaling = async (metricsSnapshot, metricsHistory = [], trafficAnalytics, stack = 'unknown') => {
+  const systemPrompt = `You are an expert SRE Telemetry Observer and Capacity Architect.
+Analyze the live system telemetry data (CPU/RAM snapshots, rolling metric history, web latency, error rates, and traffic volume) to audit health anomalies and suggest size scaling optimizations.
+
+Respond ONLY with a valid JSON object matching this exact schema:
+{
+  "cpuUsageAnalysis": "One sentence describing active CPU loads and throttling observations.",
+  "ramUsageAnalysis": "One sentence describing RAM limits and leak vulnerability (e.g. constant memory climb with no drops).",
+  "anomalyAlerts": [
+    "Alert if CPU is >80%, RAM is >85%, or response latency is over 500ms. Otherwise empty array."
+  ],
+  "predictedGrowth": "Forecast of resources/sizing needs based on traffic volume.",
+  "recommendedCpu": "OCPU recommendation (e.g. '0.25', '0.5', '1.0').",
+  "recommendedRam": "RAM recommendation in MB (e.g. '256', '512', '1024').",
+  "scalingAdvice": [
+    "One active sizing or caching advice (e.g. 'Add Redis buffering to drop latency', 'Scale up RAM allocation')."
+  ]
+}
+
+Do not include markdown blocks or extra text around the JSON object.`;
+
+  const inputTelemetry = {
+    stack,
+    metricsSnapshot,
+    metricsHistorySummary: metricsHistory.slice(-10).map(m => `CPU:${m.cpu}%, RAM:${m.memMB}MB`).join(' -> '),
+    trafficAnalyticsSummary: {
+      totalVisits: trafficAnalytics.totalVisits || 0,
+      totalErrors: trafficAnalytics.totalErrors || 0,
+      avgResponseTime: `${trafficAnalytics.avgResponseTime || 0}ms`,
+      uptime: trafficAnalytics.uptime || '100%'
+    }
+  };
+
+  const raw = await callAI(systemPrompt, JSON.stringify(inputTelemetry), 800, true);
+  if (!raw) return { cpuUsageAnalysis: 'Telemetry offline.', ramUsageAnalysis: 'Telemetry offline.', anomalyAlerts: [], predictedGrowth: 'Not available.', recommendedCpu: '0.5', recommendedRam: '256', scalingAdvice: [] };
+
+  try {
+    const cleanedJson = cleanJson(raw);
+    const parsed = JSON.parse(cleanedJson);
+    return {
+      cpuUsageAnalysis: parsed.cpuUsageAnalysis || 'CPU usage looks normal.',
+      ramUsageAnalysis: parsed.ramUsageAnalysis || 'Memory footprints look healthy.',
+      anomalyAlerts: Array.isArray(parsed.anomalyAlerts) ? parsed.anomalyAlerts : [],
+      predictedGrowth: parsed.predictedGrowth || 'Steady traffic capacity expected.',
+      recommendedCpu: parsed.recommendedCpu || '0.5',
+      recommendedRam: parsed.recommendedRam || '256',
+      scalingAdvice: Array.isArray(parsed.scalingAdvice) ? parsed.scalingAdvice : []
+    };
+  } catch (err) {
+    console.error('[AI Telemetry Analyzer] JSON parse failed:', err.message);
+    return { cpuUsageAnalysis: 'Analyzed with standard parameters.', ramUsageAnalysis: 'Analyzed with standard parameters.', anomalyAlerts: [], predictedGrowth: 'Steady.', recommendedCpu: '0.5', recommendedRam: '256', scalingAdvice: [] };
+  }
+};
+
 // ─── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
   callAI,
@@ -857,4 +915,5 @@ module.exports = {
   predictResourceRequirements,
   generateDocsAndReadme,
   auditSecurityAndDependencies,
+  analyzeTelemetryAndPredictScaling,
 };

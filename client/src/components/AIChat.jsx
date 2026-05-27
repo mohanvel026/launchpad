@@ -343,6 +343,65 @@ function LogsReportWidget({ data }) {
   );
 }
 
+// ─── 6. AI Capacity Telemetry SRE Widget ───
+function TelemetryReportWidget({ data }) {
+  const alerts = data.anomalyAlerts || [];
+  const advice = data.scalingAdvice || [];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 12 }}>
+      {/* Metrics Alerts Callout */}
+      {alerts.length > 0 ? (
+        <div style={{ padding: 12, borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontWeight: 700, fontSize: 12 }}>⚠️ ACTIVE CAPACITY ALERTS</span>
+          {alerts.map((a, i) => (
+            <div key={i} style={{ fontSize: 11.5 }}>• {a}</div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ padding: 10, borderRadius: 8, background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', color: '#34d399', fontSize: 12, fontWeight: 600 }}>
+          ✅ Telemetry Scan Nominal: No active memory leaks or CPU throttling detected.
+        </div>
+      )}
+
+      {/* Telemetry Analysis */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5, lineHeight: 1.5, background: 'rgba(255,255,255,0.01)', padding: 12, borderRadius: 10, border: '1px solid rgba(255,255,255,0.04)' }}>
+        <div>
+          <span style={{ color: 'var(--text-muted)' }}>⚡ CPU Footprint:</span> <span style={{ color: '#fff' }}>{data.cpuUsageAnalysis}</span>
+        </div>
+        <div>
+          <span style={{ color: 'var(--text-muted)' }}>🧠 RAM Footprint:</span> <span style={{ color: '#fff' }}>{data.ramUsageAnalysis}</span>
+        </div>
+        <div>
+          <span style={{ color: 'var(--text-muted)' }}>📈 Traffic Forecast:</span> <span style={{ color: '#fff' }}>{data.predictedGrowth}</span>
+        </div>
+      </div>
+
+      {/* Recommended Sizing Cards */}
+      <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ flex: 1, padding: 12, borderRadius: 8, background: 'rgba(56,189,248,0.03)', border: '1px solid rgba(56,189,248,0.1)', textAlign: 'center' }}>
+          <span style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--accent-primary)', display: 'block', marginBottom: 4 }}>Recommended CPU</span>
+          <span style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{data.recommendedCpu} OCPU</span>
+        </div>
+        <div style={{ flex: 1, padding: 12, borderRadius: 8, background: 'rgba(168,85,247,0.03)', border: '1px solid rgba(168,85,247,0.1)', textAlign: 'center' }}>
+          <span style={{ fontSize: 10, textTransform: 'uppercase', color: '#c084fc', display: 'block', marginBottom: 4 }}>Recommended RAM</span>
+          <span style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{data.recommendedRam} MB</span>
+        </div>
+      </div>
+
+      {/* Active Caching/Scaling Advice */}
+      {advice.length > 0 && (
+        <div style={{ padding: 12, borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-primary)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>💡 SRE Capacity Advice</span>
+          {advice.map((adv, i) => (
+            <div key={i} style={{ fontSize: 12, color: '#e2e8f0', lineHeight: 1.4 }}>{adv}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AIChat({ projectId }) {
   const [messages, setMessages] = useState([
     {
@@ -445,6 +504,7 @@ export default function AIChat({ projectId }) {
     { id: 'generate-docs', name: 'Generate REST API Docs', icon: '📝', desc: 'Parse Express/Node routes and write a standard README.md.' },
     { id: 'optimize-queries', name: 'Database Query Indexer', icon: '📊', desc: 'Audit schema/models and suggest high-speed index strategies.' },
     { id: 'inspect-logs', name: 'Live Container Log SRE', icon: '🩺', desc: 'Audit running stdout logs for hidden memory leaks and timeouts.' },
+    { id: 'predict-resources', name: 'AI Capacity Telemetry SRE', icon: '📈', desc: 'Audit live RAM/CPU telemetry metrics and predict scaling requirements.' },
   ];
 
   return (
@@ -478,6 +538,7 @@ export default function AIChat({ projectId }) {
                 {msg.sreReport && msg.sreReport.type === 'generate-docs' && <DocsReportWidget data={msg.sreReport.data} />}
                 {msg.sreReport && msg.sreReport.type === 'optimize-queries' && <QueriesReportWidget data={msg.sreReport.data} />}
                 {msg.sreReport && msg.sreReport.type === 'inspect-logs' && <LogsReportWidget data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'predict-resources' && <TelemetryReportWidget data={msg.sreReport.data} />}
               </div>
             </div>
           ))}

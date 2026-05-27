@@ -637,6 +637,59 @@ const auditSecurity = async (req, res) => {
   }
 };
 
+// ─── POST /api/ai/:projectId/predict-resources ──────────────────────────────
+const predictResources = async (req, res) => {
+  try {
+    checkApiKeys();
+
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    // Retrieve active container telemetry and metrics history
+    const { getCachedStats, getMetricHistory } = require('../services/metrics.service');
+    let liveStats = { cpu: 0, memMB: 0, status: 'stopped' };
+    let history = [];
+
+    if (project.containerId) {
+      try {
+        liveStats = await getCachedStats(project.containerId);
+        history = await getMetricHistory(project._id.toString());
+      } catch (metricsErr) {
+        console.warn('[AI Capacity Planner] Failed to get live container metrics:', metricsErr.message);
+      }
+    }
+
+    // Retrieve daily network traffic and latency analytics
+    const { getAnalytics } = require('../services/analytics.service');
+    let trafficAnalytics = { totalVisits: 0, totalErrors: 0, avgResponseTime: 0, uptime: '100%', days: [] };
+    try {
+      trafficAnalytics = await getAnalytics(project._id.toString());
+    } catch (analyticsErr) {
+      console.warn('[AI Capacity Planner] Failed to get project analytics:', analyticsErr.message);
+    }
+
+    const { analyzeTelemetryAndPredictScaling } = require('../services/ai.service');
+    const prediction = await analyzeTelemetryAndPredictScaling(liveStats, history, trafficAnalytics, project.stack);
+    res.json(prediction);
+  } catch (err) {
+    if (err.message.includes('No valid API keys')) {
+      return res.json({
+        cpuUsageAnalysis: 'AI keys offline.',
+        ramUsageAnalysis: 'AI keys offline.',
+        anomalyAlerts: [],
+        predictedGrowth: 'Capacity planning requires active GEMINI_API_KEY credentials.',
+        recommendedCpu: '0.5',
+        recommendedRam: '256',
+        scalingAdvice: []
+      });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // ─── POST /api/ai/:projectId/devops-summary ──────────────────────────────────
 const devopsSummary = async (req, res) => {
   try {
