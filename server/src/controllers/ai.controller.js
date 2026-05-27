@@ -496,31 +496,45 @@ const generateDocs = async (req, res) => {
     let docCode = '';
 
     if (fs.existsSync(repoPath)) {
-      const scanForRoutes = (dir, depth = 0) => {
-        if (depth > 6) return;
-        const files = fs.readdirSync(dir);
+      const scanForCode = (dir, depth = 0) => {
+        if (depth > 6 || docCode.length > 14000) return;
+        let files;
+        try { files = fs.readdirSync(dir); } catch { return; }
         for (const file of files) {
           const fullPath = path.join(dir, file);
-          if (fs.statSync(fullPath).isDirectory()) {
-            if (!['node_modules', '.git', 'dist', 'build', '.next', '.nuxt', 'out', 'coverage', 'public'].includes(file)) {
-              scanForRoutes(fullPath, depth + 1);
+          let stat;
+          try { stat = fs.statSync(fullPath); } catch { continue; }
+          if (stat.isDirectory()) {
+            if (!['node_modules', '.git', 'dist', 'build', '.next', '.nuxt', 'out', 'coverage', 'public', '.cache'].includes(file)) {
+              scanForCode(fullPath, depth + 1);
             }
-          } else if (/\.(js|ts|py|prisma|sql)$/i.test(file)) {
-            const content = fs.readFileSync(fullPath, 'utf8');
-            // Scan specifically for files defining API routing or controllers
-            if (/router|express\.Router|app\.(get|post|put|delete|use)|def\s+[a-zA-Z_]+\(|controller/i.test(content) || file.endsWith('.prisma') || file.endsWith('.sql')) {
-              if (docCode.length < 18000) {
-                docCode += `\n// File: ${file}\n` + content.slice(0, 2000);
+          } else if (/\.(js|ts|jsx|tsx|py|prisma|sql|json)$/i.test(file) && !file.includes('.min.')) {
+            try {
+              const content = fs.readFileSync(fullPath, 'utf8');
+              if (docCode.length < 14000) {
+                docCode += `\n// === File: ${file} ===\n` + content.slice(0, 1500);
               }
-            }
+            } catch { /* skip unreadable files */ }
           }
         }
       };
-      scanForRoutes(repoPath);
+      scanForCode(repoPath);
     }
 
+    // Always provide rich project metadata — works even when repo is not yet cloned
+    const projectContext = [
+      `Project Name: ${project.name}`,
+      `Repository: ${project.repoFullName}`,
+      `Branch: ${project.branch || 'main'}`,
+      `Stack: ${project.stack}`,
+      `Status: ${project.status}`,
+      docCode
+        ? `\nSource Code Snippets:\n${docCode}`
+        : '\n(Repository not yet cloned — generate docs based on project metadata and stack conventions only)'
+    ].join('\n');
+
     const { generateDocsAndReadme } = require('../services/ai.service');
-    const docs = await generateDocsAndReadme(docCode, project.stack);
+    const docs = await generateDocsAndReadme(projectContext, project.stack);
 
     // Auto-commit generated README.md file directly into cloned workspace root
     if (docs.readme && fs.existsSync(repoPath)) {
