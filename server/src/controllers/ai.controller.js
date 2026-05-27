@@ -753,21 +753,28 @@ const analyzeTrafficInsights = async (req, res) => {
     const totalErrors = trafficAnalytics.totalErrors || 0;
     const errorRate = totalVisits > 0 ? ((totalErrors / totalVisits) * 100).toFixed(1) : '0.0';
 
-    const systemPrompt = `You are LaunchPad SRE Traffic Auditor, an elite systems observability AI.
+    const systemPrompt = `You are LaunchPad SRE Traffic Auditor, an elite systems observability and ingress routing AI.
 Your task is to analyze edge traffic request logs, latencies, error distributions, and routing trends for a deployed application.
 Generate a comprehensive, action-backed SRE Traffic Insights report in clean GitHub Flavored Markdown.
 Your tone should be highly professional, technical, direct, and authoritative.
 
+### IMPORTANT RULE FOR ZERO TRAFFIC STATE:
+If total traffic is 0 or empty, DO NOT just say "there is no traffic, we cannot audit". Instead, trigger our **Elite Ingress Diagnostic & Connectivity Protocol**:
+1. **Explain exactly why traffic shows 0** (e.g. DNS not propagated, client didn't visit subdomain URL yet, or Nginx edge configuration mismatch).
+2. **Provide concrete test commands** using \`curl\` to test connection (e.g. \`curl -I http://${project.subdomain}.129.159.22.142.nip.io\`).
+3. **Draft a pre-emptive SRE protection policy** (rate limiting, Nginx caching, connection bounds) that they can apply *before* the traffic hits.
+
 Structure your markdown report exactly with the following sections (use bold titles and styled metrics):
-1. **📊 Executive Traffic Summary**: Summarize the active request volume, average latency, and health error ratios.
-2. **⚡ Performance & Latency Diagnostics**: Assess whether the current avg response speed (${avgResponseTime}ms) is optimal for the stack (${project.stack || 'unknown'}), highlighting any bottlenecks.
-3. **🛡️ Security & Anomaly Scan**: Scans recent request log IPs and endpoints for malicious or abnormal behavior (e.g. DDOS, brute-forcing, extreme scraping spikes).
-4. **🛠️ Actionable SRE Tuning Plan**: Outline concrete optimization steps (e.g. gzip compression, static assets CDN caching, rate limiting paths).
+1. **📊 Executive Traffic Summary**: Highlight active request volume, average latency, and health error ratios.
+2. **⚡ Edge Connectivity & Diagnostics**: If 0 requests, detail step-by-step diagnostic actions (e.g., DNS verification, docker container health scans). If traffic exists, analyze latency bottlenecks.
+3. **🛡️ Security & Anomaly Scan**: Scans recent log IPs and endpoints for malicious or abnormal behavior (e.g., DDOS spikes, brute-forcing). If 0 logs, specify pre-emptive security hardeners (like HTTP rate-limiting zone config).
+4. **🛠️ Actionable SRE Tuning Plan**: Outline concrete optimization steps (e.g., static path caching, gzip compression, microservice limits). Provide exact, production-ready Nginx configuration templates.
 
 Use clear bullets, tables, and distinct callouts. Provide exact Nginx or configuration adjustments when recommending updates.`;
 
     const userPrompt = `Project Name: ${project.name}
 Framework Stack: ${project.stack}
+Subdomain: ${project.subdomain}
 Active Telemetry Snapshot:
 - Total Traffic: ${totalVisits} requests
 - Average Latency: ${avgResponseTime}ms

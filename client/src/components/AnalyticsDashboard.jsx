@@ -1,6 +1,84 @@
 import { useEffect, useState } from 'react';
 import api from '../lib/api';
 
+// Format standard text message paragraphs and simple bold marks inside Analytics reports
+function formatMessageContent(content) {
+  if (typeof content !== 'string') return content;
+  const parts = content.split(/(```[\s\S]*?```)/g);
+
+  return parts.map((part, index) => {
+    if (part.startsWith('```')) {
+      const match = part.match(/```(\w*)\n([\s\S]*?)```/);
+      const language = match ? match[1] : '';
+      const code = match ? match[2].trim() : part.slice(3, -3).trim();
+
+      return (
+        <div key={index} style={{
+          background: '#09090e',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+          borderRadius: '8px',
+          margin: '12px 0',
+          fontFamily: 'var(--font-mono, monospace)',
+          fontSize: '13px',
+          overflow: 'hidden',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+          textAlign: 'left'
+        }}>
+          {language && (
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.02)',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+              padding: '6px 12px',
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              fontWeight: 700
+            }}>
+              {language}
+            </div>
+          )}
+          <pre style={{ margin: 0, padding: '12px', overflowX: 'auto', color: '#e2e8f0', lineHeight: 1.5 }}>
+            <code>{code}</code>
+          </pre>
+        </div>
+      );
+    }
+
+    const lines = part.split('\n');
+    return lines.map((partLine, lineIndex) => {
+      const tokens = partLine.split(/(\*\*.*?\*\*|`.*?`)/g);
+      const parsedLine = tokens.map((token, tokenIndex) => {
+        if (token.startsWith('**') && token.endsWith('**')) {
+          return <strong key={tokenIndex} style={{ color: 'var(--text-main)', fontWeight: 700 }}>{token.slice(2, -2)}</strong>;
+        }
+        if (token.startsWith('`') && token.endsWith('`')) {
+          return (
+            <code key={tokenIndex} style={{
+              fontFamily: 'var(--font-mono, monospace)',
+              background: 'rgba(255, 255, 255, 0.08)',
+              color: '#38bdf8',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: '12.5px',
+              border: '1px solid rgba(255, 255, 255, 0.04)'
+            }}>
+              {token.slice(1, -1)}
+            </code>
+          );
+        }
+        return token;
+      });
+
+      return (
+        <div key={`${index}-${lineIndex}`} style={{ minHeight: '1.2em', marginBottom: lineIndex < lines.length - 1 ? '8px' : 0 }}>
+          {parsedLine}
+        </div>
+      );
+    });
+  });
+}
+
 function BarChart({ data }) {
   if (!data || data.length === 0) return null;
   const max = Math.max(...data.map((d) => d.visits), 1);
@@ -150,8 +228,7 @@ export default function AnalyticsDashboard({ projectId }) {
             border: '1px solid rgba(255,255,255,0.05)',
             fontSize: 14,
             lineHeight: '1.7',
-            color: '#e2e8f0',
-            whiteSpace: 'pre-line'
+            color: '#e2e8f0'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12 }}>
               <strong style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-primary)' }}>
@@ -164,7 +241,7 @@ export default function AnalyticsDashboard({ projectId }) {
                 Clear Report
               </button>
             </div>
-            {aiReport}
+            {formatMessageContent(aiReport)}
           </div>
         )}
       </div>
