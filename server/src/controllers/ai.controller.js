@@ -33,6 +33,25 @@ const chatWithAI = async (req, res) => {
       .sort({ createdAt: -1 })
       .select('status commitMessage aiErrorSummary logs stack');
 
+    // Build rich, live contextual repository details to empower custom SRE questions
+    let repoContext = '';
+    const repoPath = path.join(__dirname, '../../repos', project._id.toString());
+    if (fs.existsSync(repoPath)) {
+      try {
+        const rootFiles = fs.readdirSync(repoPath);
+        repoContext += `- Root files in workspace: ${rootFiles.slice(0, 30).join(', ')}\n`;
+        
+        const pkgPath = path.join(repoPath, 'package.json');
+        if (fs.existsSync(pkgPath)) {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+          const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+          repoContext += `- Dependencies installed: ${Object.keys(deps).slice(0, 40).join(', ')}\n`;
+        }
+      } catch (repoErr) {
+        console.warn('[AI Chat Context] Failed to scan workspace root:', repoErr.message);
+      }
+    }
+
     // Build rich contextual DevOps System Prompt
     const systemPrompt = `You are LaunchPad DevOps AI, an elite cloud systems SRE expert.
 Context:
@@ -40,6 +59,7 @@ Context:
 - Current Framework/Stack: ${project.stack}
 - Project Active Status: ${project.status}
 - Latest Deployment: ${latestDeploy ? `${latestDeploy.status} (${latestDeploy.commitMessage || 'No msg'})` : 'None'}
+${repoContext ? `- Live Repository Scan Details:\n${repoContext}` : ''}
 ${latestDeploy && latestDeploy.status === 'failed' && latestDeploy.logs ? `- Recent Failure Logs (truncated): \n${latestDeploy.logs.slice(-25).join('\n')}` : ''}
 
 Your tone should be highly professional, technical, direct, and helpful. Always provide actionable tips, commands, or config templates when asked.
