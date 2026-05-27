@@ -14,6 +14,7 @@
 
 const http    = require('http');
 const Project = require('../models/Project.model');
+const { recordVisit } = require('../services/analytics.service');
 
 const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || '129.159.22.142.nip.io').toLowerCase();
 
@@ -210,6 +211,7 @@ const projectProxyMiddleware = async (req, res, next) => {
 
     // ── Pipe the request to the container ──────────────────────────────────────
     console.log(`[proxy] ${subdomain} → :${port} ${req.method} ${req.url}`);
+    const startTime = Date.now();
 
     const proxyReq = http.request(
       {
@@ -226,7 +228,19 @@ const projectProxyMiddleware = async (req, res, next) => {
         },
       },
       (proxyRes) => {
-        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        const responseTime = Date.now() - startTime;
+        const statusCode = proxyRes.statusCode;
+
+        // Log traffic analytics to Redis/DB edge counters asynchronously
+        Project.findOne({ $or: [{ subdomain }, { customDomain: subdomain }] }).then((proj) => {
+          if (proj) {
+            recordVisit(proj._id.toString(), responseTime, statusCode).catch((err) => {
+              console.warn('[Proxy Traffic Audit Error]:', err.message);
+            });
+          }
+        }).catch(() => {});
+
+        res.writeHead(statusCode, proxyRes.headers);
         proxyRes.pipe(res, { end: true });
       }
     );
