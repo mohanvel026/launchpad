@@ -495,7 +495,7 @@ export default function AIChat({ projectId }) {
     'Analyze last build failure',
     'Optimize for MongoDB',
     'Setup custom domain',
-    'Performance audit',
+    'SRE Telemetry Forecast',
   ];
 
   const sreTools = [
