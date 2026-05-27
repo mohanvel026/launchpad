@@ -679,9 +679,17 @@ If no optimization is needed, return recommendations: []. Do not include markdow
 
   try {
     const parsed = JSON.parse(raw);
-    return {
-      recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : []
-    };
+    const rawRecs = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
+    const recommendations = rawRecs.filter(r => {
+      if (!r.query || !r.indexAdvice) return false;
+      const q = r.query.toLowerCase();
+      const a = typeof r.indexAdvice === 'string' ? r.indexAdvice.toLowerCase() : '';
+      if (q.includes('no database queries') || q.includes('no queries found') || a === 'none') {
+        return false;
+      }
+      return true;
+    });
+    return { recommendations };
   } catch (err) {
     console.error('[AI Query Optimizer] JSON parse failed:', err.message);
     return { recommendations: [] };
