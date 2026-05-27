@@ -359,7 +359,7 @@ const optimizeDbQueries = async (req, res) => {
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
+    const repoPath = path.join(__dirname, '../../repos', project._id.toString());
     let dbCode = '';
 
     if (fs.existsSync(repoPath)) {
@@ -406,7 +406,7 @@ const predictResources = async (req, res) => {
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
+    const repoPath = path.join(__dirname, '../../repos', project._id.toString());
     let packageJson = '';
     if (fs.existsSync(repoPath)) {
       const pkgPath = path.join(repoPath, 'package.json');
@@ -435,7 +435,7 @@ const generateDocs = async (req, res) => {
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
+    const repoPath = path.join(__dirname, '../../repos', project._id.toString());
     let docCode = '';
 
     if (fs.existsSync(repoPath)) {
@@ -493,7 +493,7 @@ const auditSecurity = async (req, res) => {
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
+    const repoPath = path.join(__dirname, '../../repos', project._id.toString());
     let packageJson = '';
     let secCode = '';
 
@@ -559,7 +559,7 @@ const devopsSummary = async (req, res) => {
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const repoPath = path.join(process.env.REPOS_DIR || '/var/launchpad/repos', project._id.toString());
+    const repoPath = path.join(__dirname, '../../repos', project._id.toString());
     let packageJson = '';
     let secCode = '';
 

@@ -48,8 +48,8 @@ function formatMessageContent(content) {
 
     // Process paragraphs, bold highlighting, and inline code badges
     const lines = part.split('\n');
-    return lines.map((line, lineIndex) => {
-      const tokens = line.split(/(\*\*.*?\*\*|`.*?`)/g);
+    return lines.map((partLine, lineIndex) => {
+      const tokens = partLine.split(/(\*\*.*?\*\*|`.*?`)/g);
 
       const parsedLine = tokens.map((token, tokenIndex) => {
         if (token.startsWith('**') && token.endsWith('**')) {
@@ -91,6 +91,7 @@ export default function AIChat({ projectId }) {
   ]);
   const [input,   setInput]   = useState('');
   const [loading, setLoading] = useState(false);
+  const [activeTool, setActiveTool] = useState(null);
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -143,6 +144,78 @@ export default function AIChat({ projectId }) {
     }
   };
 
+  const handleSreTool = async (endpoint, toolName) => {
+    if (loading) return;
+    setActiveTool(toolName);
+    
+    // Add prompt trace
+    setMessages(prev => [...prev, { role: 'user', content: `🔍 Initiate AI ${toolName}...` }]);
+    setLoading(true);
+    
+    try {
+      const res = await api.post(`/ai/${projectId}/${endpoint}`);
+      let replyText = `### 🤖 AI ${toolName} Report\n\n`;
+      const data = res.data;
+      
+      if (endpoint === 'audit-security') {
+        replyText += `**Security Score:** \`${data.securityScore || 100}/100\` | **Grade:** \`${data.securityGrade || 'A+'}\`\n\n`;
+        if (data.issues && data.issues.length > 0) {
+          replyText += `#### ⚠️ Vulnerabilities Detected:\n`;
+          data.issues.forEach(i => {
+            replyText += `- **[${i.severity || 'WARN'}]** ${i.title || i} - *${i.description || 'No description provided'}*\n`;
+          });
+        } else {
+          replyText += `✅ **Zero security vulnerabilities detected!** Code is secure and dependencies are clean.\n`;
+        }
+        if (data.recommendations && data.recommendations.length > 0) {
+          replyText += `\n#### 💡 SRE Recommendations:\n`;
+          data.recommendations.forEach(r => replyText += `- ${r}\n`);
+        }
+      } else if (endpoint === 'optimize-config') {
+        replyText += `#### ⚙️ Dockerfile & Server Configurations Audit:\n\n`;
+        if (data.suggestions && data.suggestions.length > 0) {
+          data.suggestions.forEach(s => replyText += `- ${s}\n`);
+        } else {
+          replyText += `✅ **Configurations are highly optimized for production capacity.**\n`;
+        }
+      } else if (endpoint === 'generate-docs') {
+        replyText += `✅ **REST API Documentation and README successfully compiled!**\n\n`;
+        if (data.apiEndpoints && data.apiEndpoints.length > 0) {
+          replyText += `#### 📋 Detected API Endpoints:\n`;
+          data.apiEndpoints.forEach(ep => {
+            replyText += `- \`${ep.method || 'GET'}\` \`${ep.path || ep}\` - *${ep.description || 'Active endpoint'}*\n`;
+          });
+        }
+        if (data.readme) {
+          replyText += `\n#### 📝 Auto-Generated README.md preview (Saved to project root):\n\`\`\`markdown\n${data.readme.slice(0, 500)}...\n\`\`\``;
+        }
+      } else if (endpoint === 'optimize-queries') {
+        replyText += `#### 📊 Database Operations & Query Indexing Report:\n\n`;
+        if (data.recommendations && data.recommendations.length > 0) {
+          data.recommendations.forEach(r => replyText += `- ${r}\n`);
+        } else {
+          replyText += `✅ **Database query patterns look optimal. No missing indexes detected!**\n`;
+        }
+      } else if (endpoint === 'inspect-logs') {
+        replyText += `#### 🩺 Live Container Log Inspection (SRE):\n\n`;
+        if (data.anomalies && data.anomalies.length > 0) {
+          data.anomalies.forEach(a => replyText += `- **[${a.level || 'WARN'}]** ${a.message || a}\n`);
+        } else {
+          replyText += `✅ **Container log analysis completed. Zero anomalies, memory leaks, or database connection faults detected!**\n`;
+        }
+      } else {
+        replyText += typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+      }
+      
+      setMessages(prev => [...prev, { role: 'assistant', content: replyText }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', content: `❌ **AI ${toolName} failed:** ${err.response?.data?.message || err.message}` }]);
+    } finally {
+      setLoading(false);
+      setActiveTool(null);
+    }
+  };
+
   const quickQuestions = [
     'Analyze last build failure',
     'Optimize for MongoDB',
@@ -150,67 +223,129 @@ export default function AIChat({ projectId }) {
     'Performance audit',
   ];
 
+  const sreTools = [
+    { id: 'audit-security', name: 'Security Vulnerability Scan', icon: '🛡️', desc: 'Audit packages, ENV secrets, and dependencies for CVE threats.' },
+    { id: 'optimize-config', name: 'Docker & Config Optimizer', icon: '⚙️', desc: 'Scan and rewrite Dockerfile for caching and concurrency.' },
+    { id: 'generate-docs', name: 'Generate REST API Docs', icon: '📝', desc: 'Parse Express/Node routes and write a standard README.md.' },
+    { id: 'optimize-queries', name: 'Database Query Indexer', icon: '📊', desc: 'Audit schema/models and suggest high-speed index strategies.' },
+    { id: 'inspect-logs', name: 'Live Container Log SRE', icon: '🩺', desc: 'Audit running stdout logs for hidden memory leaks and timeouts.' },
+  ];
+
   return (
-    <div className="lp-card glass" style={{ display: 'flex', flexDirection: 'column', height: '600px', padding: 0, overflow: 'hidden' }}>
-      <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.02)' }}>
-        <div className="animate-pulse-cyan" style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-primary)' }}></div>
-        <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: '0.05em' }}>AI CO-PILOT</span>
-      </div>
+    <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'stretch' }}>
+      {/* Interactive Chat Console (2/3 width) */}
+      <div className="lp-card glass" style={{ flex: '2 1 600px', display: 'flex', flexDirection: 'column', height: '650px', padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.02)' }}>
+          <div className="animate-pulse-cyan" style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-primary)' }}></div>
+          <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: '0.05em' }}>AI CO-PILOT TERMINAL</span>
+        </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {messages.map((msg, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-            <div className={msg.role === 'user' ? 'glass' : ''} style={{
-              maxWidth: '85%',
-              padding: '12px 18px',
-              borderRadius: 16,
-              background: msg.role === 'user' ? 'var(--accent-primary)' : 'rgba(255,255,255,0.03)',
-              color: msg.role === 'user' ? '#fff' : 'var(--text-main)',
-              fontSize: '14px',
-              lineHeight: '1.6',
-              boxShadow: msg.role === 'user' ? '0 8px 24px rgba(56, 189, 248, 0.2)' : 'none',
-              border: msg.role === 'user' ? 'none' : '1px solid var(--border)'
-            }}>
-              {formatMessageContent(msg.content)}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {messages.map((msg, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div className={msg.role === 'user' ? 'glass' : ''} style={{
+                maxWidth: '85%',
+                padding: '12px 18px',
+                borderRadius: 16,
+                background: msg.role === 'user' ? 'var(--accent-primary)' : 'rgba(255,255,255,0.03)',
+                color: msg.role === 'user' ? '#fff' : 'var(--text-main)',
+                fontSize: '14px',
+                lineHeight: '1.6',
+                boxShadow: msg.role === 'user' ? '0 8px 24px rgba(56, 189, 248, 0.2)' : 'none',
+                border: msg.role === 'user' ? 'none' : '1px solid var(--border)'
+              }}>
+                {formatMessageContent(msg.content)}
+              </div>
             </div>
-          </div>
-        ))}
-        {loading && (
-          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <div className="glass" style={{ padding: '12px 18px', borderRadius: 16, fontSize: '14px', color: 'var(--text-dim)', border: '1px solid var(--border)' }}>
-              <div className="loading-spinner" style={{ width: 12, height: 12, display: 'inline-block', marginRight: 8 }}></div> Thinking...
+          ))}
+          {loading && (
+            <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+              <div className="glass" style={{ padding: '12px 18px', borderRadius: 16, fontSize: '14px', color: 'var(--text-dim)', border: '1px solid var(--border)' }}>
+                <div className="loading-spinner" style={{ width: 12, height: 12, display: 'inline-block', marginRight: 8 }}></div>
+                {activeTool ? `Running ${activeTool} audit...` : 'Thinking...'}
+              </div>
             </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        <div style={{ padding: '0 24px', display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '20px' }}>
+          {quickQuestions.map((q) => (
+            <button key={q} onClick={() => handleQuickQuestion(q)} className="lp-btn-secondary" style={{ fontSize: '12px', padding: '6px 14px', borderRadius: 100 }}>
+              {q}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ padding: '20px 24px', background: 'rgba(0,0,0,0.2)', borderTop: '1px solid var(--border)' }}>
+          <div style={{ position: 'relative' }}>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+              placeholder="Query the SRE co-pilot (e.g. 'Audit my memory limit suggestions' or custom)..."
+              className="lp-search"
+              style={{ width: '100%', maxWidth: 'none', paddingRight: 100, backgroundImage: 'none', paddingLeft: 20, height: 50 }}
+            />
+            <button 
+              onClick={sendMessage} 
+              disabled={loading || !input.trim()}
+              className="lp-btn-primary" 
+              style={{ position: 'absolute', right: 6, top: 6, bottom: 6, padding: '0 20px', fontSize: 13 }}
+            >
+              Ask AI
+            </button>
           </div>
-        )}
-        <div ref={bottomRef} />
+        </div>
       </div>
 
-      <div style={{ padding: '0 24px', display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '20px' }}>
-        {quickQuestions.map((q) => (
-          <button key={q} onClick={() => handleQuickQuestion(q)} className="lp-btn-secondary" style={{ fontSize: '12px', padding: '6px 14px', borderRadius: 100 }}>
-            {q}
-          </button>
-        ))}
-      </div>
+      {/* SRE Command Center Sidebar (1/3 width) */}
+      <div className="lp-card glass" style={{ flex: '1 1 300px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', minHeight: '650px' }}>
+        <div>
+          <h3 style={{ fontSize: 15, fontWeight: 800, marginBottom: 4, letterSpacing: '0.03em', color: 'var(--text-main)' }}>🛡️ SRE COMMAND CENTER</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.4 }}>Execute one-click deep neural scans on your codebase resources and active container instances.</p>
+        </div>
 
-      <div style={{ padding: '24px', background: 'rgba(0,0,0,0.2)', borderTop: '1px solid var(--border)' }}>
-        <div style={{ position: 'relative' }}>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder="Query the AI co-pilot..."
-            className="lp-search"
-            style={{ width: '100%', maxWidth: 'none', paddingRight: 100, backgroundImage: 'none', paddingLeft: 20, height: 50 }}
-          />
-          <button 
-            onClick={sendMessage} 
-            disabled={loading || !input.trim()}
-            className="lp-btn-primary" 
-            style={{ position: 'absolute', right: 6, top: 6, bottom: 6, padding: '0 20px', fontSize: 13 }}
-          >
-            Ask AI
-          </button>
+        <div style={{ height: 1, background: 'var(--border)' }}></div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+          {sreTools.map((tool) => (
+            <button
+              key={tool.id}
+              disabled={loading}
+              onClick={() => handleSreTool(tool.id, tool.name)}
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid var(--border)',
+                borderRadius: '12px',
+                padding: '14px',
+                textAlign: 'left',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                gap: '12px',
+                alignItems: 'flex-start'
+              }}
+              onMouseEnter={(e) => {
+                if (!loading) {
+                  e.currentTarget.style.background = 'rgba(56, 189, 248, 0.03)';
+                  e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!loading) {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
+                  e.currentTarget.style.borderColor = 'var(--border)';
+                }
+              }}
+            >
+              <span style={{ fontSize: '20px', marginTop: '2px' }}>{tool.icon}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-main)' }}>{tool.name}</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', lineHeight: '1.4' }}>{tool.desc}</span>
+              </div>
+            </button>
+          ))}
         </div>
       </div>
     </div>
