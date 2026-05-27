@@ -84,7 +84,10 @@ server {
 
 // ─── Core function ─────────────────────────────────────────────────────────────
 const createNginxConfig = (subdomain, port, useSSL = false, customDomain = null) => {
-  const config  = useSSL ? httpsTemplate(subdomain, port, customDomain) : httpTemplate(subdomain, port, customDomain);
+  // Always route traffic through LaunchPad Node.js edge proxy on port 5000
+  // to ensure full SRE observability, telemetry, analytics and auto-remediation!
+  const proxyPort = 5000;
+  const config  = useSSL ? httpsTemplate(subdomain, proxyPort, customDomain) : httpTemplate(subdomain, proxyPort, customDomain);
   const lpFile  = path.join(LP_NGINX_DIR, `${subdomain}.conf`);
   const sysFile = path.join(NGINX_SITES,  `${subdomain}.conf`);
 
