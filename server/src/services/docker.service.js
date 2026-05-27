@@ -47,7 +47,7 @@ const buildImage = (contextDir, imageTag, deploymentId) => {
  * @param {number} [containerPort=3000]
  * @returns {string} containerId
  */
-const runContainer = async (imageTag, hostPort, envVars = {}, deploymentId, containerPort = 3000) => {
+const runContainer = async (imageTag, hostPort, envVars = {}, deploymentId, containerPort = 3000, cpuLimit = 0.5, ramLimitMB = 512) => {
   const env = Object.entries(envVars).map(([k, v]) => `${k}=${v}`);
 
   // Ensure PORT env var matches what the container actually listens on
@@ -68,8 +68,8 @@ const runContainer = async (imageTag, hostPort, envVars = {}, deploymentId, cont
     HostConfig: {
       PortBindings:  portBinding,
       RestartPolicy: { Name: 'unless-stopped' },
-      Memory:        512 * 1024 * 1024,   // 512 MB cap
-      NanoCpus:      500_000_000,          // 0.5 CPU cap
+      Memory:        ramLimitMB * 1024 * 1024,
+      NanoCpus:      cpuLimit * 1_000_000_000,
     },
   });
 

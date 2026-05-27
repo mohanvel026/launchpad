@@ -138,8 +138,8 @@ const rollback = async (req, res) => {
     // Stop the currently running container
     if (project.containerId) await stopContainer(project.containerId);
 
-    // Spin up the old image on the same port
-    const containerId = await runContainer(target.imageTag, project.port, {}, null);
+    // Spin up the old image on the same port with custom resource bounds
+    const containerId = await runContainer(target.imageTag, project.port, {}, null, 3000, project.cpuLimit || 0.5, project.ramLimitMB || 512);
 
     await Project.findByIdAndUpdate(project._id, { containerId, status: 'live' });
 

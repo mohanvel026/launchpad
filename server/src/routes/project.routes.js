@@ -3,7 +3,7 @@ const { protect, getUserWithToken } = require('../middleware/auth.middleware');
 const {
   getProjects, createProject, getProject,
   deleteProject, getUserRepos, registerWebhook, updateProject,
-  clearProjectStuckBuild
+  clearProjectStuckBuild, resizeResourceLimits
 } = require('../controllers/project.controller');
 
 const router = express.Router();
@@ -31,5 +31,8 @@ router.post('/:id/webhook',  getUserWithToken,  registerWebhook);
 
 // POST /api/projects/:id/clear-stuck — clear stuck build statuses
 router.post('/:id/clear-stuck', protect,        clearProjectStuckBuild);
+
+// POST /api/projects/:id/resize-limits — zero-downtime hot-swap SRE container resource sizing bounds
+router.post('/:id/resize-limits', protect,      resizeResourceLimits);
 
 module.exports = router;

@@ -344,9 +344,30 @@ function LogsReportWidget({ data }) {
 }
 
 // ─── 6. AI Capacity Telemetry SRE Widget ───
-function TelemetryReportWidget({ data }) {
+function TelemetryReportWidget({ data, projectId }) {
   const alerts = data.anomalyAlerts || [];
   const advice = data.scalingAdvice || [];
+  const [applying, setApplying] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleApplyLimits = async () => {
+    if (applying) return;
+    setApplying(true);
+    setResult(null);
+    try {
+      const cpu = parseFloat(data.recommendedCpu) || 0.5;
+      const ram = parseInt(data.recommendedRam) || 512;
+      const res = await api.post(`/projects/${projectId}/resize-limits`, {
+        cpuLimit: cpu,
+        ramLimitMB: ram
+      });
+      setResult({ success: true, message: res.data.message });
+    } catch (err) {
+      setResult({ success: false, message: err.response?.data?.message || err.message });
+    } finally {
+      setApplying(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 12 }}>
@@ -398,6 +419,69 @@ function TelemetryReportWidget({ data }) {
           ))}
         </div>
       )}
+
+      {/* One-Click Auto-Remediation Apply Sizing Action */}
+      <div style={{ marginTop: 6 }}>
+        <button
+          disabled={applying}
+          onClick={handleApplyLimits}
+          style={{
+            width: '100%',
+            padding: '12px',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            color: '#fff',
+            fontWeight: 'bold',
+            fontSize: '12.5px',
+            cursor: applying ? 'not-allowed' : 'pointer',
+            boxShadow: '0 4px 15px rgba(56, 189, 248, 0.1)',
+            transition: 'all 0.3s ease',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}
+          onMouseEnter={(e) => {
+            if (!applying) {
+              e.currentTarget.style.border = '1px solid var(--accent-primary)';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(56, 189, 248, 0.25)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!applying) {
+              e.currentTarget.style.border = '1px solid rgba(56, 189, 248, 0.4)';
+              e.currentTarget.style.boxShadow = '0 4px 15px rgba(56, 189, 248, 0.1)';
+            }
+          }}
+        >
+          {applying ? (
+            <>
+              <div className="loading-spinner" style={{ width: 12, height: 12 }}></div>
+              Hot-Swapping Container Sizing...
+            </>
+          ) : (
+            <>🚀 Apply Sizing Bounds (Zero-Downtime Rollout)</>
+          )}
+        </button>
+
+        {/* Hot-Swap Execution Status Callout */}
+        {result && (
+          <div style={{
+            marginTop: 10,
+            padding: '10px 14px',
+            borderRadius: '8px',
+            fontSize: '12px',
+            lineHeight: '1.4',
+            background: result.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+            border: result.success ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+            color: result.success ? '#34d399' : '#f87171',
+            fontWeight: 500
+          }}>
+            {result.message}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -538,7 +622,7 @@ export default function AIChat({ projectId }) {
                 {msg.sreReport && msg.sreReport.type === 'generate-docs' && <DocsReportWidget data={msg.sreReport.data} />}
                 {msg.sreReport && msg.sreReport.type === 'optimize-queries' && <QueriesReportWidget data={msg.sreReport.data} />}
                 {msg.sreReport && msg.sreReport.type === 'inspect-logs' && <LogsReportWidget data={msg.sreReport.data} />}
-                {msg.sreReport && msg.sreReport.type === 'predict-resources' && <TelemetryReportWidget data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'predict-resources' && <TelemetryReportWidget data={msg.sreReport.data} projectId={projectId} />}
               </div>
             </div>
           ))}

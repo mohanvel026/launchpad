@@ -178,8 +178,96 @@ const clearProjectStuckBuild = async (req, res) => {
   }
 };
 
+// ─── POST /api/projects/:id/resize-limits ────────────────────────────────────
+const resizeResourceLimits = async (req, res) => {
+  const { cpuLimit, ramLimitMB } = req.body;
+  if (!cpuLimit || !ramLimitMB) {
+    return res.status(400).json({ message: 'cpuLimit and ramLimitMB are required' });
+  }
+
+  try {
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    // Update resource bounds in db
+    project.cpuLimit = parseFloat(cpuLimit);
+    project.ramLimitMB = parseInt(ramLimitMB);
+    await project.save();
+
+    // Hot-swap active container resize if running
+    if (project.containerId && project.status === 'live') {
+      const Docker = require('dockerode');
+      const docker = new Docker({ socketPath: '/var/run/docker.sock' });
+      const { runContainer, stopContainer } = require('../services/docker.service');
+      const { getNextFreePort } = require('../services/portAllocator.service');
+      const { createNginxConfig } = require('../services/nginx.service');
+      const { invalidateProjectCache } = require('../middleware/projectProxy.middleware');
+
+      try {
+        const container = docker.getContainer(project.containerId);
+        const info = await container.inspect();
+        const activeImage = info.Config.Image;
+        const exposedPortKey = Object.keys(info.Config.ExposedPorts || {})[0] || '3000/tcp';
+        const internalPort = parseInt(exposedPortKey.split('/')[0]) || 3000;
+
+        // Allocate a new runtime port for zero-downtime hot-swap
+        const newPort = await getNextFreePort();
+
+        // Extract env variables
+        const envVars = {};
+        info.Config.Env.forEach(e => {
+          const [k, v] = e.split('=');
+          envVars[k] = v;
+        });
+
+        // Run the new container with modified resource boundaries
+        const newContainerId = await runContainer(
+          activeImage,
+          newPort,
+          envVars,
+          null,
+          internalPort,
+          project.cpuLimit,
+          project.ramLimitMB
+        );
+
+        // Update the reverse proxy target
+        createNginxConfig(project.subdomain, newPort, false, project.customDomain);
+        invalidateProjectCache(project.subdomain);
+
+        // Terminate and clean up the old container
+        await stopContainer(project.containerId);
+
+        // Update Project DB port and active ContainerId
+        project.containerId = newContainerId;
+        project.port = newPort;
+        await project.save();
+
+        return res.json({
+          message: `Zero-downtime hot-swap sizing resized successfully to ${project.cpuLimit} CPU, ${project.ramLimitMB}MB RAM!`,
+          project
+        });
+      } catch (dockerErr) {
+        console.error('[Resource Resizing Hot-Swap Error]:', dockerErr.message);
+        return res.json({
+          message: `Resource limits updated in db, but container rebuild skipped: ${dockerErr.message}`,
+          project
+        });
+      }
+    }
+
+    res.json({ message: 'Resource bounds updated successfully for next deployment.', project });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   getUserRepos, getProjects, createProject,
   getProject, deleteProject, registerWebhook,
   updateProject, clearProjectStuckBuild,
+  resizeResourceLimits,
 };

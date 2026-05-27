@@ -20,6 +20,8 @@ const projectSchema = new mongoose.Schema({
   webhookId:     { type: String },
   lastDeployedAt: { type: Date },
   buildCount:    { type: Number, default: 0 },
+  cpuLimit:      { type: Number, default: 0.5 },
+  ramLimitMB:    { type: Number, default: 512 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Project', projectSchema);

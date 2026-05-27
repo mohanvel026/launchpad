@@ -388,8 +388,10 @@ buildQueue.process(async (job) => {
       const hostPort = project.port || await getNextFreePort();
       await log(`   ↳ Container port ${finalContainerPort} → Host port ${hostPort}`);
 
-      // Build docker run with all env vars
-      let runCmd = `docker run -d --restart unless-stopped -p ${hostPort}:${finalContainerPort}`;
+      // Build docker run with all env vars and resource limits
+      const cpu = project.cpuLimit || 0.5;
+      const ram = project.ramLimitMB || 512;
+      let runCmd = `docker run -d --restart unless-stopped -p ${hostPort}:${finalContainerPort} --cpus="${cpu}" --memory="${ram}m"`;
       for (const [k, v] of Object.entries(runtimeEnv)) {
         const safe = v.replace(/"/g, '\\"');
         runCmd += ` -e "${k}=${safe}"`;
