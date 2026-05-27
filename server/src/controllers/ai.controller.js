@@ -197,7 +197,7 @@ const discoverEnv = async (req, res) => {
                 if (file !== 'node_modules' && file !== '.git' && file !== 'dist' && file !== 'build') {
                   readFilesRecursively(fullPath, depth + 1);
                 }
-              } else if (/\.(js|jsx|ts|tsx|py|json|config)$/i.test(file) || file.toLowerCase().includes('env')) {
+              } else if (/\.(js|jsx|ts|tsx|py|json|config|prisma)$/i.test(file) || file.toLowerCase().includes('env')) {
                 const content = fs.readFileSync(fullPath, 'utf8');
                 
                 // 1. Extract process.env.xyz (case-insensitive for variable names)
@@ -260,6 +260,32 @@ const discoverEnv = async (req, res) => {
                 if (content.includes('mongodb://') || content.includes('mongodb+srv://') || /mongoose\.connect|mongodb\.connect/i.test(content)) {
                   detectedKeys.add('MONGODB_URI');
                   detectedKeys.add('MONGO_URI');
+                }
+
+                // 6. Prisma env("DATABASE_URL") Matcher
+                if (file.endsWith('.prisma')) {
+                  const prismaMatches = content.matchAll(/env\s*\(\s*['"]([a-zA-Z_0-9]+)['"]\s*\)/g);
+                  for (const m of prismaMatches) {
+                    if (m[1]) {
+                      detectedKeys.add(m[1]);
+                      detectedKeys.add(m[1].toUpperCase());
+                    }
+                  }
+                }
+
+                // 7. Auto-detect database driver requirements in package.json (Prisma, Postgres, SQL, MongoDB)
+                if (file === 'package.json') {
+                  try {
+                    const pkg = JSON.parse(content);
+                    const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+                    if (deps.prisma || deps['@prisma/client'] || deps.sequelize || deps.mysql2 || deps.pg || deps.mysql || deps.sqlite3 || deps.sqlite) {
+                      detectedKeys.add('DATABASE_URL');
+                    }
+                    if (deps.mongoose || deps.mongodb || deps.mongodb) {
+                      detectedKeys.add('MONGODB_URI');
+                      detectedKeys.add('MONGO_URI');
+                    }
+                  } catch {}
                 }
               }
             } catch (fileErr) {
