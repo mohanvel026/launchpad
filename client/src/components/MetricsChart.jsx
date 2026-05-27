@@ -38,7 +38,14 @@ function Sparkline({ data, color, height = 60 }) {
 export default function MetricsChart({ projectId }) {
   const [live,    setLive]    = useState(null);
   const [history, setHistory] = useState([]);
+  const [project, setProject] = useState(null);
   const socketRef = useRef(null);
+
+  useEffect(() => {
+    api.get(`/projects/${projectId}`)
+      .then((r) => setProject(r.data.project))
+      .catch(() => {});
+  }, [projectId]);
 
   useEffect(() => {
     api.get(`/metrics/${projectId}/history`)
@@ -80,7 +87,9 @@ export default function MetricsChart({ projectId }) {
         <div className="flex-between" style={{ marginBottom: 24 }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Processor Load</div>
-            <div style={{ fontSize: 36, fontWeight: 800, marginTop: 4 }}>{stats.cpu?.toFixed(1)}%</div>
+            <div style={{ fontSize: 36, fontWeight: 800, marginTop: 4 }}>
+              {stats.cpu?.toFixed(1)}% <span style={{ fontSize: 14, color: 'var(--text-dim)', fontWeight: 500 }}>/ {project?.cpuLimit || 0.5} CPU limit</span>
+            </div>
           </div>
           <div style={{ width: 48, height: 48, background: 'rgba(56, 189, 248, 0.1)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M15 2v2"/><path d="M9 2v2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M15 20v2"/><path d="M9 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/></svg>
@@ -97,7 +106,9 @@ export default function MetricsChart({ projectId }) {
         <div className="flex-between" style={{ marginBottom: 24 }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Memory Consumption</div>
-            <div style={{ fontSize: 36, fontWeight: 800, marginTop: 4 }}>{stats.memMB} MB</div>
+            <div style={{ fontSize: 36, fontWeight: 800, marginTop: 4 }}>
+              {stats.memMB} MB <span style={{ fontSize: 14, color: 'var(--text-dim)', fontWeight: 500 }}>/ {project?.ramLimitMB || 512} MB limit</span>
+            </div>
           </div>
           <div style={{ width: 48, height: 48, background: 'rgba(129, 140, 248, 0.1)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-secondary)" strokeWidth="2"><path d="M6 19v2"/><path d="M10 19v2"/><path d="M14 19v2"/><path d="M18 19v2"/><path d="M8 11V9"/><path d="M16 11V9"/><path d="M12 11V9"/><path d="M2 15h20"/><path d="M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7Z"/></svg>
@@ -120,6 +131,12 @@ export default function MetricsChart({ projectId }) {
           <div>
             <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Network Egress</div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{stats.txMB || 0} MB</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Active Resource Allocation</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>
+              ⚙️ {project?.cpuLimit || 0.5} CPU / {project?.ramLimitMB || 512}MB RAM
+            </div>
           </div>
           <div>
             <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Runtime Status</div>
