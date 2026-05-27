@@ -755,32 +755,120 @@ Do not include markdown or extra text.`;
 const generateDocsAndReadme = async (codeSnippets = '', stack = 'unknown') => {
   const safeCode = (codeSnippets || '').slice(0, CONFIG.MAX_LOG_CHARS);
 
-  // ── Call 1: Generate README as plain markdown (no JSON wrapper = fewer token failures) ──
-  const readmeSystemPrompt = `You are an expert Technical Writer. Generate a professional, well-structured README.md file in markdown format for this ${stack} project based on the code snippets provided. Include: project title, description, tech stack, local setup steps, environment variables, and available scripts. Output only the raw markdown text, no JSON wrapping.`;
-  const readmeRaw = await callAI(readmeSystemPrompt, `Source Code:\n${safeCode}`, 900, false);
+  // ── Extract project metadata from context string for template building ──
+  const nameMatch    = safeCode.match(/Project Name:\s*(.+)/);
+  const repoMatch    = safeCode.match(/Repository:\s*(.+)/);
+  const branchMatch  = safeCode.match(/Branch:\s*(.+)/);
+  const stackMatch   = safeCode.match(/Stack:\s*(.+)/);
+  const projectName  = nameMatch?.[1]?.trim()  || 'My Project';
+  const repoName     = repoMatch?.[1]?.trim()  || 'github.com/user/repo';
+  const branch       = branchMatch?.[1]?.trim() || 'main';
+  const detectedStack = stackMatch?.[1]?.trim() || stack;
 
-  // ── Call 2: Extract API endpoints as compact JSON ──
-  const endpointsSystemPrompt = `You are an API Documentation Specialist. Analyze the code and extract all HTTP API route definitions.
-Respond ONLY with a valid JSON object: { "apiEndpoints": [{ "method": "GET|POST|PUT|DELETE", "path": "/api/route", "description": "one sentence" }] }
-Return at most 15 endpoints. No markdown fences.`;
-  const endpointsRaw = await callAI(endpointsSystemPrompt, `Stack: ${stack}\nSource Code:\n${safeCode}`, 600, true);
+  // ── Stack-specific setup commands ──
+  const stackCommands = {
+    'react':          { install: 'npm install', dev: 'npm run dev', build: 'npm run build', port: '5173' },
+    'next':           { install: 'npm install', dev: 'npm run dev', build: 'npm run build', port: '3000' },
+    'nuxt':           { install: 'npm install', dev: 'npm run dev', build: 'npm run build', port: '3000' },
+    'node':           { install: 'npm install', dev: 'npm run dev', build: 'N/A',           port: '5000' },
+    'mern':           { install: 'npm install', dev: 'npm run dev', build: 'npm run build', port: '5000' },
+    'fullstack-split':{ install: 'npm install (in /client and /server)', dev: 'npm run dev', build: 'npm run build', port: '5000/5173' },
+    'static':         { install: 'N/A',         dev: 'open index.html', build: 'N/A',       port: 'N/A' },
+    'vue':            { install: 'npm install', dev: 'npm run dev', build: 'npm run build', port: '5173' },
+    'svelte':         { install: 'npm install', dev: 'npm run dev', build: 'npm run build', port: '5173' },
+    'astro':          { install: 'npm install', dev: 'npm run dev', build: 'npm run build', port: '4321' },
+    'angular':        { install: 'npm install', dev: 'ng serve',   build: 'ng build',       port: '4200' },
+  };
+  const cmds = stackCommands[detectedStack] || stackCommands['node'];
 
-  // Parse endpoints safely
-  let apiEndpoints = [];
-  if (endpointsRaw) {
-    try {
-      const parsed = JSON.parse(cleanJson(endpointsRaw));
-      apiEndpoints = Array.isArray(parsed.apiEndpoints) ? parsed.apiEndpoints : [];
-    } catch (e) {
-      console.warn('[AI Doc Gen] Endpoints parse failed:', e.message);
+  // ── Always-available template README (no AI required) ──
+  const templateReadme = `# ${projectName}
+
+> A **${detectedStack.toUpperCase()}** application deployed via [LaunchPad](https://github.com).
+
+## 🚀 Tech Stack
+
+- **Framework:** ${detectedStack}
+- **Repository:** [${repoName}](https://github.com/${repoName})
+- **Branch:** \`${branch}\`
+
+## ⚡ Quick Start
+
+\`\`\`bash
+# Clone the repository
+git clone https://github.com/${repoName}.git
+cd ${projectName.toLowerCase().replace(/\s+/g, '-')}
+
+# Install dependencies
+${cmds.install}
+
+# Start development server
+${cmds.dev}
+\`\`\`
+
+The app will be available at \`http://localhost:${cmds.port}\`.
+
+## 📦 Available Scripts
+
+| Command | Description |
+|:--------|:------------|
+| \`${cmds.dev}\` | Start the development server |
+| \`${cmds.build}\` | Build for production |
+
+## 🌍 Environment Variables
+
+Create a \`.env\` file in the root directory and add your environment variables:
+
+\`\`\`env
+NODE_ENV=development
+PORT=${cmds.port.split('/')[0]}
+# Add your environment variables here
+\`\`\`
+
+## 📁 Project Structure
+
+\`\`\`
+${projectName}/
+${detectedStack === 'fullstack-split' ? '├── client/          # Frontend application\n├── server/          # Backend API server\n├── .env             # Environment variables\n└── README.md' : '├── src/             # Source files\n├── public/          # Static assets\n├── .env             # Environment variables\n└── README.md'}
+\`\`\`
+
+## 🚢 Deployment
+
+This project is deployed on **LaunchPad** with automated CI/CD from the \`${branch}\` branch.
+
+---
+*README auto-generated by LaunchPad AI Co-Pilot*`;
+
+  // ── Try AI to generate a richer, code-aware README (optional enhancement) ──
+  let readme = templateReadme;
+  try {
+    const readmeSystemPrompt = `You are an expert Technical Writer. Generate a professional README.md in markdown format for this ${detectedStack} project. Include: project title with emoji, description, tech stack badges, setup steps, environment variables table, and API overview if applicable. Be specific and detailed. Output ONLY raw markdown, no JSON, no code fences around the whole response.`;
+    const readmeRaw = await callAI(readmeSystemPrompt, safeCode, 1000, false);
+    if (readmeRaw && readmeRaw.length > 200 && !readmeRaw.includes('could not')) {
+      readme = readmeRaw;
     }
+  } catch (e) {
+    console.warn('[AI Doc Gen] AI README enhancement failed, using template:', e.message);
   }
 
-  const readme = readmeRaw || '# Project README\n\nDocumentation could not be generated automatically. Please add a README.md manually.';
+  // ── Try AI to extract API endpoints (optional enhancement) ──
+  let apiEndpoints = [];
+  try {
+    const endpointsSystemPrompt = `Analyze this code and extract HTTP API route definitions. Respond ONLY with valid JSON: { "apiEndpoints": [{ "method": "GET", "path": "/api/route", "description": "one sentence" }] }. Max 15 endpoints. No markdown fences.`;
+    const endpointsRaw = await callAI(endpointsSystemPrompt, `Stack: ${detectedStack}\n${safeCode}`, 500, true);
+    if (endpointsRaw) {
+      const parsed = JSON.parse(cleanJson(endpointsRaw));
+      if (Array.isArray(parsed.apiEndpoints)) apiEndpoints = parsed.apiEndpoints;
+    }
+  } catch (e) {
+    console.warn('[AI Doc Gen] Endpoints extraction failed:', e.message);
+  }
 
   return {
     readme,
-    apiDocs: `# REST API Reference\n\n${apiEndpoints.map(ep => `- **${ep.method}** \`${ep.path || ep.route}\` — ${ep.description}`).join('\n') || 'No API routes detected.'}`,
+    apiDocs: `# REST API Reference\n\n${apiEndpoints.length > 0
+      ? apiEndpoints.map(ep => `- **${ep.method}** \`${ep.path || ep.route}\` — ${ep.description}`).join('\n')
+      : `No API routes detected. This is a **${detectedStack}** project.`}`,
     apiEndpoints
   };
 };
