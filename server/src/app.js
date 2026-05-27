@@ -26,7 +26,7 @@ connectDB();
 // ── Security / logging (these don't consume the body, so they go first) ───────
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: '*', credentials: true }));
-app.use(morgan('dev'));
+if (process.env.NODE_ENV !== 'production') app.use(morgan('tiny'));
 
 // ── Project subdomain proxy — MUST be before body parsers ─────────────────────
 // When the Host header is a project subdomain (e.g. portfolio-xyz.nip.io),
@@ -54,7 +54,21 @@ app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
 
 // ── Serve LaunchPad React dashboard (SPA fallback) ────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
-app.use(express.static(clientDist));
+
+// Long-term immutable cache for hashed JS/CSS/font bundles (Vite adds content hashes)
+// HTML is always fetched fresh so React updates deploy instantly
+app.use(express.static(clientDist, {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    } else if (/\.(js|css|woff2?|ttf|eot|svg|png|jpg|ico)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  }
+}));
+
 app.get(/(.*)/, (req, res) => {
   res.sendFile(path.join(clientDist, 'index.html'));
 });

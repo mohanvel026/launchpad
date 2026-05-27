@@ -15,4 +15,6 @@ const deploymentSchema = new mongoose.Schema({
   duration:       { type: Number },  // milliseconds
 }, { timestamps: true });
 
+deploymentSchema.index({ project: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Deployment', deploymentSchema);

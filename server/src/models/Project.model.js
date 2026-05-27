@@ -24,4 +24,7 @@ const projectSchema = new mongoose.Schema({
   ramLimitMB:    { type: Number, default: 512 },
 }, { timestamps: true });
 
+projectSchema.index({ owner: 1 });
+projectSchema.index({ collaborators: 1 });
+
 module.exports = mongoose.model('Project', projectSchema);
