@@ -278,6 +278,22 @@ const discoverEnv = async (req, res) => {
     const { discoverRequiredEnvVars } = require('../services/ai.service');
     const result = await discoverRequiredEnvVars(aggregatedCode, project.stack);
 
+    // Guaranteed static injection fallback: Merge statically-scanned keys directly into result.detectedVars
+    const resultKeys = new Set((result.detectedVars || []).map(v => v.key.toUpperCase()));
+    result.detectedVars = result.detectedVars || [];
+    
+    detectedKeys.forEach(k => {
+      if (k && !resultKeys.has(k.toUpperCase())) {
+        result.detectedVars.push({
+          key: k,
+          required: true,
+          description: 'Auto-detected via static codebase scan.',
+          placeholder: `your_${k.toLowerCase()}_here`
+        });
+        resultKeys.add(k.toUpperCase());
+      }
+    });
+
     // Auto-generate and write a highly professional .env.example file to their cloned workspace
     if (result.detectedVars && result.detectedVars.length > 0) {
       if (fs.existsSync(repoPath)) {
