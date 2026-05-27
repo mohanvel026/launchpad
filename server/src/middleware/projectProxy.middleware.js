@@ -237,7 +237,14 @@ const projectProxyMiddleware = async (req, res, next) => {
         const statusCode = proxyRes.statusCode;
 
         // Log traffic analytics to Redis/DB edge counters asynchronously
-        recordVisit(projectId, responseTime, statusCode).catch((err) => {
+        recordVisit(
+          projectId, 
+          responseTime, 
+          statusCode, 
+          req.method, 
+          req.url, 
+          req.ip || req.connection.remoteAddress
+        ).catch((err) => {
           console.warn('[Proxy Traffic Audit Error]:', err.message);
         });
 
