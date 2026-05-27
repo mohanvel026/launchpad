@@ -427,7 +427,7 @@ const optimizeDbQueries = async (req, res) => {
 
     if (fs.existsSync(repoPath)) {
       const scanForDbOps = (dir, depth = 0) => {
-        if (depth > 3) return;
+        if (depth > 6) return;
         const files = fs.readdirSync(dir);
         for (const file of files) {
           const fullPath = path.join(dir, file);
@@ -435,12 +435,12 @@ const optimizeDbQueries = async (req, res) => {
             if (!['node_modules', '.git', 'dist', 'build', '.next', '.nuxt', 'out', 'coverage', 'public'].includes(file)) {
               scanForDbOps(fullPath, depth + 1);
             }
-          } else if (/\.(js|ts|py)$/i.test(file)) {
+          } else if (/\.(js|ts|py|prisma|sql)$/i.test(file)) {
             const content = fs.readFileSync(fullPath, 'utf8');
             // Look for database keywords: Schema, find, findOne, select, insert, Prisma
-            if (/mongoose|prisma|find|select|insert|update|delete|schema/i.test(content)) {
-              if (dbCode.length < 12000) {
-                dbCode += `\n// File: ${file}\n` + content.slice(0, 1500);
+            if (/mongoose|prisma|find|select|insert|update|delete|schema/i.test(content) || file.endsWith('.prisma') || file.endsWith('.sql')) {
+              if (dbCode.length < 18000) {
+                dbCode += `\n// File: ${file}\n` + content.slice(0, 2000);
               }
             }
           }
