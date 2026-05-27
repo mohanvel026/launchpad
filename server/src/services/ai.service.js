@@ -84,7 +84,10 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
         ],
         ...(isJson && { response_format: { type: 'json_object' } }),
       },
-      { headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` } }
+      { 
+        headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+        timeout: 4000 // Fast 4-second timeout to failover instantly if Groq is slow
+      }
     );
     return res.data.choices[0].message.content;
   } catch (err) {
@@ -112,7 +115,8 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
           temperature: 0.2,
           ...(isJson && { responseMimeType: 'application/json' }),
         },
-      }
+      },
+      { timeout: 10000 } // Reliable 10-second timeout for Gemini
     );
     return res.data.candidates[0].content.parts[0].text;
   } catch (err) {
