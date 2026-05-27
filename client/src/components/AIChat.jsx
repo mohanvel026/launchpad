@@ -158,23 +158,40 @@ export default function AIChat({ projectId }) {
       const data = res.data;
       
       if (endpoint === 'audit-security') {
-        replyText += `**Security Score:** \`${data.securityScore || 100}/100\` | **Grade:** \`${data.securityGrade || 'A+'}\`\n\n`;
+        replyText += `🛡️ **Security Rating:** \`${data.securityScore || 100}/100\` | **Grade:** \`${data.securityGrade || 'A+'}\`\n\n`;
         if (data.issues && data.issues.length > 0) {
           replyText += `#### ⚠️ Vulnerabilities Detected:\n`;
-          data.issues.forEach(i => {
-            replyText += `- **[${i.severity || 'WARN'}]** ${i.title || i} - *${i.description || 'No description provided'}*\n`;
+          data.issues.forEach((i, idx) => {
+            const severityEmoji = i.severity?.toUpperCase() === 'HIGH' ? '🔴' : i.severity?.toUpperCase() === 'MEDIUM' ? '🟡' : '🟢';
+            replyText += `##### **${severityEmoji} Issue #${idx + 1}: ${i.title || 'Security Warning'}**\n`;
+            replyText += `- **Severity:** \`${i.severity || 'WARN'}\`\n`;
+            replyText += `- **Description:** *${i.description || 'No description provided'}*\n`;
+            if (i.remediation) {
+              replyText += `- **Remediation:** *${i.remediation}*\n`;
+            }
+            replyText += `\n`;
           });
         } else {
           replyText += `✅ **Zero security vulnerabilities detected!** Code is secure and dependencies are clean.\n`;
         }
         if (data.recommendations && data.recommendations.length > 0) {
           replyText += `\n#### 💡 SRE Recommendations:\n`;
-          data.recommendations.forEach(r => replyText += `- ${r}\n`);
+          data.recommendations.forEach(r => replyText += `- 💡 *${r}*\n`);
         }
       } else if (endpoint === 'optimize-config') {
         replyText += `#### ⚙️ Dockerfile & Server Configurations Audit:\n\n`;
         if (data.suggestions && data.suggestions.length > 0) {
-          data.suggestions.forEach(s => replyText += `- ${s}\n`);
+          data.suggestions.forEach((s, idx) => {
+            replyText += `##### **Optimization Advice #${idx + 1}**\n`;
+            replyText += `- 🛠️ **Strategy:** *${s.suggestion || s}*\n`;
+            if (s.file) {
+              replyText += `- 📁 **File:** \`${s.file}\`\n`;
+            }
+            if (s.impact) {
+              replyText += `- 🚀 **Estimated Impact:** **${s.impact}**\n`;
+            }
+            replyText += `\n`;
+          });
         } else {
           replyText += `✅ **Configurations are highly optimized for production capacity.**\n`;
         }
@@ -183,7 +200,8 @@ export default function AIChat({ projectId }) {
         if (data.apiEndpoints && data.apiEndpoints.length > 0) {
           replyText += `#### 📋 Detected API Endpoints:\n`;
           data.apiEndpoints.forEach(ep => {
-            replyText += `- \`${ep.method || 'GET'}\` \`${ep.path || ep}\` - *${ep.description || 'Active endpoint'}*\n`;
+            const methodEmoji = ep.method?.toUpperCase() === 'POST' ? '🟢' : ep.method?.toUpperCase() === 'DELETE' ? '🔴' : ep.method?.toUpperCase() === 'PUT' ? '🟡' : '🔵';
+            replyText += `- ${methodEmoji} \`${ep.method || 'GET'}\` \`${ep.path || ep}\` — *${ep.description || 'Active endpoint'}*\n`;
           });
         }
         if (data.readme) {
@@ -205,7 +223,16 @@ export default function AIChat({ projectId }) {
       } else if (endpoint === 'inspect-logs') {
         replyText += `#### 🩺 Live Container Log Inspection (SRE):\n\n`;
         if (data.anomalies && data.anomalies.length > 0) {
-          data.anomalies.forEach(a => replyText += `- **[${a.level || 'WARN'}]** ${a.message || a}\n`);
+          data.anomalies.forEach((a, idx) => {
+            const levelEmoji = a.level?.toUpperCase() === 'ERROR' || a.level?.toUpperCase() === 'CRITICAL' ? '🔴' : '🟡';
+            replyText += `##### **${levelEmoji} Anomaly #${idx + 1}: ${a.title || 'Runtime Log Alert'}**\n`;
+            replyText += `- **Level:** \`${a.level || 'WARN'}\`\n`;
+            replyText += `- **Details:** *${a.message || a}*\n`;
+            if (a.suggestion) {
+              replyText += `- **SRE Recommendation:** *${a.suggestion}*\n`;
+            }
+            replyText += `\n`;
+          });
         } else {
           replyText += `✅ **Container log analysis completed. Zero anomalies, memory leaks, or database connection faults detected!**\n`;
         }
