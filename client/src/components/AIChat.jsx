@@ -1,14 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import api from '../lib/api';
 
+// Format standard text message paragraphs and simple bold marks
 function formatMessageContent(content) {
   if (typeof content !== 'string') return content;
-
-  // Split by code blocks first
   const parts = content.split(/(```[\s\S]*?```)/g);
 
   return parts.map((part, index) => {
-    // Code block detection
     if (part.startsWith('```')) {
       const match = part.match(/```(\w*)\n([\s\S]*?)```/);
       const language = match ? match[1] : '';
@@ -46,11 +44,9 @@ function formatMessageContent(content) {
       );
     }
 
-    // Process paragraphs, bold highlighting, and inline code badges
     const lines = part.split('\n');
     return lines.map((partLine, lineIndex) => {
       const tokens = partLine.split(/(\*\*.*?\*\*|`.*?`)/g);
-
       const parsedLine = tokens.map((token, tokenIndex) => {
         if (token.startsWith('**') && token.endsWith('**')) {
           return <strong key={tokenIndex} style={{ color: 'var(--text-main)', fontWeight: 700 }}>{token.slice(2, -2)}</strong>;
@@ -80,6 +76,271 @@ function formatMessageContent(content) {
       );
     });
   });
+}
+
+// ─── 1. Security Vulnerability Scan SRE Panel ───
+function SecurityReportWidget({ data }) {
+  const [expanded, setExpanded] = useState({});
+  const score = data.securityScore || 100;
+  const grade = data.securityGrade || 'A+';
+  const issues = data.issues || [];
+  const recs = data.recommendations || [];
+
+  const gradeColor = score >= 90 ? '#10b981' : score >= 75 ? '#fbbf24' : '#ef4444';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
+      {/* Visual Ring and Score */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, padding: 16, borderRadius: 12, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)' }}>
+        <div style={{ position: 'relative', width: 68, height: 68, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="68" height="68" viewBox="0 0 36 36">
+            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="3" />
+            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke={gradeColor} strokeWidth="3" strokeDasharray={`${score}, 100`} strokeLinecap="round" />
+          </svg>
+          <div style={{ position: 'absolute', fontSize: 16, fontWeight: 800, color: '#fff' }}>{score}%</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Audit Grade: <span style={{ color: gradeColor, textShadow: `0 0 10px ${gradeColor}` }}>{grade}</span>
+          </div>
+          <p style={{ margin: '4px 0 0 0', fontSize: 12, color: 'var(--text-dim)' }}>
+            {issues.length === 0 ? '✨ Code architecture & dependencies are secure.' : `⚠️ Found ${issues.length} security flags.`}
+          </p>
+        </div>
+      </div>
+
+      {/* Vulnerabilities Accordion */}
+      {issues.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Vulnerabilities Details</div>
+          {issues.map((i, idx) => {
+            const isHigh = i.severity?.toUpperCase() === 'HIGH';
+            const isMed = i.severity?.toUpperCase() === 'MEDIUM';
+            const borderCol = isHigh ? 'rgba(239, 68, 68, 0.2)' : isMed ? 'rgba(251, 191, 36, 0.2)' : 'rgba(16, 185, 129, 0.2)';
+            const bgCol = isHigh ? 'rgba(239, 68, 68, 0.02)' : isMed ? 'rgba(251, 191, 36, 0.02)' : 'rgba(16, 185, 129, 0.02)';
+            
+            return (
+              <div key={idx} style={{ borderRadius: 8, border: `1px solid ${borderCol}`, background: bgCol, overflow: 'hidden' }}>
+                <button
+                  onClick={() => setExpanded(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                  style={{ width: '100%', background: 'transparent', border: 'none', padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ color: isHigh ? '#ef4444' : isMed ? '#fbbf24' : '#10b981' }}>●</span>
+                    {i.title}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{expanded[idx] ? '▲' : '▼'}</span>
+                </button>
+                {expanded[idx] && (
+                  <div style={{ padding: '0 12px 12px 12px', fontSize: 12, borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div><span style={{ color: 'var(--text-muted)' }}>Severity:</span> <code style={{ color: isHigh ? '#ef4444' : '#fbbf24' }}>{i.severity}</code></div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>Description:</span> <span style={{ color: 'var(--text-dim)' }}>{i.description}</span></div>
+                    {i.remediation && (
+                      <div style={{ marginTop: 4, padding: 8, borderRadius: 6, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>SRE Patch:</span> {i.remediation}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* SRE Recommendations */}
+      {recs.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 14, borderRadius: 10, background: 'rgba(56, 189, 248, 0.02)', border: '1px solid rgba(56, 189, 248, 0.1)' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 14 }}>💡</span> SRE HARDENING REMEDIATIONS
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: 'var(--text-dim)' }}>
+            {recs.map((r, idx) => <li key={idx}>{r}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 2. Docker & Config Optimizer SRE Panel ───
+function ConfigReportWidget({ data }) {
+  const suggestions = data.suggestions || [];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 12 }}>
+      {suggestions.length === 0 ? (
+        <div className="flex-center" style={{ padding: 20, borderRadius: 10, background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.15)', color: '#10b981', fontSize: 13 }}>
+          ✅ Configurations are fully optimized for active caching & concurrent delivery.
+        </div>
+      ) : (
+        suggestions.map((s, idx) => (
+          <div key={idx} style={{ padding: 14, borderRadius: 10, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>📋 Optimization #{idx + 1}</span>
+              {s.impact && (
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 100, fontWeight: 700, background: s.impact.toUpperCase() === 'HIGH' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(56, 189, 248, 0.15)', color: s.impact.toUpperCase() === 'HIGH' ? '#c084fc' : '#38bdf8' }}>
+                  {s.impact} Impact
+                </span>
+              )}
+            </div>
+            <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>{s.suggestion || s}</p>
+            {s.file && (
+              <div style={{ marginTop: 8, fontSize: 11 }}>
+                <span style={{ color: 'var(--text-muted)' }}>Target File:</span> <code style={{ color: 'var(--accent-primary)', background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: 4 }}>{s.file}</code>
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// ─── 3. REST API Docs / Playground Panel ───
+function DocsReportWidget({ data }) {
+  const endpoints = data.apiEndpoints || [];
+  const [copied, setCopied] = useState(false);
+
+  const copyReadme = () => {
+    if (!data.readme) return;
+    navigator.clipboard.writeText(data.readme);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
+      {endpoints.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>API Routing Playground</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', paddingRight: 4 }}>
+            {endpoints.map((ep, idx) => {
+              const method = (ep.method || 'GET').toUpperCase();
+              const methodCol = method === 'POST' ? '#10b981' : method === 'DELETE' ? '#ef4444' : method === 'PUT' ? '#fbbf24' : '#38bdf8';
+              const methodBg = method === 'POST' ? 'rgba(16, 185, 129, 0.08)' : method === 'DELETE' ? 'rgba(239, 68, 68, 0.08)' : method === 'PUT' ? 'rgba(251, 191, 36, 0.08)' : 'rgba(56, 189, 248, 0.08)';
+
+              return (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 10, borderRadius: 8, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 6, color: methodCol, background: methodBg, border: `1px solid ${methodCol}22`, minWidth: 62, textAlign: 'center' }}>
+                    {method}
+                  </span>
+                  <code style={{ fontSize: 12.5, color: '#fff', overflowX: 'auto', whiteSpace: 'nowrap', flex: 1 }}>{ep.path || ep}</code>
+                  {ep.description && <span style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic', maxWidth: '40%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ep.description}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {data.readme && (
+        <div style={{ padding: 14, borderRadius: 10, background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-success)' }}>📝 Compiled README.md</span>
+            <button onClick={copyReadme} className="lp-btn-secondary" style={{ padding: '4px 10px', fontSize: 11, height: 'auto', background: 'transparent' }}>
+              {copied ? '✅ Copied!' : '📋 Copy File'}
+            </button>
+          </div>
+          <pre style={{ margin: 0, fontSize: 11.5, color: 'var(--text-dim)', background: '#050508', padding: 10, borderRadius: 6, maxHeight: 120, overflowY: 'auto', border: '1px solid rgba(255,255,255,0.03)' }}>
+            <code>{data.readme}</code>
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 4. Database Query Indexer Panel ───
+function QueriesReportWidget({ data }) {
+  const recs = data.recommendations || [];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
+      {recs.length === 0 ? (
+        <div style={{ padding: 16, borderRadius: 10, background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.15)', color: '#10b981', fontSize: 13 }}>
+          ✅ Database query patterns look optimal. No missing indexes or collection bottlenecks detected!
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {recs.map((r, idx) => {
+            const isHigh = r.speedImpact?.toUpperCase() === 'HIGH';
+            const impactColor = isHigh ? '#c084fc' : '#38bdf8';
+
+            return (
+              <div key={idx} style={{ padding: 14, borderRadius: 10, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>📊 Recommendation #{idx + 1}</span>
+                  <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 100, fontWeight: 700, background: isHigh ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.15)', color: impactColor }}>
+                    {r.speedImpact || 'MEDIUM'} IMPACT
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>📁 File:</span> <code style={{ color: 'var(--accent-primary)' }}>{r.file || 'unknown'}</code>
+                  </div>
+                  {r.query && (
+                    <div style={{ background: '#050508', padding: 8, borderRadius: 6, border: '1px solid rgba(255,255,255,0.03)' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Query Pattern</span>
+                      <code style={{ color: '#e2e8f0', fontSize: 11.5, wordBreak: 'break-all' }}>{r.query}</code>
+                    </div>
+                  )}
+                  {r.indexAdvice && (
+                    <div style={{ background: 'rgba(56,189,248,0.02)', padding: 8, borderRadius: 6, border: '1px solid rgba(56,189,248,0.1)' }}>
+                      <span style={{ color: 'var(--accent-primary)', fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>⚡ Suggested Database Index</span>
+                      <code style={{ color: '#fff', fontSize: 12 }}>{typeof r.indexAdvice === 'object' ? JSON.stringify(r.indexAdvice) : r.indexAdvice}</code>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 5. Live Container Log SRE Widget ───
+function LogsReportWidget({ data }) {
+  const anomalies = data.anomalies || [];
+  const [filter, setFilter] = useState('ALL'); // ALL, ANOMALIES
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 12 }}>
+      {/* Visual Terminal */}
+      <div style={{ borderRadius: 10, background: '#050508', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+        <div style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.04)', padding: '8px 14px', display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }}></span>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24' }}></span>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }}></span>
+          </div>
+          <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'monospace' }}>stdout_stream.log</span>
+        </div>
+
+        <div style={{ padding: 14, maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'monospace', fontSize: 11.5, color: '#a3a3a3', lineHeight: 1.4 }}>
+          {anomalies.length === 0 ? (
+            <div style={{ color: '#10b981' }}>[INFO] Active stdout container stream scan: Zero anomalies, memory leaks, or timeout flags detected. System nominal.</div>
+          ) : (
+            anomalies.map((a, idx) => {
+              const isErr = a.level?.toUpperCase() === 'ERROR' || a.level?.toUpperCase() === 'CRITICAL';
+              return (
+                <div key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', paddingBottom: 6 }}>
+                  <span style={{ color: isErr ? '#ef4444' : '#fbbf24', fontWeight: 'bold' }}>[{a.level || 'WARN'}]</span> {a.message || a}
+                  {a.suggestion && (
+                    <div style={{ color: 'var(--accent-primary)', fontSize: 11, marginTop: 4, paddingLeft: 10, borderLeft: '2px solid var(--accent-primary)' }}>
+                      💡 SRE Advice: {a.suggestion}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function AIChat({ projectId }) {
@@ -128,6 +389,7 @@ export default function AIChat({ projectId }) {
     const userMsg = { role: 'user', content: q };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
+
     try {
       const res = await api.post(`/ai/${projectId}/chat`, {
         message: q,
@@ -154,93 +416,14 @@ export default function AIChat({ projectId }) {
     
     try {
       const res = await api.post(`/ai/${projectId}/${endpoint}`);
-      let replyText = `### 🤖 AI ${toolName} Report\n\n`;
-      const data = res.data;
-      
-      if (endpoint === 'audit-security') {
-        replyText += `🛡️ **Security Rating:** \`${data.securityScore || 100}/100\` | **Grade:** \`${data.securityGrade || 'A+'}\`\n\n`;
-        if (data.issues && data.issues.length > 0) {
-          replyText += `#### ⚠️ Vulnerabilities Detected:\n`;
-          data.issues.forEach((i, idx) => {
-            const severityEmoji = i.severity?.toUpperCase() === 'HIGH' ? '🔴' : i.severity?.toUpperCase() === 'MEDIUM' ? '🟡' : '🟢';
-            replyText += `##### **${severityEmoji} Issue #${idx + 1}: ${i.title || 'Security Warning'}**\n`;
-            replyText += `- **Severity:** \`${i.severity || 'WARN'}\`\n`;
-            replyText += `- **Description:** *${i.description || 'No description provided'}*\n`;
-            if (i.remediation) {
-              replyText += `- **Remediation:** *${i.remediation}*\n`;
-            }
-            replyText += `\n`;
-          });
-        } else {
-          replyText += `✅ **Zero security vulnerabilities detected!** Code is secure and dependencies are clean.\n`;
+      setMessages(prev => [
+        ...prev, 
+        { 
+          role: 'assistant', 
+          content: `📊 **AI ${toolName} completed.** Diagnostic dashboard instantiated below.`, 
+          sreReport: { type: endpoint, data: res.data } 
         }
-        if (data.recommendations && data.recommendations.length > 0) {
-          replyText += `\n#### 💡 SRE Recommendations:\n`;
-          data.recommendations.forEach(r => replyText += `- 💡 *${r}*\n`);
-        }
-      } else if (endpoint === 'optimize-config') {
-        replyText += `#### ⚙️ Dockerfile & Server Configurations Audit:\n\n`;
-        if (data.suggestions && data.suggestions.length > 0) {
-          data.suggestions.forEach((s, idx) => {
-            replyText += `##### **Optimization Advice #${idx + 1}**\n`;
-            replyText += `- 🛠️ **Strategy:** *${s.suggestion || s}*\n`;
-            if (s.file) {
-              replyText += `- 📁 **File:** \`${s.file}\`\n`;
-            }
-            if (s.impact) {
-              replyText += `- 🚀 **Estimated Impact:** **${s.impact}**\n`;
-            }
-            replyText += `\n`;
-          });
-        } else {
-          replyText += `✅ **Configurations are highly optimized for production capacity.**\n`;
-        }
-      } else if (endpoint === 'generate-docs') {
-        replyText += `✅ **REST API Documentation and README successfully compiled!**\n\n`;
-        if (data.apiEndpoints && data.apiEndpoints.length > 0) {
-          replyText += `#### 📋 Detected API Endpoints:\n`;
-          data.apiEndpoints.forEach(ep => {
-            const methodEmoji = ep.method?.toUpperCase() === 'POST' ? '🟢' : ep.method?.toUpperCase() === 'DELETE' ? '🔴' : ep.method?.toUpperCase() === 'PUT' ? '🟡' : '🔵';
-            replyText += `- ${methodEmoji} \`${ep.method || 'GET'}\` \`${ep.path || ep}\` — *${ep.description || 'Active endpoint'}*\n`;
-          });
-        }
-        if (data.readme) {
-          replyText += `\n#### 📝 Auto-Generated README.md preview (Saved to project root):\n\`\`\`markdown\n${data.readme.slice(0, 500)}...\n\`\`\``;
-        }
-      } else if (endpoint === 'optimize-queries') {
-        replyText += `#### 📊 Database Operations & Query Indexing Report:\n\n`;
-        if (data.recommendations && data.recommendations.length > 0) {
-          data.recommendations.forEach((r, idx) => {
-            replyText += `##### **Index Recommendation #${idx + 1}**\n`;
-            replyText += `- 📁 **File:** \`${r.file || 'unknown'}\`\n`;
-            replyText += `- 🔍 **Query / Model:** \`${r.query || 'n/a'}\`\n`;
-            replyText += `- ⚡ **Index Advice:** \`${typeof r.indexAdvice === 'object' ? JSON.stringify(r.indexAdvice) : r.indexAdvice}\`\n`;
-            replyText += `- 🚀 **Speed Impact:** **${r.speedImpact || 'MEDIUM'}**\n\n`;
-          });
-        } else {
-          replyText += `✅ **Database query patterns look optimal. No missing indexes detected!**\n`;
-        }
-      } else if (endpoint === 'inspect-logs') {
-        replyText += `#### 🩺 Live Container Log Inspection (SRE):\n\n`;
-        if (data.anomalies && data.anomalies.length > 0) {
-          data.anomalies.forEach((a, idx) => {
-            const levelEmoji = a.level?.toUpperCase() === 'ERROR' || a.level?.toUpperCase() === 'CRITICAL' ? '🔴' : '🟡';
-            replyText += `##### **${levelEmoji} Anomaly #${idx + 1}: ${a.title || 'Runtime Log Alert'}**\n`;
-            replyText += `- **Level:** \`${a.level || 'WARN'}\`\n`;
-            replyText += `- **Details:** *${a.message || a}*\n`;
-            if (a.suggestion) {
-              replyText += `- **SRE Recommendation:** *${a.suggestion}*\n`;
-            }
-            replyText += `\n`;
-          });
-        } else {
-          replyText += `✅ **Container log analysis completed. Zero anomalies, memory leaks, or database connection faults detected!**\n`;
-        }
-      } else {
-        replyText += typeof data === 'string' ? data : JSON.stringify(data, null, 2);
-      }
-      
-      setMessages(prev => [...prev, { role: 'assistant', content: replyText }]);
+      ]);
     } catch (err) {
       setMessages(prev => [...prev, { role: 'assistant', content: `❌ **AI ${toolName} failed:** ${err.response?.data?.message || err.message}` }]);
     } finally {
@@ -288,6 +471,13 @@ export default function AIChat({ projectId }) {
                 border: msg.role === 'user' ? 'none' : '1px solid var(--border)'
               }}>
                 {formatMessageContent(msg.content)}
+                
+                {/* Visual SRE Custom Interactive Widgets */}
+                {msg.sreReport && msg.sreReport.type === 'audit-security' && <SecurityReportWidget data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'optimize-config' && <ConfigReportWidget data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'generate-docs' && <DocsReportWidget data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'optimize-queries' && <QueriesReportWidget data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'inspect-logs' && <LogsReportWidget data={msg.sreReport.data} />}
               </div>
             </div>
           ))}
