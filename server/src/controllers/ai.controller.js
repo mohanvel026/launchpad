@@ -432,7 +432,9 @@ const optimizeDbQueries = async (req, res) => {
         for (const file of files) {
           const fullPath = path.join(dir, file);
           if (fs.statSync(fullPath).isDirectory()) {
-            if (file !== 'node_modules' && file !== '.git') scanForDbOps(fullPath, depth + 1);
+            if (!['node_modules', '.git', 'dist', 'build', '.next', '.nuxt', 'out', 'coverage', 'public'].includes(file)) {
+              scanForDbOps(fullPath, depth + 1);
+            }
           } else if (/\.(js|ts|py)$/i.test(file)) {
             const content = fs.readFileSync(fullPath, 'utf8');
             // Look for database keywords: Schema, find, findOne, select, insert, Prisma

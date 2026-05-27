@@ -192,7 +192,13 @@ export default function AIChat({ projectId }) {
       } else if (endpoint === 'optimize-queries') {
         replyText += `#### 📊 Database Operations & Query Indexing Report:\n\n`;
         if (data.recommendations && data.recommendations.length > 0) {
-          data.recommendations.forEach(r => replyText += `- ${r}\n`);
+          data.recommendations.forEach((r, idx) => {
+            replyText += `##### **Index Recommendation #${idx + 1}**\n`;
+            replyText += `- 📁 **File:** \`${r.file || 'unknown'}\`\n`;
+            replyText += `- 🔍 **Query / Model:** \`${r.query || 'n/a'}\`\n`;
+            replyText += `- ⚡ **Index Advice:** \`${typeof r.indexAdvice === 'object' ? JSON.stringify(r.indexAdvice) : r.indexAdvice}\`\n`;
+            replyText += `- 🚀 **Speed Impact:** **${r.speedImpact || 'MEDIUM'}**\n\n`;
+          });
         } else {
           replyText += `✅ **Database query patterns look optimal. No missing indexes detected!**\n`;
         }
