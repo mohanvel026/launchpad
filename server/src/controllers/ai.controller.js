@@ -480,34 +480,6 @@ const optimizeDbQueries = async (req, res) => {
   }
 };
 
-// ─── POST /api/ai/:projectId/predict-resources ─────────────────────────────
-const predictResources = async (req, res) => {
-  try {
-    checkApiKeys();
-
-    const project = await Project.findOne({
-      _id: req.params.projectId,
-      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
-    });
-    if (!project) return res.status(404).json({ message: 'Project not found' });
-
-    const repoPath = path.join(__dirname, '../../repos', project._id.toString());
-    let packageJson = '';
-    if (fs.existsSync(repoPath)) {
-      const pkgPath = path.join(repoPath, 'package.json');
-      if (fs.existsSync(pkgPath)) packageJson = fs.readFileSync(pkgPath, 'utf8');
-    }
-
-    const { predictResourceRequirements } = require('../services/ai.service');
-    const prediction = await predictResourceRequirements(packageJson, project.stack);
-    res.json(prediction);
-  } catch (err) {
-    if (err.message.includes('No valid API keys')) {
-      return res.json({ cpuLimit: '0.5', ramLimitMB: 256, needsRedis: false, suggestions: [] });
-    }
-    res.status(500).json({ message: err.message });
-  }
-};
 
 // ─── POST /api/ai/:projectId/generate-docs ────────────────────────────────
 const generateDocs = async (req, res) => {
