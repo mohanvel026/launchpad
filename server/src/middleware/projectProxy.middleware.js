@@ -19,18 +19,21 @@ const { recordVisit } = require('../services/analytics.service');
 const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || '129.159.22.142.nip.io').toLowerCase();
 
 // ── Simple in-memory cache so MongoDB isn't hit on every request ──────────────
-const portCache = new Map(); // subdomain → { port, ts }
+const portCache = new Map(); // subdomain → { port, projectId, ts }
 const CACHE_TTL = 30_000;   // 30 seconds
 
 const lookupPort = async (identifier, isCustomDomain = false) => {
   const cached = portCache.get(identifier);
-  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.port;
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached;
 
   const query = isCustomDomain ? { customDomain: identifier } : { subdomain: identifier };
   const project = await Project.findOne(query, 'port status').lean();
-  const port    = project?.port || null;
-  if (port) portCache.set(identifier, { port, ts: Date.now() });
-  return port;
+  if (project && project.port) {
+    const data = { port: project.port, projectId: project._id.toString(), ts: Date.now() };
+    portCache.set(identifier, data);
+    return data;
+  }
+  return null;
 };
 
 /** Call this after a successful deploy so the next request picks up the new port */
@@ -193,9 +196,9 @@ const projectProxyMiddleware = async (req, res, next) => {
   }
 
   try {
-    const port = await lookupPort(subdomain, isCustomDomain);
+    const projectData = await lookupPort(subdomain, isCustomDomain);
 
-    if (!port) {
+    if (!projectData) {
       // If it doesn't match any registered custom domain, fall back to the LaunchPad dashboard
       if (isCustomDomain) return next();
 
@@ -208,6 +211,8 @@ const projectProxyMiddleware = async (req, res, next) => {
            Deploy your project from the LaunchPad dashboard first.`
         ));
     }
+
+    const { port, projectId } = projectData;
 
     // ── Pipe the request to the container ──────────────────────────────────────
     console.log(`[proxy] ${subdomain} → :${port} ${req.method} ${req.url}`);
@@ -232,13 +237,9 @@ const projectProxyMiddleware = async (req, res, next) => {
         const statusCode = proxyRes.statusCode;
 
         // Log traffic analytics to Redis/DB edge counters asynchronously
-        Project.findOne({ $or: [{ subdomain }, { customDomain: subdomain }] }).then((proj) => {
-          if (proj) {
-            recordVisit(proj._id.toString(), responseTime, statusCode).catch((err) => {
-              console.warn('[Proxy Traffic Audit Error]:', err.message);
-            });
-          }
-        }).catch(() => {});
+        recordVisit(projectId, responseTime, statusCode).catch((err) => {
+          console.warn('[Proxy Traffic Audit Error]:', err.message);
+        });
 
         res.writeHead(statusCode, proxyRes.headers);
         proxyRes.pipe(res, { end: true });
@@ -290,8 +291,9 @@ const handleWsUpgrade = async (req, socket, head) => {
   if (!subdomain || subdomain.includes('.')) return;
 
   try {
-    const port = await lookupPort(subdomain);
-    if (!port) { socket.destroy(); return; }
+    const projectData = await lookupPort(subdomain);
+    if (!projectData) { socket.destroy(); return; }
+    const port = projectData.port;
 
     const proxySocket = require('net').createConnection(port, '127.0.0.1', () => {
       proxySocket.write(
