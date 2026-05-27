@@ -753,44 +753,36 @@ Do not include markdown or extra text.`;
  * Returns: { readme: string, apiDocs: string, apiEndpoints: [{ method, route, description, params }] }
  */
 const generateDocsAndReadme = async (codeSnippets = '', stack = 'unknown') => {
-  const systemPrompt = `You are a Technical Writer and Developer Advocate.
-Analyze the source code snippets and generate a comprehensive documentation suite.
-
-Respond ONLY with a valid JSON object matching this exact schema:
-{
-  "readme": "A beautiful, complete markdown-formatted README.md for this repository. Include description, local installation steps, scripts, and build instructions.",
-  "apiDocs": "Detailed markdown REST API reference documentation listing all detected HTTP routes.",
-  "apiEndpoints": [
-    {
-      "method": "GET" | "POST" | "PUT" | "DELETE",
-      "route": "/api/users",
-      "description": "Brief explanation of this endpoint's purpose.",
-      "requestPayload": "Description or example of expected request body payload, or 'none'.",
-      "responsePayload": "Description or example of standard JSON response."
-    }
-  ]
-}
-
-Do not include markdown blocks or extra text around the JSON object.`;
-
   const safeCode = (codeSnippets || '').slice(0, CONFIG.MAX_LOG_CHARS);
-  const userPrompt = `Stack: ${stack}\nSource Code:\n${safeCode}`;
 
-  const raw = await callAI(systemPrompt, userPrompt, 1500, true);
-  if (!raw) return { readme: 'README generation offline.', apiDocs: 'API Docs generation offline.', apiEndpoints: [] };
+  // ── Call 1: Generate README as plain markdown (no JSON wrapper = fewer token failures) ──
+  const readmeSystemPrompt = `You are an expert Technical Writer. Generate a professional, well-structured README.md file in markdown format for this ${stack} project based on the code snippets provided. Include: project title, description, tech stack, local setup steps, environment variables, and available scripts. Output only the raw markdown text, no JSON wrapping.`;
+  const readmeRaw = await callAI(readmeSystemPrompt, `Source Code:\n${safeCode}`, 900, false);
 
-  try {
-    const cleanedJson = cleanJson(raw);
-    const parsed = JSON.parse(cleanedJson);
-    return {
-      readme: parsed.readme || '# Project README',
-      apiDocs: parsed.apiDocs || '# REST API Docs',
-      apiEndpoints: Array.isArray(parsed.apiEndpoints) ? parsed.apiEndpoints : []
-    };
-  } catch (err) {
-    console.error('[AI Doc Gen] JSON parse failed:', err.message);
-    return { readme: '# Project README\nAI Doc generation failed to parse.', apiDocs: '# API Reference\nAI Reference failed to parse.', apiEndpoints: [] };
+  // ── Call 2: Extract API endpoints as compact JSON ──
+  const endpointsSystemPrompt = `You are an API Documentation Specialist. Analyze the code and extract all HTTP API route definitions.
+Respond ONLY with a valid JSON object: { "apiEndpoints": [{ "method": "GET|POST|PUT|DELETE", "path": "/api/route", "description": "one sentence" }] }
+Return at most 15 endpoints. No markdown fences.`;
+  const endpointsRaw = await callAI(endpointsSystemPrompt, `Stack: ${stack}\nSource Code:\n${safeCode}`, 600, true);
+
+  // Parse endpoints safely
+  let apiEndpoints = [];
+  if (endpointsRaw) {
+    try {
+      const parsed = JSON.parse(cleanJson(endpointsRaw));
+      apiEndpoints = Array.isArray(parsed.apiEndpoints) ? parsed.apiEndpoints : [];
+    } catch (e) {
+      console.warn('[AI Doc Gen] Endpoints parse failed:', e.message);
+    }
   }
+
+  const readme = readmeRaw || '# Project README\n\nDocumentation could not be generated automatically. Please add a README.md manually.';
+
+  return {
+    readme,
+    apiDocs: `# REST API Reference\n\n${apiEndpoints.map(ep => `- **${ep.method}** \`${ep.path || ep.route}\` — ${ep.description}`).join('\n') || 'No API routes detected.'}`,
+    apiEndpoints
+  };
 };
 
 // ─── Feature 11: AI Security & Dependency Auditor ─────────────────────────────
