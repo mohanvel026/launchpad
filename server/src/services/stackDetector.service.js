@@ -245,7 +245,9 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
         printf '%s' '${b64Html}' | base64 -d > /usr/share/nginx/html/index.html; \\
         MAIN_HTML="index.html"; \\
     fi; \\
-    printf '%s' '${b64Nginx}' | base64 -d | sed "s|MAIN_HTML_PLACEHOLDER|$MAIN_HTML|g" > /etc/nginx/conf.d/default.conf`;
+    mkdir -p /etc/nginx/conf.d /etc/nginx/http.d; \\
+    printf '%s' '${b64Nginx}' | base64 -d | sed "s|MAIN_HTML_PLACEHOLDER|$MAIN_HTML|g" > /etc/nginx/conf.d/default.conf; \\
+    cp /etc/nginx/conf.d/default.conf /etc/nginx/http.d/default.conf`;
   };
 
   const healthCheck = `HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:${containerPort}/ || exit 1`;
