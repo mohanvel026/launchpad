@@ -171,10 +171,17 @@ buildQueue.process(async (job) => {
 
     // ── PHASE 2: Analyze ──
     await log(`🔍 PHASE 2: Analyzing project architecture…`);
-    const analysis = detectStack(repoDir);
-    const stack = (project.framework && project.framework !== 'auto') 
-      ? project.framework 
-      : (typeof analysis === 'string' ? analysis : analysis.type);
+    let stack = project.framework;
+    if (!stack || stack === 'auto') {
+      const { detectStackWithAI } = require('../services/ai.service');
+      const files = fs.readdirSync(repoDir).slice(0, 50);
+      let pkg = null;
+      if (fs.existsSync(path.join(repoDir, 'package.json'))) {
+        try { pkg = JSON.parse(fs.readFileSync(path.join(repoDir, 'package.json'), 'utf8')); } catch(e){}
+      }
+      stack = await detectStackWithAI(files, pkg);
+      if (stack === 'unknown') stack = detectStack(repoDir); // Fallback to local static analysis
+    }
     
     await log(`   ↳ Detected Stack: ${stack.toUpperCase()}`);
     await Project.findByIdAndUpdate(projectId, { stack });
@@ -196,9 +203,9 @@ buildQueue.process(async (job) => {
               if (file !== 'node_modules' && file !== '.git' && file !== 'dist') {
                 scanForEnv(fullPath, depth + 1);
               }
-            } else if (/\.(js|ts|py|json|config)$/i.test(file)) {
-              if (aggregatedCode.length < 10000) {
-                aggregatedCode += fs.readFileSync(fullPath, 'utf8').slice(0, 1000);
+            } else if (/\.(js|ts|py|json|config|yaml|yml)$/i.test(file) || file.includes('.env')) {
+              if (aggregatedCode.length < 25000) {
+                aggregatedCode += fs.readFileSync(fullPath, 'utf8').slice(0, 2000) + '\n';
               }
             }
           }

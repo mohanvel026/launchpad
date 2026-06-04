@@ -103,7 +103,7 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
         },
         {
           headers: { Authorization: `Bearer ${key}` },
-          timeout: 4000
+          timeout: 12000
         }
       );
       return res.data.choices[0].message.content;
@@ -152,14 +152,15 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
 // ─── Orchestration: Groq → Gemini Failover ────────────────────────────────────
 
 let lastRequestTime = 0;
-const CONGESTION_DELAY_MS = 320; // 320ms spacing strictly avoids 429 blocks from concurrent requests
+const CONGESTION_DELAY_MS = 150; // 150ms base spacing prevents 429 without bottlenecking throughput
 
 const callAI = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false) => {
-  // Stagger concurrent hits to protect the server's rate limits
+  // Stagger concurrent hits with jitter to prevent request synchronization storms
   const now = Date.now();
   const diff = now - lastRequestTime;
   if (diff < CONGESTION_DELAY_MS) {
-    const delay = CONGESTION_DELAY_MS - diff;
+    const jitter = Math.floor(Math.random() * 80); // 0-80ms randomized jitter
+    const delay = CONGESTION_DELAY_MS - diff + jitter;
     await sleep(delay);
   }
   lastRequestTime = Date.now();
@@ -193,21 +194,21 @@ const callAI = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false)
  * Returns a JSON object with: { summary, cause, fix, commands[] }
  */
 const analyzeError = async (logs, stack = 'unknown') => {
-  const systemPrompt = `You are an expert DevOps engineer and deployment specialist for a platform called LaunchPad.
-Your job is to diagnose build and runtime failures with surgical precision.
+  const systemPrompt = `You are a Senior DevOps engineer and deployment specialist for LaunchPad.
+Your job is to diagnose build and runtime failures with surgical precision and provide highly detailed, developer-friendly solutions.
 
 Respond ONLY with a valid JSON object using this exact schema:
 {
-  "summary": "One sentence: what went wrong.",
-  "cause": "One sentence: the exact root cause (missing dep, wrong port, bad env var, etc.).",
-  "fix": "One sentence: the exact action the developer must take.",
-  "commands": ["optional shell command 1", "optional shell command 2"]
+  "summary": "A brief 1-2 sentence overview of what went wrong.",
+  "cause": "A detailed explanation of the exact root cause. Reference specific file names, package versions, missing environment variables, or line numbers visible in the logs.",
+  "fix": "A step-by-step instruction guide on how the developer can fix this issue locally before pushing again.",
+  "commands": ["npm install missing-package", "export MISSING_VAR=value"]
 }
 
 Rules:
-- Be extremely specific. Reference exact file names, package names, line numbers if visible in logs.
-- "commands" should contain ready-to-run shell commands if applicable, otherwise an empty array [].
-- Do not add any markdown, explanation, or text outside the JSON object.`;
+- Be highly specific and technical, but easy to follow.
+- "commands" should contain an array of ready-to-run shell commands if applicable, otherwise an empty array [].
+- Do NOT add any markdown or text outside the JSON object itself (no backticks around the json).`;
 
   const safeLogs = compressLogs(logs);
   const userPrompt = `Stack: ${stack}\n\nBuild/Runtime Logs:\n${safeLogs}`;
@@ -1020,4 +1021,8 @@ module.exports = {
   generateDocsAndReadme,
   auditSecurityAndDependencies,
   analyzeTelemetryAndPredictScaling,
+  // Exported for build.worker.js pre-flight secret scanning
+  auditLeakedSecrets,
+  // Exported for direct local static fallback analysis
+  extractEnvVarsLocally,
 };
