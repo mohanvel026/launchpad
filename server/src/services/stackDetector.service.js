@@ -360,8 +360,10 @@ ENV PORT=4000
 ENV NODE_ENV=production
 EXPOSE ${containerPort}
 ${healthCheck}
+# Write a clean startup script — avoids all shell quoting / JSON escaping issues in CMD
+RUN printf '#!/bin/sh\\nset -e\\n${backendCmd}\\nnginx -g "daemon off;"\\n' > /app/start.sh && chmod +x /app/start.sh
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["sh", "-c", "${backendCmd} && nginx -g 'daemon off;'"]`;
+CMD ["/app/start.sh"]`;
     }
 
     case 'node':
