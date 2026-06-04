@@ -328,8 +328,8 @@ CMD ["nginx", "-g", "daemon off;"]`;
 
       const start = getStartCommand(path.join(repoPath, beDir), pm.name);
       const backendCmd = start.isScript
-        ? `pm2 start ${pm.name} --name "backend" -- start`
-        : `pm2 start ${start.args[0]} --name "backend"`;
+        ? `pm2 start ${pm.name} --name backend -- start`
+        : `pm2 start ${start.args[0]} --name backend`;
 
       return `# ── Stage 1: Build Frontend ──
 FROM node:20-alpine AS fe-builder
