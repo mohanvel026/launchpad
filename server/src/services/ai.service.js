@@ -121,29 +121,58 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
   throw new Error('All Groq keys exhausted or rate-limited.');
 };
 
-const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, attempt = 0) => {
-  if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured.');
+const getGeminiKeyPool = () => {
+  const keys = [
+    process.env.GEMINI_API_KEY,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3,
+  ].filter(k => k && k !== 'placeholder' && k.length > 10);
+  return keys;
+};
+
+let geminiKeyIndex = 0;
+
+const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0) => {
+  const keyPool = getGeminiKeyPool();
+  if (keyPool.length === 0) throw new Error('No GEMINI_API_KEY configured.');
+
   try {
-    const res = await httpClient.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          maxOutputTokens: maxTokens,
-          temperature: 0.2,
-          ...(isJson && { responseMimeType: 'application/json' }),
-        },
-      },
-      { timeout: 10000 } // Reliable 10-second timeout for Gemini
-    );
-    return res.data.candidates[0].content.parts[0].text;
+    for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
+      const key = keyPool[geminiKeyIndex % keyPool.length];
+      geminiKeyIndex = (geminiKeyIndex + 1) % keyPool.length;
+
+      try {
+        const res = await httpClient.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.GEMINI_MODEL}:generateContent?key=${key}`,
+          {
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ parts: [{ text: userPrompt }] }],
+            generationConfig: {
+              maxOutputTokens: maxTokens,
+              temperature: 0.2,
+              ...(isJson && { responseMimeType: 'application/json' }),
+            },
+          },
+          { timeout: 10000 } // Reliable 10-second timeout for Gemini
+        );
+        return res.data.candidates[0].content.parts[0].text;
+      } catch (err) {
+        const status = err.response?.status;
+        if (status === 429 && rotateAttempt < keyPool.length - 1) {
+          console.warn(`[Gemini] Key rate-limited (429), rotating to next pool key...`);
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error('All Gemini keys rate-limited.');
   } catch (err) {
-    if (attempt < CONFIG.MAX_RETRIES && (err.response?.status === 429 || err.response?.status >= 500)) {
-      const delay = CONFIG.RETRY_BASE_MS * Math.pow(2, attempt) + Math.random() * 200;
-      console.warn(`[Gemini] Retry ${attempt + 1} in ${Math.round(delay)}ms...`);
+    const status = err.response?.status;
+    if (retryAttempt < CONFIG.MAX_RETRIES && (status === 429 || status >= 500)) {
+      const delay = CONFIG.RETRY_BASE_MS * Math.pow(2, retryAttempt) + Math.random() * 200;
+      console.warn(`[Gemini] Failover/Congestion retry ${retryAttempt + 1} in ${Math.round(delay)}ms...`);
       await sleep(delay);
-      return callGemini(systemPrompt, userPrompt, maxTokens, isJson, attempt + 1);
+      return callGemini(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1);
     }
     throw err;
   }
