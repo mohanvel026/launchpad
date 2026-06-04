@@ -118,11 +118,11 @@ const startHealthChecker = () => {
     const isWindows = process.platform === 'win32';
     if (isWindows) return;
 
-    console.log('[Docker-Pruner] Running scheduled Docker image cleanup...');
+    console.log('[Docker-Pruner] Running scheduled Docker image and BuildKit cache cleanup...');
     const { exec } = require('child_process');
-    exec('docker image prune -a -f --filter "until=24h"', (err, stdout, stderr) => {
+    exec('docker image prune -a -f --filter "until=24h" && docker builder prune -a -f --filter "until=24h"', (err, stdout, stderr) => {
       if (err) {
-        console.error('[Docker-Pruner] Error pruning images:', err.message);
+        console.error('[Docker-Pruner] Error pruning Docker resources:', err.message);
         return;
       }
       console.log('[Docker-Pruner] Cleanup finished successfully:\n', stdout);
