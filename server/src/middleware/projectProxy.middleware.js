@@ -436,13 +436,21 @@ const projectProxyMiddleware = async (req, res, next) => {
 // ── WebSocket proxy (called from server.js on 'upgrade' event) ─────────────────
 const handleWsUpgrade = async (req, socket, head) => {
   const host = (req.headers.host || '').toLowerCase().split(':')[0];
-  if (host === DOMAIN || !host.endsWith(`.${DOMAIN}`)) return;
+  if (host === DOMAIN) return;
 
-  const subdomain = host.slice(0, -(DOMAIN.length + 1));
-  if (!subdomain || subdomain.includes('.')) return;
+  let subdomain = null;
+  let isCustomDomain = false;
+
+  if (host.endsWith(`.${DOMAIN}`)) {
+    subdomain = host.slice(0, -(DOMAIN.length + 1));
+    if (!subdomain || subdomain.includes('.')) return;
+  } else {
+    subdomain = host;
+    isCustomDomain = true;
+  }
 
   try {
-    const projectData = await lookupPort(subdomain);
+    const projectData = await lookupPort(subdomain, isCustomDomain);
     if (!projectData) { socket.destroy(); return; }
     const port = projectData.port;
 
