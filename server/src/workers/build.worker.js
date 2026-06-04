@@ -40,6 +40,9 @@ const decryptValue = (encrypted) => {
   } catch { return encrypted; }
 };
 
+const util         = require('util');
+const execAsync    = util.promisify(require('child_process').exec);
+
 const safeExec = (cmd, opts = {}) => {
   try {
     return execSync(cmd, { stdio: 'pipe', ...opts });
@@ -149,20 +152,20 @@ buildQueue.process(async (job) => {
     await log(`   ↳ Target: ${project.repoFullName}@${project.branch}`);
 
     if (fs.existsSync(repoDir)) {
-      const pulled = safeExec(
-        `git -C "${repoDir}" remote set-url origin ${cloneUrl} && ` +
-        `git -C "${repoDir}" fetch --all && ` +
-        `git -C "${repoDir}" reset --hard origin/${project.branch}`
-      );
-      if (!pulled) {
+      try {
+        await execAsync(
+          `git -C "${repoDir}" remote set-url origin ${cloneUrl} && ` +
+          `git -C "${repoDir}" fetch --all && ` +
+          `git -C "${repoDir}" reset --hard origin/${project.branch}`
+        );
+        await log('   ✅ Repository synchronized with latest commits.');
+      } catch (pullErr) {
         await log('   ⚠️ Local cache invalid. Performing fresh clone…');
         fs.rmSync(repoDir, { recursive: true, force: true });
-        execSync(`git clone --branch ${project.branch} --depth 1 "${cloneUrl}" "${repoDir}"`, { stdio: 'pipe' });
-      } else {
-        await log('   ✅ Repository synchronized with latest commits.');
+        await execAsync(`git clone --branch ${project.branch} --depth 1 "${cloneUrl}" "${repoDir}"`);
       }
     } else {
-      execSync(`git clone --branch ${project.branch} --depth 1 "${cloneUrl}" "${repoDir}"`, { stdio: 'pipe' });
+      await execAsync(`git clone --branch ${project.branch} --depth 1 "${cloneUrl}" "${repoDir}"`);
       await log('   ✅ Fresh clone completed.');
     }
 
@@ -332,10 +335,10 @@ buildQueue.process(async (job) => {
       buildCmd += ` -t ${imageTag} "${repoDir}"`;
 
       try {
-        execSync(buildCmd, { stdio: 'pipe' });
+        await execAsync(buildCmd);
         await log('   ✅ Build successful. Image tagged and ready for deployment.');
       } catch (buildErr) {
-        const stderr = buildErr.stderr?.toString('utf-8') || buildErr.message || '';
+        const stderr = buildErr.stderr || buildErr.stdout || buildErr.message || '';
         await log(`   ❌ Build failed! Analyzing logs…`);
         // Use structured AI analysis
         const diagnosis = await analyzeError(stderr, stack);
@@ -363,10 +366,14 @@ buildQueue.process(async (job) => {
 
       // Stop old container whether it's tracked by ID or by name
       await log('🔄 PHASE 6: Replacing previous instance…');
-      if (project.containerId) safeExec(`docker stop ${project.containerId} 2>/dev/null`);
-      safeExec(`docker stop ${containerName} 2>/dev/null`);
-      safeExec(`docker rm -f ${containerName} 2>/dev/null`);
-      if (project.containerId) safeExec(`docker rm -f ${project.containerId} 2>/dev/null`);
+      if (project.containerId) {
+        try { await execAsync(`docker stop ${project.containerId}`); } catch(e) {}
+      }
+      try { await execAsync(`docker stop ${containerName}`); } catch(e) {}
+      try { await execAsync(`docker rm -f ${containerName}`); } catch(e) {}
+      if (project.containerId) {
+        try { await execAsync(`docker rm -f ${project.containerId}`); } catch(e) {}
+      }
 
       // Verify EXPOSE port from the built image matches what we detected
       // containerPort is already computed above — this step reconciles any mismatch
@@ -402,7 +409,8 @@ buildQueue.process(async (job) => {
 
       let containerId;
       try {
-        containerId = execSync(runCmd, { stdio: 'pipe' }).toString().trim();
+        const { stdout } = await execAsync(runCmd);
+        containerId = stdout.trim();
         await log(`   ✅ Container started (ID: ${containerId.slice(0, 12)}) — verifying...`);
 
         // ── Real HTTP Health Check with retries ──
@@ -496,8 +504,141 @@ buildQueue.process(async (job) => {
       safeExec('docker image prune -f');
 
     } else {
-      await log('⚠️ DEVELOPMENT MODE: Local build successful.');
-      await log('   ↳ Containerization skipped on Windows host.');
+      await log('⚠️ DEVELOPMENT MODE: Running local build on Windows host…');
+      try {
+        const isFullstack = ['fullstack-split', 'mern'].includes(stack);
+        const feDir = fs.existsSync(path.join(repoDir, 'client')) ? 'client' : (fs.existsSync(path.join(repoDir, 'frontend')) ? 'frontend' : '.');
+        const beDir = fs.existsSync(path.join(repoDir, 'server')) ? 'server' : (fs.existsSync(path.join(repoDir, 'backend')) ? 'backend' : '.');
+
+        if (isFullstack) {
+          const { detectPackageManager } = require('../services/stackDetector.service');
+          
+          // 1. Install & Build Frontend
+          const fePath = path.join(repoDir, feDir);
+          if (fs.existsSync(path.join(fePath, 'package.json'))) {
+            const fePm = detectPackageManager(fePath);
+            await log(`📦 [Frontend] Running dependency installation: ${fePm.install}...`);
+            execSync(fePm.install, { cwd: fePath, stdio: 'pipe' });
+            await log('   ✅ [Frontend] Dependencies installed successfully.');
+
+            await log(`🔨 [Frontend] Building project: ${fePm.run} build...`);
+            try {
+              execSync(`${fePm.run} build`, { cwd: fePath, stdio: 'pipe' });
+            } catch (err) {
+              await log(`   ⚠️ Standard build failed, trying vite build fallback...`);
+              execSync('npx --yes vite build', { cwd: fePath, stdio: 'pipe' });
+            }
+            await log('   ✅ [Frontend] Built successfully.');
+          }
+
+          // 2. Install Backend
+          const bePath = path.join(repoDir, beDir);
+          if (fs.existsSync(path.join(bePath, 'package.json')) && beDir !== feDir) {
+            const bePm = detectPackageManager(bePath);
+            await log(`📦 [Backend] Running dependency installation: ${bePm.install}...`);
+            execSync(bePm.install, { cwd: bePath, stdio: 'pipe' });
+            await log('   ✅ [Backend] Dependencies installed successfully.');
+          }
+        } else {
+          // Standard single-folder app installation & build
+          if (fs.existsSync(path.join(repoDir, 'package.json'))) {
+            const { detectPackageManager } = require('../services/stackDetector.service');
+            const pm = detectPackageManager(repoDir);
+            await log(`📦 Running dependency installation: ${pm.install}...`);
+            execSync(pm.install, { cwd: repoDir, stdio: 'pipe' });
+            await log('   ✅ Dependencies installed successfully.');
+
+            const buildNeeded = ['react', 'vue', 'svelte', 'astro', 'angular', 'next', 'nuxt'].includes(stack);
+            if (buildNeeded) {
+              await log(`🔨 Building project: ${pm.run} build...`);
+              execSync(`${pm.run} build`, { cwd: repoDir, stdio: 'pipe' });
+              await log('   ✅ Project built successfully.');
+            }
+          } else {
+            await log('ℹ️ No package.json found. Skipping dependency installation & build.');
+          }
+        }
+
+        // 3. Start local server or set static port
+        const isService = ['node', 'next', 'nuxt', 'mern', 'fullstack-split'].includes(stack);
+        let hostPort = 0;
+        let containerId = 'local-static';
+
+        if (isService) {
+          const { getNextFreePort } = require('../services/portAllocator.service');
+          const { getStartCommand, detectPackageManager } = require('../services/stackDetector.service');
+          
+          const runCwd = isFullstack ? path.join(repoDir, beDir) : repoDir;
+          const pm = detectPackageManager(runCwd);
+          const start = getStartCommand(runCwd, pm.name);
+          
+          hostPort = project.port || await getNextFreePort();
+          await log(`🚀 Launching local service process on port ${hostPort}...`);
+          
+          // Stop any process on the port
+          if (project.port) {
+            try {
+              execSync(`cmd.exe /c "npx --yes kill-port ${project.port}"`, { stdio: 'ignore' });
+            } catch (e) {}
+          }
+          
+          const localEnv = {
+            ...process.env,
+            ...runtimeEnv,
+            PORT: String(hostPort),
+          };
+
+          const runCmd = start.isScript ? (pm.name === 'npm' ? 'npm.cmd' : pm.name) : start.cmd;
+          const runArgs = start.isScript ? start.args : start.args;
+
+          const { spawn } = require('child_process');
+          const logStream = fs.createWriteStream(path.join(runCwd, 'local-server.log'), { flags: 'a' });
+          
+          const child = spawn(runCmd, runArgs, {
+            cwd: runCwd,
+            env: localEnv,
+            shell: true,
+            detached: true,
+            stdio: ['ignore', logStream, logStream]
+          });
+          child.unref();
+          containerId = String(child.pid);
+          
+          await log(`   ✅ Process spawned (PID: ${containerId}). Performing local health check...`);
+
+          // HTTP Probe check
+          let appHealthy = false;
+          for (let attempt = 1; attempt <= 10; attempt++) {
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+              const axios = require('axios');
+              const res = await axios.get(`http://127.0.0.1:${hostPort}/`, { timeout: 1000 });
+              if (res.status >= 200 && res.status < 500) {
+                appHealthy = true;
+                break;
+              }
+            } catch (e) {
+              // try again
+            }
+          }
+          
+          if (!appHealthy) {
+            await log(`   ⚠️ Local health check did not receive a successful response yet, but process is running.`);
+          } else {
+            await log(`   ✅ Local health check passed.`);
+          }
+        }
+
+        await Project.findByIdAndUpdate(projectId, {
+          port: hostPort,
+          containerId,
+          status: 'live'
+        });
+
+      } catch (localBuildErr) {
+        await log(`❌ Local build/run failed: ${localBuildErr.message}`);
+        throw localBuildErr;
+      }
     }
 
     // ── FINALIZATION ──
