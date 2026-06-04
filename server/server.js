@@ -3,6 +3,7 @@ const http = require('http');
 const app  = require('./src/app');
 const { initSocket }                      = require('./src/sockets/logs.socket');
 const { startMetricsWorker }              = require('./src/workers/metrics.worker');
+const { startHealthChecker }              = require('./src/workers/health.worker');
 const { handleWsUpgrade }                 = require('./src/middleware/projectProxy.middleware');
 
 const PORT   = process.env.PORT || 5000;
@@ -10,6 +11,7 @@ const server = http.createServer(app);
 
 initSocket(server);
 startMetricsWorker();
+startHealthChecker();
 
 // Forward WebSocket upgrades for proxied project subdomains
 server.on('upgrade', (req, socket, head) => handleWsUpgrade(req, socket, head));

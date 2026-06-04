@@ -27,6 +27,10 @@ const buildQueue = new Queue('builds', {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
   },
+  settings: {
+    stalledInterval: 30000,
+    maxStalledCount: 2,
+  }
 });
 
 const REPOS_DIR = path.join(__dirname, '../../repos');
@@ -114,7 +118,7 @@ const detectContainerPort = (repoDir, stack, runtimeEnv) => {
 };
 
 // ─── Build Process ────────────────────────────────────────────────────────────
-buildQueue.process(async (job) => {
+buildQueue.process(1, async (job) => {
   const { deploymentId, projectId } = job.data;
 
   const deployment = await Deployment.findById(deploymentId);

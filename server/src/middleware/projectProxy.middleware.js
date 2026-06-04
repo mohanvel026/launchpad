@@ -27,13 +27,14 @@ const lookupPort = async (identifier, isCustomDomain = false) => {
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached;
 
   const query = isCustomDomain ? { customDomain: identifier } : { subdomain: identifier };
-  const project = await Project.findOne(query, 'port status stack').lean();
-  if (project && (project.port !== undefined || project.status === 'live')) {
+  const project = await Project.findOne(query, 'port status stack containerId').lean();
+  if (project && (project.port !== undefined || project.status === 'live' || project.status === 'sleeping')) {
     const data = { 
       port: project.port || 0, 
       projectId: project._id.toString(), 
       stack: project.stack || 'unknown',
       status: project.status,
+      containerId: project.containerId,
       ts: Date.now() 
     };
     portCache.set(identifier, data);
@@ -218,7 +219,69 @@ const projectProxyMiddleware = async (req, res, next) => {
         ));
     }
 
-    const { port, projectId, stack } = projectData;
+    const { port, projectId, stack, status, containerId } = projectData;
+
+    // Wake up container if it is sleeping
+    if (status === 'sleeping' && containerId) {
+      try {
+        console.log(`[proxy SRE Scale-to-Zero] Waking up sleeping container ${containerId} for ${subdomain}...`);
+        const Docker = require('dockerode');
+        const docker = new Docker(
+          process.platform === 'win32'
+            ? { host: '127.0.0.1', port: 2375 }
+            : { socketPath: '/var/run/docker.sock' }
+        );
+        const container = docker.getContainer(containerId);
+        
+        // Start container if not running
+        const info = await container.inspect();
+        if (!info.State.Running) {
+          await container.start();
+        }
+        
+        // Wait for port to listen (up to 10 seconds)
+        const net = require('net');
+        const opened = await new Promise((resolve) => {
+          const startTime = Date.now();
+          const tryConnect = () => {
+            const socket = net.connect({ port, host: '127.0.0.1' }, () => {
+              socket.end();
+              resolve(true);
+            });
+            socket.on('error', () => {
+              if (Date.now() - startTime > 10000) {
+                resolve(false);
+              } else {
+                setTimeout(tryConnect, 100);
+              }
+            });
+          };
+          tryConnect();
+        });
+
+        if (!opened) {
+          throw new Error('Container started but port did not become active in time.');
+        }
+
+        // Update DB status to live
+        await Project.findByIdAndUpdate(projectId, { status: 'live' });
+        
+        // Update in-memory cached state
+        projectData.status = 'live';
+        portCache.set(subdomain, { ...projectData, status: 'live', ts: Date.now() });
+        console.log(`[proxy SRE Scale-to-Zero] Container successfully woke up and is now live.`);
+      } catch (wakeErr) {
+        console.error(`[proxy SRE Scale-to-Zero] Wakeup failed:`, wakeErr.message);
+        return res
+          .status(502)
+          .set('Content-Type', 'text/html')
+          .send(errorPage(
+            'Application Wakeup Failed',
+            `Could not automatically wake up <code style="color:#38bdf8">${subdomain}</code>.<br>
+             Error: ${wakeErr.message}`
+          ));
+      }
+    }
 
     const isWindows = process.platform === 'win32';
     const isStaticStack = ['static', 'react', 'vue', 'svelte', 'astro', 'angular'].includes(stack);

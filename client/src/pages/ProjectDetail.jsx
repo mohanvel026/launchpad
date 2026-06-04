@@ -14,6 +14,7 @@ import AIChat from '../components/AIChat';
 const TABS = [
   { id: 'deployments', label: 'Deployments' },
   { id: 'logs',        label: 'Build Logs' },
+  { id: 'runtime-logs',label: 'Runtime Logs' },
   { id: 'env',         label: 'Environment' },
   { id: 'domains',     label: 'Domains' },
   { id: 'metrics',     label: 'Live Metrics' },
@@ -41,6 +42,7 @@ export default function ProjectDetail() {
   const [project,     setProject]     = useState(null);
   const [deployments, setDeployments] = useState([]);
   const [logs,        setLogs]        = useState([]);
+  const [runtimeLogs, setRuntimeLogs] = useState([]);
   const [deploying,   setDeploying]   = useState(false);
   const [activeTab,   setActiveTab]   = useState('deployments');
   const [error,       setError]       = useState('');
@@ -64,6 +66,7 @@ export default function ProjectDetail() {
   const [resizing, setResizing] = useState(false);
 
   const logsEndRef = useRef(null);
+  const runtimeLogsEndRef = useRef(null);
   const socketRef  = useRef(null);
   const pollRef    = useRef(null);
 
@@ -101,7 +104,7 @@ export default function ProjectDetail() {
     };
   }, [loadProject, loadDeployments, loadEnvVars]);
 
-  // Auto-load latest deployment logs when switching to Build Logs tab
+  // Auto-load latest deployment logs when switching to Build Logs tab, or connect to runtime logs
   useEffect(() => {
     if (activeTab === 'logs') {
       logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -109,12 +112,20 @@ export default function ProjectDetail() {
       if (logs.length === 0 && !deploying && deployments.length > 0) {
         viewLogs(deployments[0]);
       }
+    } else if (activeTab === 'runtime-logs') {
+      connectToRuntimeLogs();
+    } else {
+      socketRef.current?.disconnect();
     }
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeTab === 'logs') logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
+
+  useEffect(() => {
+    if (activeTab === 'runtime-logs') runtimeLogsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [runtimeLogs]);
 
   const connectToLogs = async (deploymentId) => {
     socketRef.current?.disconnect();
@@ -137,6 +148,24 @@ export default function ProjectDetail() {
     socket.emit('join:deployment', deploymentId);
     socket.on('log', ({ line }) => setLogs(prev => [...prev, line]));
     socket.on('connect_error', (err) => console.warn('Socket error:', err.message));
+    socketRef.current = socket;
+  };
+
+  const connectToRuntimeLogs = () => {
+    socketRef.current?.disconnect();
+    setRuntimeLogs([]);
+
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+    const socket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
+    socket.emit('join:runtime-logs', id);
+    socket.on('runtime-log', ({ line }) => {
+      setRuntimeLogs(prev => [...prev, line]);
+    });
+    socket.on('connect_error', (err) => console.warn('Runtime socket error:', err.message));
     socketRef.current = socket;
   };
 
@@ -414,6 +443,32 @@ export default function ProjectDetail() {
                 <span style={{ opacity: 0.4 }}>Waiting for build output...</span>
               ) : logs.map((line, i) => <LogLine key={i} line={line} />)}
               <div ref={logsEndRef} />
+            </div>
+          </div>
+        )}
+
+        {/* ── Runtime Logs ── */}
+        {activeTab === 'runtime-logs' && (
+          <div className="lp-terminal fade-in">
+            <div className="lp-terminal-header">
+              <div className="lp-terminal-dots">
+                <div className="lp-terminal-dot" style={{ background: '#ff5f57' }} />
+                <div className="lp-terminal-dot" style={{ background: '#ffbd2e' }} />
+                <div className="lp-terminal-dot" style={{ background: '#28c840' }} />
+              </div>
+              <span>Container stdout/stderr — {project.name}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10b981' }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'pulse-dot 2s infinite' }}></div>
+                Live Stream
+              </div>
+            </div>
+            <div className="lp-terminal-body" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+              {runtimeLogs.length === 0 ? (
+                <span style={{ opacity: 0.4 }}>Waiting for runtime log stream...</span>
+              ) : runtimeLogs.map((line, i) => (
+                <div key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '11.5px', color: '#e2e8f0', lineHeight: 1.5 }}>{line}</div>
+              ))}
+              <div ref={runtimeLogsEndRef} />
             </div>
           </div>
         )}

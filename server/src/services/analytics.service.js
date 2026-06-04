@@ -43,6 +43,7 @@ const recordVisit = async (projectId, responseTime = 0, statusCode = 200, method
 
     // Increment total visits
     await client.hIncrBy(key, 'totalVisits', 1);
+    await client.hSet(key, 'lastTrafficAt', Date.now().toString());
     await client.hIncrBy(dayKey, 'visits', 1);
     await client.expire(dayKey, 60 * 60 * 24 * 30); // keep 30 days
 

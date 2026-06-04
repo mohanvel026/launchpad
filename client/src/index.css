@@ -242,6 +242,7 @@ a { color: inherit; text-decoration: none; }
 .lp-badge.building, .lp-badge.queued { background: rgba(245,158,11,0.12); color: #fbbf24; border-color: rgba(245,158,11,0.25); }
 .lp-badge.failed, .lp-badge.error { background: rgba(239,68,68,0.12); color: #f87171; border-color: rgba(239,68,68,0.25); }
 .lp-badge.idle, .lp-badge.stopped { background: rgba(100,116,139,0.15); color: #94a3b8; border-color: rgba(100,116,139,0.2); }
+.lp-badge.sleeping { background: rgba(56,189,248,0.12); color: #38bdf8; border-color: rgba(56,189,248,0.25); }
 .lp-badge.live::before, .lp-badge.success::before { animation: pulse-dot 2s infinite; }
 
 @keyframes pulse-dot {
