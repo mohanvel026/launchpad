@@ -2,14 +2,17 @@ const express = require('express');
 const { protect, getUserWithToken } = require('../middleware/auth.middleware');
 const {
   getProjects, createProject, getProject,
-  deleteProject, getUserRepos, registerWebhook, updateProject,
+  deleteProject, getUserRepos, analyzeRepo, registerWebhook, updateProject,
   clearProjectStuckBuild, resizeResourceLimits
 } = require('../controllers/project.controller');
 
 const router = express.Router();
 
-// GET  /api/projects/repos   — list user's GitHub repos for the picker
-router.get('/repos',         getUserWithToken, getUserRepos);
+// GET  /api/projects/repos        — list user's GitHub repos for the picker
+router.get('/repos',              getUserWithToken, getUserRepos);
+
+// POST /api/projects/repos/analyze — AI-powered repo analysis for autonomous deploy
+router.post('/repos/analyze',     getUserWithToken, analyzeRepo);
 
 // GET  /api/projects         — all projects the user owns or collaborates on
 router.get('/',              protect,          getProjects);

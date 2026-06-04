@@ -744,6 +744,18 @@ const devopsSummary = async (req, res) => {
 
     res.json(overview);
   } catch (err) {
+    if (err.message?.includes('No valid API keys')) {
+      return res.json({
+        projectStack: 'unknown',
+        securityScore: 100,
+        securityGrade: 'A+',
+        vulnerabilitiesCount: 0,
+        recommendedCpu: '0.5',
+        recommendedRam: '256MB',
+        needsRedisCache: false,
+        healthStatus: 'AI Offline — Add GEMINI_API_KEY to activate DevOps insights.',
+      });
+    }
     res.status(500).json({ message: err.message });
   }
 };
@@ -806,11 +818,21 @@ Active Telemetry Snapshot:
 Provide your SRE Traffic Insights audit now:`;
 
     const reply = await callAI(systemPrompt, userPrompt, 1200, false);
-    if (!reply) throw new Error('AI failed to audit edge traffic.');
+    if (!reply) {
+      return res.json({
+        reply: '⚠️ **AI Traffic Auditor temporarily unavailable.** Both Gemini and Groq are cooling down.\n\nPlease wait **20–30 seconds** and try again.'
+      });
+    }
 
     res.json({ reply });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    const errMsg = err?.message || 'Unknown server error';
+    if (errMsg.includes('No valid API keys')) {
+      return res.json({
+        reply: `## 📊 Executive Traffic Summary\n\n**AI keys not configured.** Add a free \`GEMINI_API_KEY\` to your \`server/.env\` to unlock real-time SRE traffic analysis.\n\n**Quick Start:** Visit [Google AI Studio](https://aistudio.google.com) to generate a free key.`
+      });
+    }
+    res.status(500).json({ message: errMsg });
   }
 };
 

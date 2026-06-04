@@ -113,11 +113,14 @@ function SecurityReportWidget({ data }) {
       {issues.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Vulnerabilities Details</div>
-          {issues.map((i, idx) => {
-            const isHigh = i.severity?.toUpperCase() === 'HIGH';
-            const isMed = i.severity?.toUpperCase() === 'MEDIUM';
-            const borderCol = isHigh ? 'rgba(239, 68, 68, 0.2)' : isMed ? 'rgba(251, 191, 36, 0.2)' : 'rgba(16, 185, 129, 0.2)';
-            const bgCol = isHigh ? 'rgba(239, 68, 68, 0.02)' : isMed ? 'rgba(251, 191, 36, 0.02)' : 'rgba(16, 185, 129, 0.02)';
+          {issues.map((issue, idx) => {
+            const sev = issue.severity?.toUpperCase();
+            const isCritical = sev === 'CRITICAL';
+            const isHigh     = sev === 'HIGH' || isCritical;
+            const isMed      = sev === 'MEDIUM';
+            const borderCol  = isCritical ? 'rgba(239, 68, 68, 0.4)' : isHigh ? 'rgba(239, 68, 68, 0.2)' : isMed ? 'rgba(251, 191, 36, 0.2)' : 'rgba(16, 185, 129, 0.2)';
+            const bgCol      = isCritical ? 'rgba(239, 68, 68, 0.05)' : isHigh ? 'rgba(239, 68, 68, 0.02)' : isMed ? 'rgba(251, 191, 36, 0.02)' : 'rgba(16, 185, 129, 0.02)';
+            const dotColor   = isCritical ? '#ff4444' : isHigh ? '#ef4444' : isMed ? '#fbbf24' : '#10b981';
             
             return (
               <div key={idx} style={{ borderRadius: 8, border: `1px solid ${borderCol}`, background: bgCol, overflow: 'hidden' }}>
@@ -126,18 +129,26 @@ function SecurityReportWidget({ data }) {
                   style={{ width: '100%', background: 'transparent', border: 'none', padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}
                 >
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ color: isHigh ? '#ef4444' : isMed ? '#fbbf24' : '#10b981' }}>●</span>
-                    {i.title}
+                    <span style={{ color: dotColor }}>●</span>
+                    {/* AI returns 'type' field (e.g. 'Dependency Vulnerability'), not 'title' */}
+                    {issue.type || issue.description || 'Security Issue'}
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{expanded[idx] ? '▲' : '▼'}</span>
                 </button>
                 {expanded[idx] && (
                   <div style={{ padding: '0 12px 12px 12px', fontSize: 12, borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div><span style={{ color: 'var(--text-muted)' }}>Severity:</span> <code style={{ color: isHigh ? '#ef4444' : '#fbbf24' }}>{i.severity}</code></div>
-                    <div><span style={{ color: 'var(--text-muted)' }}>Description:</span> <span style={{ color: 'var(--text-dim)' }}>{i.description}</span></div>
-                    {i.remediation && (
+                    <div><span style={{ color: 'var(--text-muted)' }}>Severity:</span> <code style={{ color: isCritical ? '#ff4444' : isHigh ? '#ef4444' : '#fbbf24' }}>{issue.severity}</code></div>
+                    {issue.cveCode && <div><span style={{ color: 'var(--text-muted)' }}>CVE/Code:</span> <code style={{ color: '#c084fc' }}>{issue.cveCode}</code></div>}
+                    <div><span style={{ color: 'var(--text-muted)' }}>Description:</span> <span style={{ color: 'var(--text-dim)' }}>{issue.description}</span></div>
+                    {/* AI returns 'fix' field, not 'remediation' */}
+                    {(issue.fix || issue.remediation) && (
                       <div style={{ marginTop: 4, padding: 8, borderRadius: 6, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>SRE Patch:</span> {i.remediation}
+                        <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>SRE Patch:</span> {issue.fix || issue.remediation}
+                      </div>
+                    )}
+                    {issue.cliCommand && (
+                      <div style={{ marginTop: 4, padding: 8, borderRadius: 6, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', fontFamily: 'monospace', fontSize: 11.5, color: '#38bdf8' }}>
+                        $ {issue.cliCommand}
                       </div>
                     )}
                   </div>
@@ -165,32 +176,96 @@ function SecurityReportWidget({ data }) {
 
 // ─── 2. Docker & Config Optimizer SRE Panel ───
 function ConfigReportWidget({ data }) {
-  const suggestions = data.suggestions || [];
+  // AI returns { score, recommendations: [{ type, issue, fix }], optimizedDockerfile }
+  const score = data.score || 0;
+  const recommendations = data.recommendations || [];
+  const optimizedDockerfile = data.optimizedDockerfile || '';
+  const [showDockerfile, setShowDockerfile] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyDockerfile = () => {
+    if (!optimizedDockerfile) return;
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(optimizedDockerfile).then(() => {
+        setCopied(true); setTimeout(() => setCopied(false), 2500);
+      });
+    } else {
+      const el = document.createElement('textarea');
+      el.value = optimizedDockerfile;
+      el.style.position = 'fixed'; el.style.left = '-9999px';
+      document.body.appendChild(el); el.focus(); el.select();
+      try { document.execCommand('copy'); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch {}
+      document.body.removeChild(el);
+    }
+  };
+
+  const scoreColor = score >= 80 ? '#10b981' : score >= 60 ? '#fbbf24' : '#ef4444';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 12 }}>
-      {suggestions.length === 0 ? (
+      {/* Score bar */}
+      {score > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)' }}>
+          <div style={{ fontSize: 28, fontWeight: 800, color: scoreColor }}>{score}</div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>Deployment Quality Score</div>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
+              {score >= 80 ? 'Production-ready configuration detected.' : score >= 60 ? 'Some optimizations available.' : 'Significant improvements recommended.'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {recommendations.length === 0 ? (
         <div className="flex-center" style={{ padding: 20, borderRadius: 10, background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.15)', color: '#10b981', fontSize: 13 }}>
           ✅ Configurations are fully optimized for active caching & concurrent delivery.
         </div>
       ) : (
-        suggestions.map((s, idx) => (
-          <div key={idx} style={{ padding: 14, borderRadius: 10, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>📋 Optimization #{idx + 1}</span>
-              {s.impact && (
-                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 100, fontWeight: 700, background: s.impact.toUpperCase() === 'HIGH' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(56, 189, 248, 0.15)', color: s.impact.toUpperCase() === 'HIGH' ? '#c084fc' : '#38bdf8' }}>
-                  {s.impact} Impact
-                </span>
+        recommendations.map((rec, idx) => {
+          const typeColor = rec.type === 'Performance' ? '#38bdf8' : rec.type === 'Security' ? '#ef4444' : '#c084fc';
+          const typeBg   = rec.type === 'Performance' ? 'rgba(56,189,248,0.08)' : rec.type === 'Security' ? 'rgba(239,68,68,0.08)' : 'rgba(168,85,247,0.08)';
+          return (
+            <div key={idx} style={{ padding: 14, borderRadius: 10, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>📋 Optimization #{idx + 1}</span>
+                {rec.type && (
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 100, fontWeight: 700, background: typeBg, color: typeColor, border: `1px solid ${typeColor}22` }}>
+                    {rec.type}
+                  </span>
+                )}
+              </div>
+              {/* AI returns 'issue' (the problem) and 'fix' (the solution) */}
+              {rec.issue && <p style={{ margin: '0 0 8px 0', fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>{rec.issue}</p>}
+              {rec.fix && (
+                <div style={{ padding: 8, borderRadius: 6, background: 'rgba(56,189,248,0.03)', border: '1px solid rgba(56,189,248,0.1)', fontSize: 12, color: '#e2e8f0', lineHeight: 1.4 }}>
+                  <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>✅ Fix: </span>{rec.fix}
+                </div>
               )}
             </div>
-            <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>{s.suggestion || s}</p>
-            {s.file && (
-              <div style={{ marginTop: 8, fontSize: 11 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Target File:</span> <code style={{ color: 'var(--accent-primary)', background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: 4 }}>{s.file}</code>
-              </div>
-            )}
+          );
+        })
+      )}
+
+      {/* Optimized Dockerfile */}
+      {optimizedDockerfile && (
+        <div style={{ borderRadius: 10, background: '#050508', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)', background: 'rgba(255,255,255,0.02)' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8' }}>🐳 AI-Optimized Dockerfile</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setShowDockerfile(s => !s)} className="lp-btn-secondary" style={{ padding: '3px 10px', fontSize: 11, height: 'auto', background: 'transparent' }}>
+                {showDockerfile ? 'Hide' : 'Preview'}
+              </button>
+              <button onClick={copyDockerfile} className="lp-btn-secondary" style={{ padding: '3px 10px', fontSize: 11, height: 'auto', background: 'transparent' }}>
+                {copied ? '✅ Copied!' : '📋 Copy'}
+              </button>
+            </div>
           </div>
-        ))
+          {showDockerfile && (
+            <pre style={{ margin: 0, padding: 12, overflowX: 'auto', color: '#e2e8f0', fontSize: 11.5, lineHeight: 1.5, maxHeight: 240 }}>
+              <code>{optimizedDockerfile}</code>
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );
@@ -341,34 +416,51 @@ function QueriesReportWidget({ data }) {
 
 // ─── 5. Live Container Log SRE Widget ───
 function LogsReportWidget({ data }) {
+  // AI returns { isHealthy: bool, anomalies: [{ severity, message, fix }] }
   const anomalies = data.anomalies || [];
-  const [filter, setFilter] = useState('ALL'); // ALL, ANOMALIES
+  const isHealthy = data.isHealthy !== false;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 12 }}>
+      {/* Health Banner */}
+      <div style={{
+        padding: '10px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+        background: isHealthy ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+        border: isHealthy ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)',
+        color: isHealthy ? '#34d399' : '#f87171',
+      }}>
+        {isHealthy ? '✅ Container health scan: Nominal. No memory leaks, exceptions, or timeout flags detected.' : `⚠️ ${anomalies.length} anomaly${anomalies.length !== 1 ? 'ies' : ''} detected in active container logs.`}
+      </div>
+
       {/* Visual Terminal */}
       <div style={{ borderRadius: 10, background: '#050508', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-        <div style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.04)', padding: '8px 14px', display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+        <div style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.04)', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ display: 'flex', gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }}></span>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24' }}></span>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }}></span>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }}></span>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24', display: 'inline-block' }}></span>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
           </div>
           <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'monospace' }}>stdout_stream.log</span>
         </div>
 
-        <div style={{ padding: 14, maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'monospace', fontSize: 11.5, color: '#a3a3a3', lineHeight: 1.4 }}>
+        <div style={{ padding: 14, maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, fontFamily: 'monospace', fontSize: 11.5 }}>
           {anomalies.length === 0 ? (
             <div style={{ color: '#10b981' }}>[INFO] Active stdout container stream scan: Zero anomalies, memory leaks, or timeout flags detected. System nominal.</div>
           ) : (
-            anomalies.map((a, idx) => {
-              const isErr = a.level?.toUpperCase() === 'ERROR' || a.level?.toUpperCase() === 'CRITICAL';
+            anomalies.map((anomaly, idx) => {
+              // AI returns severity (CRITICAL/WARNING/INFO), message, fix
+              const sev = anomaly.severity?.toUpperCase();
+              const isErr = sev === 'CRITICAL' || sev === 'ERROR';
+              const isWarn = sev === 'WARNING' || sev === 'WARN';
+              const levelColor = isErr ? '#ef4444' : isWarn ? '#fbbf24' : '#94a3b8';
               return (
-                <div key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', paddingBottom: 6 }}>
-                  <span style={{ color: isErr ? '#ef4444' : '#fbbf24', fontWeight: 'bold' }}>[{a.level || 'WARN'}]</span> {a.message || a}
-                  {a.suggestion && (
+                <div key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', paddingBottom: 8 }}>
+                  <span style={{ color: levelColor, fontWeight: 'bold' }}>[{anomaly.severity || 'WARN'}]</span>{' '}
+                  <span style={{ color: '#e2e8f0' }}>{anomaly.message || anomaly}</span>
+                  {/* AI returns 'fix' field, not 'suggestion' */}
+                  {(anomaly.fix || anomaly.suggestion) && (
                     <div style={{ color: 'var(--accent-primary)', fontSize: 11, marginTop: 4, paddingLeft: 10, borderLeft: '2px solid var(--accent-primary)' }}>
-                      💡 SRE Advice: {a.suggestion}
+                      💡 SRE Advice: {anomaly.fix || anomaly.suggestion}
                     </div>
                   )}
                 </div>
@@ -597,16 +689,29 @@ export default function AIChat({ projectId }) {
     
     try {
       const res = await api.post(`/ai/${projectId}/${endpoint}`);
-      setMessages(prev => [
-        ...prev, 
-        { 
-          role: 'assistant', 
-          content: `📊 **AI ${toolName} completed.** Diagnostic dashboard instantiated below.`, 
-          sreReport: { type: endpoint, data: res.data } 
-        }
-      ]);
+
+      // traffic-insights returns { reply } — a long markdown string to render as chat text.
+      // All other SRE tools return structured JSON rendered by interactive widget panels.
+      if (endpoint === 'traffic-insights') {
+        setMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: res.data.reply || '⚠️ No traffic data returned from the SRE auditor.' }
+        ]);
+      } else {
+        setMessages(prev => [
+          ...prev, 
+          { 
+            role: 'assistant', 
+            content: `📊 **AI ${toolName} completed.** Diagnostic dashboard instantiated below.`, 
+            sreReport: { type: endpoint, data: res.data } 
+          }
+        ]);
+      }
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `❌ **AI ${toolName} failed:** ${err.response?.data?.message || err.message}` }]);
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: `❌ **AI ${toolName} failed:** ${err.response?.data?.message || err.message}` }
+      ]);
     } finally {
       setLoading(false);
       setActiveTool(null);
@@ -621,12 +726,13 @@ export default function AIChat({ projectId }) {
   ];
 
   const sreTools = [
-    { id: 'audit-security', name: 'Security Vulnerability Scan', icon: '🛡️', desc: 'Audit packages, ENV secrets, and dependencies for CVE threats.' },
-    { id: 'optimize-config', name: 'Docker & Config Optimizer', icon: '⚙️', desc: 'Scan and rewrite Dockerfile for caching and concurrency.' },
-    { id: 'generate-docs', name: 'Generate REST API Docs', icon: '📝', desc: 'Parse Express/Node routes and write a standard README.md.' },
-    { id: 'optimize-queries', name: 'Database Query Indexer', icon: '📊', desc: 'Audit schema/models and suggest high-speed index strategies.' },
-    { id: 'inspect-logs', name: 'Live Container Log SRE', icon: '🩺', desc: 'Audit running stdout logs for hidden memory leaks and timeouts.' },
-    { id: 'predict-resources', name: 'AI Capacity Telemetry SRE', icon: '📈', desc: 'Audit live RAM/CPU telemetry metrics and predict scaling requirements.' },
+    { id: 'audit-security',   name: 'Security Vulnerability Scan', icon: '🛡️', desc: 'Audit packages, ENV secrets, and dependencies for CVE threats.' },
+    { id: 'optimize-config',  name: 'Docker & Config Optimizer',   icon: '⚙️', desc: 'Scan and rewrite Dockerfile for caching and concurrency.' },
+    { id: 'generate-docs',    name: 'Generate REST API Docs',       icon: '📝', desc: 'Parse Express/Node routes and write a standard README.md.' },
+    { id: 'optimize-queries', name: 'Database Query Indexer',       icon: '📊', desc: 'Audit schema/models and suggest high-speed index strategies.' },
+    { id: 'inspect-logs',     name: 'Live Container Log SRE',       icon: '🩺', desc: 'Audit running stdout logs for hidden memory leaks and timeouts.' },
+    { id: 'predict-resources',name: 'AI Capacity Telemetry SRE',   icon: '📈', desc: 'Audit live RAM/CPU telemetry metrics and predict scaling requirements.' },
+    { id: 'traffic-insights', name: 'Edge Traffic Insights',        icon: '🌐', desc: 'Analyze edge ingress logs, latency, error rates, and routing anomalies.' },
   ];
 
   return (
@@ -655,12 +761,13 @@ export default function AIChat({ projectId }) {
                 {formatMessageContent(msg.content)}
                 
                 {/* Visual SRE Custom Interactive Widgets */}
-                {msg.sreReport && msg.sreReport.type === 'audit-security' && <SecurityReportWidget data={msg.sreReport.data} />}
-                {msg.sreReport && msg.sreReport.type === 'optimize-config' && <ConfigReportWidget data={msg.sreReport.data} />}
-                {msg.sreReport && msg.sreReport.type === 'generate-docs' && <DocsReportWidget data={msg.sreReport.data} />}
-                {msg.sreReport && msg.sreReport.type === 'optimize-queries' && <QueriesReportWidget data={msg.sreReport.data} />}
-                {msg.sreReport && msg.sreReport.type === 'inspect-logs' && <LogsReportWidget data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'audit-security'   && <SecurityReportWidget data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'optimize-config'   && <ConfigReportWidget   data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'generate-docs'     && <DocsReportWidget     data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'optimize-queries'  && <QueriesReportWidget  data={msg.sreReport.data} />}
+                {msg.sreReport && msg.sreReport.type === 'inspect-logs'      && <LogsReportWidget     data={msg.sreReport.data} />}
                 {msg.sreReport && msg.sreReport.type === 'predict-resources' && <TelemetryReportWidget data={msg.sreReport.data} projectId={projectId} />}
+                {/* traffic-insights returns { reply } — rendered as standard chat text via formatMessageContent above */}
               </div>
             </div>
           ))}

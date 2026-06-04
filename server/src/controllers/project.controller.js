@@ -3,7 +3,6 @@ const Project = require('../models/Project.model');
 const { listUserRepos, createWebhook } = require('../services/github.service');
 
 // ─── GET /api/projects/repos ─────────────────────────────────────────────────
-// Returns the user's GitHub repos for the repo-picker in the UI
 const getUserRepos = async (req, res) => {
   try {
     const repos = await listUserRepos(req.user.githubAccessToken);
@@ -12,6 +11,87 @@ const getUserRepos = async (req, res) => {
     res.status(500).json({ message: 'Failed to fetch GitHub repos: ' + err.message });
   }
 };
+
+// ─── POST /api/projects/repos/analyze ────────────────────────────────────────
+// Auto-detects stack, branches, and .env.example vars for one-click deploys
+const analyzeRepo = async (req, res) => {
+  const { repoFullName } = req.body;
+  if (!repoFullName) return res.status(400).json({ message: 'repoFullName is required' });
+
+  const token = req.user.githubAccessToken;
+  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.v3+json' };
+
+  try {
+    // Parallel fetch: repo info + branches + root file tree
+    const [repoRes, branchRes, treeRes] = await Promise.all([
+      axios.get(`https://api.github.com/repos/${repoFullName}`, { headers }),
+      axios.get(`https://api.github.com/repos/${repoFullName}/branches?per_page=50`, { headers }),
+      axios.get(`https://api.github.com/repos/${repoFullName}/git/trees/HEAD?recursive=0`, { headers }).catch(() => null),
+    ]);
+
+    const repo = repoRes.data;
+    const branches = branchRes.data.map(b => b.name);
+    const files = (treeRes?.data?.tree || []).map(f => f.path).filter(f => !f.includes('/'));
+
+    // Try to fetch package.json for AI stack detection
+    let pkg = null;
+    try {
+      const pkgRes = await axios.get(`https://api.github.com/repos/${repoFullName}/contents/package.json`, { headers });
+      pkg = JSON.parse(Buffer.from(pkgRes.data.content, 'base64').toString('utf-8'));
+    } catch { /* not a node project */ }
+
+    // Try to fetch .env.example for auto env var discovery
+    let envExampleVars = [];
+    const envCandidates = ['.env.example', '.env.template', '.env.sample'];
+    for (const candidate of envCandidates) {
+      try {
+        const envRes = await axios.get(`https://api.github.com/repos/${repoFullName}/contents/${candidate}`, { headers });
+        const content = Buffer.from(envRes.data.content, 'base64').toString('utf-8');
+        envExampleVars = content.split('\n')
+          .filter(l => l.includes('=') && !l.trim().startsWith('#') && l.trim())
+          .map(l => {
+            const eq = l.indexOf('=');
+            return { key: l.slice(0, eq).trim(), placeholder: l.slice(eq + 1).trim() || '' };
+          })
+          .filter(e => e.key);
+        break;
+      } catch { /* file not found */ }
+    }
+
+    // AI-powered stack detection
+    const { detectStackWithAI } = require('../services/ai.service');
+    const { detectStack } = require('../services/stackDetector.service');
+    let stack = await detectStackWithAI(files, pkg);
+    if (stack === 'unknown' && pkg) {
+      // Local fallback: scan deps
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      if (deps.next) stack = 'next';
+      else if (deps.nuxt) stack = 'nuxt';
+      else if (deps.astro) stack = 'astro';
+      else if (deps['@sveltejs/kit'] || deps.svelte) stack = 'svelte';
+      else if (deps.vue) stack = 'vue';
+      else if (deps['@angular/core']) stack = 'angular';
+      else if (deps.react) stack = 'react';
+      else if (deps.express || deps.fastify) stack = 'node';
+      else stack = 'static';
+    }
+
+    res.json({
+      stack,
+      branches,
+      defaultBranch: repo.default_branch,
+      language: repo.language,
+      description: repo.description,
+      hasEnvExample: envExampleVars.length > 0,
+      envExampleVars,
+      files,
+    });
+  } catch (err) {
+    if (err.response?.status === 404) return res.status(404).json({ message: 'Repo not found or inaccessible' });
+    res.status(500).json({ message: 'Repo analysis failed: ' + err.message });
+  }
+};
+
 
 // ─── GET /api/projects ────────────────────────────────────────────────────────
 const getProjects = async (req, res) => {
@@ -266,8 +346,8 @@ const resizeResourceLimits = async (req, res) => {
 };
 
 module.exports = {
-  getUserRepos, getProjects, createProject,
+  getUserRepos, analyzeRepo, getProjects, createProject,
   getProject, deleteProject, registerWebhook,
   updateProject, clearProjectStuckBuild,
   resizeResourceLimits,
-};
+};

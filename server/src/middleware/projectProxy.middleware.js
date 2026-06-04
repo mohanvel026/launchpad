@@ -27,9 +27,15 @@ const lookupPort = async (identifier, isCustomDomain = false) => {
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached;
 
   const query = isCustomDomain ? { customDomain: identifier } : { subdomain: identifier };
-  const project = await Project.findOne(query, 'port status').lean();
-  if (project && project.port) {
-    const data = { port: project.port, projectId: project._id.toString(), ts: Date.now() };
+  const project = await Project.findOne(query, 'port status stack').lean();
+  if (project && (project.port !== undefined || project.status === 'live')) {
+    const data = { 
+      port: project.port || 0, 
+      projectId: project._id.toString(), 
+      stack: project.stack || 'unknown',
+      status: project.status,
+      ts: Date.now() 
+    };
     portCache.set(identifier, data);
     return data;
   }
@@ -212,7 +218,78 @@ const projectProxyMiddleware = async (req, res, next) => {
         ));
     }
 
-    const { port, projectId } = projectData;
+    const { port, projectId, stack } = projectData;
+
+    const isWindows = process.platform === 'win32';
+    const isStaticStack = ['static', 'react', 'vue', 'svelte', 'astro', 'angular'].includes(stack);
+
+    if (isWindows && isStaticStack) {
+      const fs = require('fs');
+      const path = require('path');
+      const repoPath = path.join(__dirname, '../../repos', projectId);
+      
+      let buildDir = repoPath;
+      if (stack !== 'static') {
+        const { getBuildOutput } = require('../services/stackDetector.service');
+        const outDir = getBuildOutput(repoPath);
+        buildDir = path.join(repoPath, outDir);
+        if (!fs.existsSync(buildDir)) {
+          buildDir = repoPath;
+        }
+      }
+
+      // Safe check for buildDir directory
+      if (fs.existsSync(buildDir) && fs.statSync(buildDir).isDirectory()) {
+        // Resolve target file path
+        let targetPath = path.join(buildDir, req.path);
+        
+        // Resolve directory index
+        if (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory()) {
+          let indexFile = path.join(targetPath, 'index.html');
+          if (!fs.existsSync(indexFile)) {
+            // Find first HTML file
+            const htmlFiles = fs.readdirSync(targetPath).filter(f => f.endsWith('.html'));
+            if (htmlFiles.length > 0) {
+              indexFile = path.join(targetPath, htmlFiles[0]);
+            }
+          }
+          targetPath = indexFile;
+        }
+
+        // If file doesn't exist, try appending .html, otherwise fallback to main HTML of buildDir
+        if (!fs.existsSync(targetPath)) {
+          if (fs.existsSync(targetPath + '.html')) {
+            targetPath = targetPath + '.html';
+          } else {
+            let mainHtml = path.join(buildDir, 'index.html');
+            if (!fs.existsSync(mainHtml)) {
+              const htmlFiles = fs.readdirSync(buildDir).filter(f => f.endsWith('.html'));
+              if (htmlFiles.length > 0) {
+                mainHtml = path.join(buildDir, htmlFiles[0]);
+              }
+            }
+            targetPath = mainHtml;
+          }
+        }
+
+        if (fs.existsSync(targetPath) && fs.statSync(targetPath).isFile()) {
+          // Record visit for analytics
+          recordVisit(
+            projectId, 
+            0, // responseTime
+            200, // statusCode
+            req.method, 
+            req.url, 
+            req.ip || req.connection.remoteAddress
+          ).catch((err) => {
+            console.warn('[Proxy Traffic Audit Error]:', err.message);
+          });
+
+          // Serve file
+          return res.sendFile(targetPath);
+        }
+      }
+    }
 
     // ── Pipe the request to the container ──────────────────────────────────────
     console.log(`[proxy] ${subdomain} → :${port} ${req.method} ${req.url}`);
