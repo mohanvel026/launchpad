@@ -366,17 +366,46 @@ ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/app/start.sh"]`;
     }
 
+    case 'nuxt': {
+      const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
+      return `FROM node:20-alpine AS builder
+WORKDIR /app
+${pmSetup}
+COPY package*.json ${lockFile} ./
+RUN ${installCmd}
+COPY . .
+${envArgs}
+RUN ${buildCmd} 2>/dev/null || npx nuxt build || true
+
+FROM node:20-alpine
+RUN apk add --no-cache curl tini
+WORKDIR /app
+COPY --from=builder /app/.output ./.output
+COPY --from=builder /app/package*.json ./
+ENV PORT=${containerPort}
+ENV NODE_ENV=production
+ENV NITRO_PORT=${containerPort}
+EXPOSE ${containerPort}
+${healthCheck}
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", ".output/server/index.mjs"]`;
+    }
+
     case 'node':
     default: {
       const start = getStartCommand(repoPath, pm.name);
+      const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
+      const lockFileCopy = lockFile ? `COPY ${lockFile} ./` : '';
       const runCmd = start.isScript ? `CMD ["${pm.name}", "start"]` : `CMD ["node", "${start.args[0]}"]`;
       return `FROM node:20-alpine
 RUN apk add --no-cache curl tini
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --only=production --legacy-peer-deps || npm install --only=production
+${lockFileCopy}
+RUN ${installCmd}
 COPY . .
 ENV PORT=${containerPort}
+ENV NODE_ENV=production
 EXPOSE ${containerPort}
 ${healthCheck}
 ENTRYPOINT ["/sbin/tini", "--"]

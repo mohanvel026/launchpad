@@ -598,7 +598,7 @@ buildQueue.process(1, async (job) => {
 
         if (!appHealthy) {
           // Collect container logs for diagnosis
-          const crashLogs = safeExec(`docker logs --tail 80 ${containerId} 2>&1`) || '';
+          const crashLogs = safeExec(`docker logs --tail 150 ${containerId} 2>&1`) || '';
           const logText = crashLogs.toString();
 
           if (lastStatus !== 'running') {
@@ -718,7 +718,7 @@ buildQueue.process(1, async (job) => {
         }
 
         // 3. Start local server or set static port
-        const isService = ['node', 'next', 'nuxt', 'mern', 'fullstack-split'].includes(stack);
+        const isService = ['node', 'next', 'nuxt', 'mern', 'fullstack-split', 'express', 'fastify'].includes(stack);
         let hostPort = 0;
         let containerId = 'local-static';
 
