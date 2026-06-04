@@ -57,6 +57,82 @@ const safeExec = (cmd, opts = {}) => {
 
 const isWindows = process.platform === 'win32';
 
+// ─── Local Pattern-Based Error Diagnosis (no AI needed) ────────────────────────
+// Provides instant, useful diagnosis even when the AI service is unavailable.
+const localDiagnoseError = (output = '', stack = 'unknown') => {
+  const o = output.toLowerCase();
+
+  // npm / yarn install failures
+  if (/npm err!|yarn error|enoent.*package\.json|cannot find module/i.test(output)) {
+    return {
+      cause: 'Dependency installation failed. A required npm package is missing or package.json has an error.',
+      fix: 'Check your package.json for typos or missing dependencies. Run `npm install` locally to reproduce the error.',
+      commands: ['npm install', 'npm ls --depth=0'],
+    };
+  }
+
+  // Build tool failure (vite, webpack, tsc, etc.)
+  if (/vite.*error|webpack.*error|tsc.*error|build.*failed|error ts\d+/i.test(output)) {
+    return {
+      cause: 'Build tool compilation failed. There are TypeScript errors, import errors, or missing environment variables in the source code.',
+      fix: 'Run `npm run build` locally to see the exact error. Check for missing VITE_* or REACT_APP_* env vars in your .env file.',
+      commands: ['npm run build', 'npx tsc --noEmit'],
+    };
+  }
+
+  // Missing environment variable
+  if (/process\.env\.|env.*undefined|missing.*env|required.*variable/i.test(output)) {
+    return {
+      cause: 'A required environment variable is missing at build/runtime.',
+      fix: 'Go to the Environment tab in your LaunchPad project and add the missing variable(s), then redeploy.',
+      commands: [],
+    };
+  }
+
+  // Dockerfile syntax / COPY errors
+  if (/copy failed|no such file or directory|dockerfile.*error|syntax error/i.test(output)) {
+    return {
+      cause: 'Dockerfile error — a file or directory referenced in the Dockerfile does not exist in your repository.',
+      fix: 'Make sure all paths in your Dockerfile COPY commands exist in the repo. Check for case-sensitivity issues on Linux.',
+      commands: ['ls -la', 'git status'],
+    };
+  }
+
+  // Port / network
+  if (/address already in use|eaddrinuse|port.*conflict/i.test(output)) {
+    return {
+      cause: 'Port conflict — another container or process is already using the target port.',
+      fix: 'Delete and redeploy the project to get a fresh port allocation.',
+      commands: [],
+    };
+  }
+
+  // Out of disk / memory
+  if (/no space left|out of memory|killed|oom/i.test(output)) {
+    return {
+      cause: 'Server ran out of disk space or memory during the build.',
+      fix: 'Contact support or free up server resources. Try deleting unused projects to reclaim disk space.',
+      commands: ['docker system prune -f'],
+    };
+  }
+
+  // Python
+  if (/modulenotfounderror|importerror|pip install/i.test(output)) {
+    return {
+      cause: 'Python dependency missing. A required package is not in requirements.txt.',
+      fix: 'Add the missing package to requirements.txt and push again.',
+      commands: ['pip install -r requirements.txt'],
+    };
+  }
+
+  // Generic fallback — still useful
+  return {
+    cause: `Docker build for ${stack.toUpperCase()} project failed. See the raw output above for the exact error line.`,
+    fix: 'Look for lines starting with "ERROR" or "npm ERR!" in the raw output above. Fix the issue locally, push your changes, and redeploy.',
+    commands: ['npm install', 'npm run build'],
+  };
+};
+
 // Detect what port the app actually exposes inside the container
 // Priority: 1) User env var PORT, 2) App's own .env file PORT, 3) Stack default
 const detectContainerPort = (repoDir, stack, runtimeEnv) => {
@@ -338,29 +414,100 @@ buildQueue.process(1, async (job) => {
 
       await log('🔨 PHASE 5: Building container image (this may take a few minutes)…');
       
-      let buildCmd = `docker build --no-cache`;
+      // ── Stream docker build output live, line-by-line ──────────────────────
+      // buildArgs is already defined above in Phase 4 — reuse it here
+      const buildArgParts = [];
       for (const [k, v] of Object.entries(buildArgs)) {
         const safe = v.replace(/"/g, '\\"');
-        buildCmd += ` --build-arg ${k}="${safe}"`;
+        buildArgParts.push('--build-arg', `${k}=${safe}`);
       }
-      buildCmd += ` -t ${imageTag} "${repoDir}"`;
 
-      try {
-        await execAsync(buildCmd);
+      let dockerBuildFailed = false;
+      let dockerBuildOutput = [];
+
+      await new Promise((resolve, reject) => {
+        const { spawn } = require('child_process');
+        const buildProc = spawn(
+          'docker',
+          ['build', '--no-cache', '--progress=plain', ...buildArgParts, '-t', imageTag, repoDir],
+          { stdio: ['ignore', 'pipe', 'pipe'] }
+        );
+
+        const handleLine = async (line) => {
+          line = line.trimEnd();
+          if (!line) return;
+          // Filter extremely noisy docker layer download lines
+          if (/^(#\d+)? (Downloading|Extracting|Pull complete|Already exists|Layer already)/i.test(line)) return;
+          dockerBuildOutput.push(line);
+          await log(`   ${line}`);
+        };
+
+        let stdoutBuf = '';
+        buildProc.stdout.on('data', (chunk) => {
+          stdoutBuf += chunk.toString();
+          const lines = stdoutBuf.split('\n');
+          stdoutBuf = lines.pop();
+          lines.forEach(l => handleLine(l).catch(() => {}));
+        });
+
+        let stderrBuf = '';
+        buildProc.stderr.on('data', (chunk) => {
+          stderrBuf += chunk.toString();
+          const lines = stderrBuf.split('\n');
+          stderrBuf = lines.pop();
+          lines.forEach(l => handleLine(l).catch(() => {}));
+        });
+
+        buildProc.on('close', (code) => {
+          if (stdoutBuf.trim()) handleLine(stdoutBuf).catch(() => {});
+          if (stderrBuf.trim()) handleLine(stderrBuf).catch(() => {});
+          if (code === 0) {
+            resolve();
+          } else {
+            dockerBuildFailed = true;
+            reject(new Error(`docker build exited with code ${code}`));
+          }
+        });
+
+        buildProc.on('error', (err) => reject(err));
+      }).then(async () => {
         await log('   ✅ Build successful. Image tagged and ready for deployment.');
-      } catch (buildErr) {
-        const stderr = buildErr.stderr || buildErr.stdout || buildErr.message || '';
-        await log(`   ❌ Build failed! Analyzing logs…`);
-        // Use structured AI analysis
-        const diagnosis = await analyzeError(stderr, stack);
-        await log(`   🤖 AI Diagnosis: ${diagnosis.summary}`);
-        await log(`   🔍 Root Cause: ${diagnosis.cause}`);
-        await log(`   🛠️  Fix: ${diagnosis.fix}`);
-        if (diagnosis.commands?.length) {
-          await log(`   💻 Suggested commands:\n${diagnosis.commands.map(c => '      $ ' + c).join('\n')}`);
+      }).catch(async (buildErr) => {
+        // ── Always show the raw error output FIRST so users see what went wrong ──
+        await log(`   ❌ Build failed! (${buildErr.message})`);
+        await log('   ─── RAW BUILD ERROR OUTPUT ─────────────────────────────────');
+        // Show the last 30 lines where the error usually appears
+        const errorLines = dockerBuildOutput.slice(-30);
+        for (const line of errorLines) {
+          if (!line.startsWith('   ')) await log(`   ${line}`);
         }
+        await log('   ────────────────────────────────────────────────────────────');
+
+        // ── Local pattern-based diagnosis (no AI needed) ───────────────────────
+        const fullOutput = dockerBuildOutput.join('\n');
+        const localDiagnosis = localDiagnoseError(fullOutput, stack);
+        await log(`   🔍 Detected Issue: ${localDiagnosis.cause}`);
+        await log(`   🛠️  Quick Fix: ${localDiagnosis.fix}`);
+        if (localDiagnosis.commands.length) {
+          await log(`   💻 Suggested commands:`);
+          for (const cmd of localDiagnosis.commands) await log(`      $ ${cmd}`);
+        }
+
+        // ── Try AI analysis as an enhancement (non-blocking) ──────────────────
+        try {
+          const diagnosis = await analyzeError(fullOutput, stack);
+          if (diagnosis && diagnosis.summary && !diagnosis.summary.includes('unavailable')) {
+            await log(`   🤖 AI Root Cause: ${diagnosis.summary}`);
+            await log(`   🤖 AI Fix: ${diagnosis.fix}`);
+            if (diagnosis.commands?.length) {
+              await log(`   💻 AI Suggested commands:`);
+              for (const cmd of diagnosis.commands) await log(`      $ ${cmd}`);
+            }
+          }
+        } catch { /* AI unavailable — local diagnosis above is sufficient */ }
+
         throw new Error('Docker build failure');
-      } finally {
+      }).finally(async () => {
         // Clean up temporary .env to maintain total secret security on the server
         if (fs.existsSync(tempEnvFile)) {
           try {
@@ -370,7 +517,7 @@ buildQueue.process(1, async (job) => {
             console.warn(`[Build Worker] Failed to unlink temp env file: ${unlinkErr.message}`);
           }
         }
-      }
+      });
 
       // Use a stable container name per project so re-deploys cleanly replace the old one
       const containerName = `lp-${projectId.slice(-8)}`;
@@ -451,8 +598,8 @@ buildQueue.process(1, async (job) => {
 
         if (!appHealthy) {
           // Collect container logs for diagnosis
-          const crashLogs = safeExec(`docker logs --tail 50 ${containerId} 2>&1`) || '';
-          const logText = crashLogs.toString().slice(0, 1200);
+          const crashLogs = safeExec(`docker logs --tail 80 ${containerId} 2>&1`) || '';
+          const logText = crashLogs.toString();
 
           if (lastStatus !== 'running') {
             await log(`   ❌ Container exited unexpectedly (status: ${lastStatus})`);
@@ -684,12 +831,24 @@ buildQueue.process(1, async (job) => {
 
     try {
       const fresh   = await Deployment.findById(deploymentId);
-      const summary = await analyzeError(fresh.logs.join('\n'), project.stack);
-      if (summary) {
-        await Deployment.findByIdAndUpdate(deploymentId, { aiErrorSummary: summary });
-        await log(`🤖 AI Diagnosis: ${summary}`);
+      const logsText = fresh.logs.join('\n');
+      let diagnosis;
+      try {
+        diagnosis = await analyzeError(logsText, project.stack);
+      } catch (aiErr) {
+        console.warn('[Build Worker] AI analysis failed, falling back to local diagnosis:', aiErr.message);
       }
-    } catch { /* AI unavailable */ }
+
+      const isUnavailable = !diagnosis || !diagnosis.summary || /unavailable|Could not reach/i.test(diagnosis.summary);
+      const finalDiagnosis = isUnavailable ? localDiagnoseError(logsText, project.stack) : diagnosis;
+
+      const formattedSummary = `${finalDiagnosis.summary || finalDiagnosis.cause || 'Deployment failed.'}\n\n🔍 Root Cause: ${finalDiagnosis.cause || 'Unknown.'}\n\n🛠️ Quick Fix: ${finalDiagnosis.fix || 'Check logs for details.'}${finalDiagnosis.commands?.length ? '\n\n💻 Suggested commands:\n' + finalDiagnosis.commands.map(c => '  $ ' + c).join('\n') : ''}`;
+
+      await Deployment.findByIdAndUpdate(deploymentId, { aiErrorSummary: formattedSummary });
+      await log(`🤖 Diagnosis:\n${formattedSummary}`);
+    } catch (diagErr) {
+      console.error('[Build Worker] Failed to run build error diagnosis:', diagErr.message);
+    }
 
     await Deployment.findByIdAndUpdate(deploymentId, {
       status: 'failed', finishedAt: new Date(),
