@@ -49,19 +49,21 @@ export default function Dashboard() {
   return (
     <div className="launchpad-container">
       {/* Header */}
-      <header className="lp-header">
-        <div className="lp-logo">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="url(#grad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <defs><linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#38bdf8"/><stop offset="100%" stopColor="#818cf8"/></linearGradient></defs>
-            <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>
-            <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>
-          </svg>
-          LaunchPad
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <img src={user.avatarUrl} alt="" style={{ width: 30, height: 30, borderRadius: '50%', border: '2px solid var(--border-strong)' }} />
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-muted)' }}>{user.username}</span>
-          <button className="lp-btn-secondary" style={{ padding: '6px 16px', fontSize: 13 }} onClick={logout}>Sign Out</button>
+      <header className="lp-header" style={{ display: 'block', padding: 0 }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px' }}>
+          <div className="lp-logo">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="url(#grad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <defs><linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#38bdf8"/><stop offset="100%" stopColor="#818cf8"/></linearGradient></defs>
+              <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>
+              <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>
+            </svg>
+            LaunchPad
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <img src={user.avatarUrl} alt="" style={{ width: 30, height: 30, borderRadius: '50%', border: '2px solid var(--border-strong)' }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-muted)' }}>{user.username}</span>
+            <button className="lp-btn-secondary" style={{ padding: '6px 16px', fontSize: 13 }} onClick={logout}>Sign Out</button>
+          </div>
         </div>
       </header>
 

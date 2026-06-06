@@ -11,20 +11,40 @@ import DomainManager from '../components/DomainManager';
 import TeamManager from '../components/TeamManager';
 import AIChat from '../components/AIChat';
 
-const TABS = [
-  { id: 'deployments', label: '🚀 Deployments' },
-  { id: 'logs',        label: '📋 Build Logs' },
-  { id: 'runtime-logs',label: '🖥️ Runtime Logs' },
-  { id: 'advisor',     label: '🧠 AI Advisor' },
-  { id: 'security',    label: '🛡️ Security' },
-  { id: 'previews',   label: '🔍 PR Previews' },
-  { id: 'env',         label: '🔐 Environment' },
-  { id: 'domains',     label: '🌐 Domains' },
-  { id: 'metrics',     label: '📊 Live Metrics' },
-  { id: 'analytics',   label: '📈 Analytics' },
-  { id: 'team',        label: '👥 Team' },
-  { id: 'ai',          label: '🤖 AI Co-Pilot' },
-  { id: 'settings',    label: '⚙️ Settings' },
+const SIDEBAR_GROUPS = [
+  {
+    title: 'Development',
+    items: [
+      { id: 'deployments',  label: 'Deployments',  icon: '🚀' },
+      { id: 'logs',         label: 'Build Logs',   icon: '📋' },
+      { id: 'runtime-logs', label: 'Runtime Logs',  icon: '🖥️' },
+      { id: 'previews',     label: 'PR Previews',  icon: '🔍' },
+    ]
+  },
+  {
+    title: 'AI Assistant',
+    items: [
+      { id: 'ai',           label: 'AI Co-Pilot',  icon: '🤖' },
+      { id: 'advisor',      label: 'AI Advisor',   icon: '🧠' },
+    ]
+  },
+  {
+    title: 'Monitoring',
+    items: [
+      { id: 'metrics',      label: 'Live Metrics', icon: '📊' },
+      { id: 'analytics',    label: 'Analytics',    icon: '📈' },
+    ]
+  },
+  {
+    title: 'Settings',
+    items: [
+      { id: 'env',          label: 'Environment',  icon: '🔐' },
+      { id: 'domains',      label: 'Domains',      icon: '🌐' },
+      { id: 'security',     label: 'Security',     icon: '🛡️' },
+      { id: 'team',         label: 'Team',         icon: '👥' },
+      { id: 'settings',     label: 'Settings',     icon: '⚙️' },
+    ]
+  }
 ];
 
 function LogLine({ line }) {
@@ -566,82 +586,83 @@ export default function ProjectDetail() {
     </div>
   );
 
-  const domain = import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io';
   const deployUrl = project.subdomain ? `http://${project.subdomain}.${domain}` : null;
 
   return (
     <div className="launchpad-container">
       {/* Header */}
-      <header className="lp-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <button className="lp-btn-secondary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => navigate('/dashboard')}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-            Dashboard
-          </button>
-          <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-          <span style={{ fontWeight: 700, fontSize: 15 }}>{project.name}</span>
-          <span className={`lp-badge ${deploying ? 'building' : (project.status || 'idle')}`}>
-            {deploying ? 'building' : (project.status || 'idle')}
-          </span>
-          {/* Quick Repair: show Fix Status button when project shows failed but history has a success */}
-          {!deploying && project.status === 'failed' && (
-            <button
-              onClick={handleSyncStatus}
-              title="Repair project status from deployment history"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-                padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-                background: 'rgba(52,211,153,0.1)', color: '#34d399',
-                border: '1px solid rgba(52,211,153,0.25)',
-                cursor: 'pointer',
-              }}
-            >
-              🔧 Fix Status
+      <header className="lp-header" style={{ display: 'block', padding: 0 }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <button className="lp-btn-secondary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => navigate('/dashboard')}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+              Dashboard
             </button>
-          )}
-          {/* Health Score Pill */}
-          {project.lastHealthScore !== undefined && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-              background: project.lastHealthScore >= 80 ? 'rgba(52,211,153,0.15)' : project.lastHealthScore >= 50 ? 'rgba(251,191,36,0.15)' : 'rgba(248,113,113,0.15)',
-              color: project.lastHealthScore >= 80 ? '#34d399' : project.lastHealthScore >= 50 ? '#fbbf24' : '#f87171',
-              border: `1px solid ${project.lastHealthScore >= 80 ? 'rgba(52,211,153,0.3)' : project.lastHealthScore >= 50 ? 'rgba(251,191,36,0.3)' : 'rgba(248,113,113,0.3)'}`,
-              cursor: 'pointer',
-            }} onClick={() => { setActiveTab('runtime-logs'); handleLoadHealth(); }} title="Click to view health status">
-              {project.lastHealthScore >= 80 ? '🟢' : project.lastHealthScore >= 50 ? '🟡' : '🔴'}
-              Health {project.lastHealthScore}%
+            <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+            <span style={{ fontWeight: 700, fontSize: 15 }}>{project.name}</span>
+            <span className={`lp-badge ${deploying ? 'building' : (project.status || 'idle')}`}>
+              {deploying ? 'building' : (project.status || 'idle')}
             </span>
-          )}
-          {/* Vuln Summary Pill */}
-          {project.vulnSummary && (project.vulnSummary.critical > 0 || project.vulnSummary.high > 0) && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-              background: 'rgba(248,113,113,0.15)', color: '#f87171',
-              border: '1px solid rgba(248,113,113,0.3)',
-              cursor: 'pointer',
-            }} onClick={() => setActiveTab('security')} title="Click to view vulnerabilities">
-              ⚠️ {project.vulnSummary.critical} Critical · {project.vulnSummary.high} High CVEs
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {deployUrl && (
-            <a href={deployUrl} target="_blank" rel="noreferrer" className="lp-btn-secondary" style={{ padding: '6px 14px', fontSize: 13 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-              Visit
-            </a>
-          )}
-          <button onClick={handleDeploy} disabled={deploying} className={`lp-btn-primary ${deploying ? 'animate-pulse-cyan' : ''}`}>
-            {deploying ? 'Deploying...' : '🚀 Redeploy'}
-          </button>
+            {/* Quick Repair: show Fix Status button when project shows failed but history has a success */}
+            {!deploying && project.status === 'failed' && (
+              <button
+                onClick={handleSyncStatus}
+                title="Repair project status from deployment history"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                  background: 'rgba(52,211,153,0.1)', color: '#34d399',
+                  border: '1px solid rgba(52,211,153,0.25)',
+                  cursor: 'pointer',
+                }}
+              >
+                🔧 Fix Status
+              </button>
+            )}
+            {/* Health Score Pill */}
+            {project.lastHealthScore !== undefined && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700,
+                background: project.lastHealthScore >= 80 ? 'rgba(52,211,153,0.15)' : project.lastHealthScore >= 50 ? 'rgba(251,191,36,0.15)' : 'rgba(248,113,113,0.15)',
+                color: project.lastHealthScore >= 80 ? '#34d399' : project.lastHealthScore >= 50 ? '#fbbf24' : '#f87171',
+                border: `1px solid ${project.lastHealthScore >= 80 ? 'rgba(52,211,153,0.3)' : project.lastHealthScore >= 50 ? 'rgba(251,191,36,0.3)' : 'rgba(248,113,113,0.3)'}`,
+                cursor: 'pointer',
+              }} onClick={() => { setActiveTab('runtime-logs'); handleLoadHealth(); }} title="Click to view health status">
+                {project.lastHealthScore >= 80 ? '🟢' : project.lastHealthScore >= 50 ? '🟡' : '🔴'}
+                Health {project.lastHealthScore}%
+              </span>
+            )}
+            {/* Vuln Summary Pill */}
+            {project.vulnSummary && (project.vulnSummary.critical > 0 || project.vulnSummary.high > 0) && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700,
+                background: 'rgba(248,113,113,0.15)', color: '#f87171',
+                border: '1px solid rgba(248,113,113,0.3)',
+                cursor: 'pointer',
+              }} onClick={() => setActiveTab('security')} title="Click to view vulnerabilities">
+                ⚠️ {project.vulnSummary.critical} Critical · {project.vulnSummary.high} High CVEs
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {deployUrl && (
+              <a href={deployUrl} target="_blank" rel="noreferrer" className="lp-btn-secondary" style={{ padding: '6px 14px', fontSize: 13 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Visit
+              </a>
+            )}
+            <button onClick={handleDeploy} disabled={deploying} className={`lp-btn-primary ${deploying ? 'animate-pulse-cyan' : ''}`}>
+              {deploying ? 'Deploying...' : '🚀 Redeploy'}
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Project Info Bar */}
-      <div style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', padding: '12px 40px' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', gap: 32, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)' }}>
+      <div style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', padding: '12px 0' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', gap: 32, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)', padding: '0 40px' }}>
           <span>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: 6 }}><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
             {project.repoFullName}
@@ -652,18 +673,43 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ borderBottom: '1px solid var(--border)', padding: '0 40px', background: 'var(--bg-glass)', backdropFilter: 'blur(12px)' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', gap: 0 }}>
-          {TABS.map(t => (
-            <div key={t.id} className={`lp-pill ${activeTab === t.id ? 'active' : ''}`} onClick={() => setActiveTab(t.id)}>{t.label}</div>
-          ))}
-        </div>
-      </div>
+      <main className="lp-main" style={{ maxWidth: 'none', margin: 0, padding: '40px 0', width: '100%' }}>
+        <div className="lp-detail-layout" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px' }}>
+          {/* Left Sidebar */}
+          <div className="lp-sidebar-container">
+            {SIDEBAR_GROUPS.map((group, idx) => (
+              <div key={idx}>
+                <div style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  color: 'var(--text-dim)',
+                  letterSpacing: '0.08em',
+                  marginBottom: '8px',
+                  paddingLeft: '12px'
+                }}>
+                  {group.title}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {group.items.map(item => (
+                    <div
+                      key={item.id}
+                      className={`lp-sidebar-link ${activeTab === item.id ? 'active' : ''}`}
+                      onClick={() => setActiveTab(item.id)}
+                    >
+                      <span style={{ fontSize: '15px', display: 'inline-flex', alignItems: 'center' }}>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
 
-      <main className="lp-main" style={{ maxWidth: 1200, margin: '0 auto', width: '100%' }}>
-        {error && (
-          <div className="lp-status-bar error" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Right Content Area */}
+          <div className="lp-content-container">
+          {error && (
+            <div className="lp-status-bar error" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
             <span>⚠️ {error}</span>
             {error.toLowerCase().includes('in progress') && (
               <button 
@@ -712,24 +758,36 @@ export default function ProjectDetail() {
                     const isRollingBackThis = rollingBack === dep._id;
                     return (
                       <div key={dep._id} style={{
-                        display: 'flex', alignItems: 'flex-start', gap: 0,
-                        padding: '16px 24px',
+                        display: 'flex', alignItems: 'stretch', gap: 0,
+                        padding: '0 24px',
                         borderBottom: i < deployments.length - 1 ? '1px solid var(--border)' : 'none',
                         background: isProduction ? 'rgba(52,211,153,0.03)' : 'transparent',
                         transition: 'background 0.2s',
                       }}>
                         {/* Timeline dot + line */}
-                        <div style={{ width: 40, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 4 }}>
+                        <div style={{ width: 40, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
                           <div style={{
                             width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
                             background: dep.status === 'success' ? '#34d399' : dep.status === 'failed' ? '#f87171' : dep.status === 'building' ? '#38bdf8' : '#64748b',
                             boxShadow: dep.status === 'success' ? '0 0 8px rgba(52,211,153,0.5)' : dep.status === 'failed' ? '0 0 8px rgba(248,113,113,0.4)' : 'none',
+                            marginTop: 20,
+                            zIndex: 2,
                           }} />
-                          {i < deployments.length - 1 && <div style={{ width: 2, flex: 1, minHeight: 32, background: 'var(--border)', marginTop: 4 }} />}
+                          {deployments.length > 1 && (
+                            <div style={{
+                              position: 'absolute',
+                              width: 2,
+                              left: 19,
+                              background: 'var(--border)',
+                              zIndex: 1,
+                              top: i === 0 ? 26 : 0,
+                              bottom: i === deployments.length - 1 ? 'calc(100% - 26px)' : 0,
+                            }} />
+                          )}
                         </div>
 
                         {/* Deployment info */}
-                        <div style={{ flex: 1, paddingLeft: 12 }}>
+                        <div style={{ flex: 1, padding: '16px 0 16px 12px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
                             <span style={{ fontWeight: 600, fontSize: 14 }}>{dep.commitMessage || 'Manual Deploy'}</span>
                             <span className={`lp-badge ${dep.status}`} style={{ fontSize: 11 }}>{dep.status}</span>
@@ -746,7 +804,7 @@ export default function ProjectDetail() {
                         </div>
 
                         {/* Action buttons */}
-                        <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center', padding: '16px 0' }}>
                           <button className="lp-btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => viewLogs(dep)}>Logs</button>
                           {!isProduction && dep.status === 'success' && (
                             <button
@@ -1706,6 +1764,8 @@ export default function ProjectDetail() {
             <AIChat projectId={id} />
           </div>
         )}
+          </div>
+        </div>
       </main>
     </div>
   );
