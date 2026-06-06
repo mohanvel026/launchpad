@@ -19,7 +19,7 @@ const isDomainResolvable = async (domainName) => {
 // Provision an SSL certificate for a subdomain and optional custom domain using certbot
 // Requires: certbot installed on the Oracle VM, port 80 open
 const provisionSSL = async (subdomain, customDomain = null) => {
-  const domain    = process.env.CLOUDFLARE_DOMAIN || 'launchpad.dev';
+  const domain    = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
   const fullDomain = `${subdomain}.${domain}`;
   const email     = process.env.SSL_EMAIL || process.env.SMTP_USER;
 
@@ -76,7 +76,7 @@ const provisionSSL = async (subdomain, customDomain = null) => {
 
 // Revoke and delete SSL cert when a project is removed
 const revokeSSL = (subdomain) => {
-  const domain     = process.env.CLOUDFLARE_DOMAIN || 'launchpad.dev';
+  const domain     = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
   const fullDomain = `${subdomain}.${domain}`;
   try {
     execSync(`certbot delete --cert-name ${fullDomain} --non-interactive`, { stdio: 'pipe' });

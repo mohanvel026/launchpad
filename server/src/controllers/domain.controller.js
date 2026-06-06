@@ -14,7 +14,7 @@ const addCustomDomainToProject = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
     if (project.status !== 'live') return res.status(400).json({ message: 'Project must be live before adding a custom domain' });
 
-    // Create a CNAME in Cloudflare pointing customDomain → subdomain.launchpad.dev
+    // Create a CNAME in Cloudflare pointing customDomain → subdomain.launchlive.in
     const sanitizedDomain = customDomain.trim().toLowerCase();
     const dnsId = await addCustomDomain(sanitizedDomain, project.subdomain);
 
@@ -30,7 +30,7 @@ const addCustomDomainToProject = async (req, res) => {
     res.json({
       message: 'Custom domain registered and proxy config updated. Point your domain CNAME to your subdomain, then verify.',
       customDomain,
-      cname:   `${project.subdomain}.${process.env.CLOUDFLARE_DOMAIN || 'launchpad.dev'}`,
+      cname:   `${project.subdomain}.${process.env.CLOUDFLARE_DOMAIN || 'launchlive.in'}`,
       dnsId,
     });
   } catch (err) {
@@ -60,7 +60,7 @@ const provisionSSLForProject = async (req, res) => {
         sslExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) // 90 days validity
       });
 
-      res.json({ message: `SSL certificate provisioned successfully for ${project.subdomain}.${process.env.CLOUDFLARE_DOMAIN || 'launchpad.dev'}${project.customDomain ? ' and ' + project.customDomain : ''}` });
+      res.json({ message: `SSL certificate provisioned successfully for ${project.subdomain}.${process.env.CLOUDFLARE_DOMAIN || 'launchlive.in'}${project.customDomain ? ' and ' + project.customDomain : ''}` });
     } else {
       await Project.findByIdAndUpdate(project._id, { sslStatus: 'failed' });
       res.status(500).json({ message: 'SSL provisioning failed — check server logs' });
@@ -79,7 +79,7 @@ const getDomainInfo = async (req, res) => {
     }).select('subdomain customDomain status port customDomainStatus sslStatus sslIssuedAt sslExpiresAt');
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const domain = process.env.CLOUDFLARE_DOMAIN || 'launchpad.dev';
+    const domain = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
     res.json({
       subdomain:    project.subdomain,
       subdomainUrl: `https://${project.subdomain}.${domain}`,
@@ -104,7 +104,7 @@ const verifyCustomDomainDNS = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
     if (!project.customDomain) return res.status(400).json({ message: 'No custom domain configured' });
 
-    const domain = process.env.CLOUDFLARE_DOMAIN || 'launchpad.dev';
+    const domain = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
     const targetCname = `${project.subdomain}.${domain}`;
 
     let verified = false;

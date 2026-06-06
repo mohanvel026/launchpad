@@ -139,10 +139,10 @@ export default function Settings() {
         <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', marginTop: '10px' }}>
           <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 6px', fontWeight: '500' }}>CLI Setup:</p>
           <code style={{ fontSize: '12px', color: '#374151', display: 'block', lineHeight: '2' }}>
-            npm install -g launchpad-cli<br />
-            launchpad login<br />
-            launchpad deploy --repo username/my-app<br />
-            launchpad list
+            npm install -g launchlive-cli<br />
+            launchlive login<br />
+            launchlive deploy --repo username/my-app<br />
+            launchlive list
           </code>
         </div>
       </div>
