@@ -5,6 +5,11 @@ import api from '../lib/api';
 
 const NAV_TABS = ['Projects', 'Deployments', 'Domains', 'Settings'];
 
+const STACK_ICONS = {
+  next: '▲', nuxt: '💚', react: '⚛️', node: '🟢', mern: '🏗️',
+  vue: '💚', static: '📄', fullstack: '🏗️', unknown: '📦'
+};
+
 export default function Dashboard() {
   const { user, loading, logout } = useAuth();
   const navigate = useNavigate();
@@ -32,6 +37,14 @@ export default function Dashboard() {
   );
 
   const live = projects.filter(p => p.status === 'live').length;
+  const failed = projects.filter(p => p.status === 'failed').length;
+  const totalBuilds = projects.reduce((a, p) => a + (p.buildCount || 0), 0);
+  const totalCriticalCVEs = projects.reduce((a, p) => a + (p.vulnSummary?.critical || 0), 0);
+  const totalHighCVEs = projects.reduce((a, p) => a + (p.vulnSummary?.high || 0), 0);
+  const unhealthyProjects = projects.filter(p => (p.lastHealthScore || 100) < 70).length;
+  const avgHealthScore = projects.length
+    ? Math.round(projects.reduce((a, p) => a + (p.lastHealthScore || 100), 0) / projects.length)
+    : 100;
 
   return (
     <div className="launchpad-container">
@@ -66,19 +79,42 @@ export default function Dashboard() {
         {/* Projects Tab */}
         {activeTab === 'Projects' && (
           <div className="fade-in">
-            {/* Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
+            {/* Global Stats Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 32 }}>
               {[
-                { label: 'Total Projects', value: projects.length, color: 'var(--text-main)' },
-                { label: 'Live Deployments', value: live, color: 'var(--accent-success)' },
-                { label: 'Total Builds', value: projects.reduce((a, p) => a + (p.buildCount || 0), 0), color: 'var(--accent-primary)' },
+                { label: 'Total Projects', value: projects.length, color: 'var(--text-main)', icon: '📦' },
+                { label: 'Live Deployments', value: live, color: 'var(--accent-success)', icon: '🚀' },
+                { label: 'Total Builds', value: totalBuilds, color: 'var(--accent-primary)', icon: '🔨' },
+                { label: 'Avg Health Score', value: `${avgHealthScore}%`, color: avgHealthScore >= 80 ? '#34d399' : avgHealthScore >= 50 ? '#fbbf24' : '#f87171', icon: avgHealthScore >= 80 ? '🟢' : avgHealthScore >= 50 ? '🟡' : '🔴' },
+                { label: 'Critical CVEs', value: totalCriticalCVEs + totalHighCVEs, color: totalCriticalCVEs > 0 ? '#f87171' : '#34d399', icon: totalCriticalCVEs > 0 ? '🛡️' : '✅' },
+                { label: 'Unhealthy Apps', value: unhealthyProjects, color: unhealthyProjects > 0 ? '#fbbf24' : '#34d399', icon: unhealthyProjects > 0 ? '⚠️' : '✅' },
               ].map(stat => (
-                <div key={stat.label} className="lp-card" style={{ padding: '20px 24px' }}>
-                  <div className="lp-section-label">{stat.label}</div>
-                  <div style={{ fontSize: 36, fontWeight: 800, color: stat.color, marginTop: 4 }}>{stat.value}</div>
+                <div key={stat.label} className="lp-card" style={{ padding: '18px 20px' }}>
+                  <div className="lp-section-label" style={{ fontSize: 10, marginBottom: 4 }}>{stat.label}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                    <span style={{ fontSize: 18 }}>{stat.icon}</span>
+                    <span style={{ fontSize: 28, fontWeight: 800, color: stat.color }}>{stat.value}</span>
+                  </div>
                 </div>
               ))}
             </div>
+
+            {/* Global alerts banner */}
+            {(totalCriticalCVEs > 0 || unhealthyProjects > 0 || failed > 0) && (
+              <div style={{
+                padding: '14px 20px', borderRadius: 12, marginBottom: 24,
+                background: 'linear-gradient(135deg, rgba(248,113,113,0.07) 0%, rgba(251,191,36,0.05) 100%)',
+                border: '1px solid rgba(248,113,113,0.2)',
+                display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center', fontSize: 13
+              }}>
+                <span style={{ fontWeight: 700, color: '#f87171', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  ⚡ System Alerts
+                </span>
+                {totalCriticalCVEs > 0 && <span style={{ color: '#f87171' }}>🛡️ {totalCriticalCVEs} critical CVE{totalCriticalCVEs !== 1 ? 's' : ''} need patching</span>}
+                {unhealthyProjects > 0 && <span style={{ color: '#fbbf24' }}>⚠️ {unhealthyProjects} unhealthy app{unhealthyProjects !== 1 ? 's' : ''} detected</span>}
+                {failed > 0 && <span style={{ color: '#fb923c' }}>❌ {failed} failed deployment{failed !== 1 ? 's' : ''}</span>}
+              </div>
+            )}
 
             {/* Search + New */}
             <div className="flex-between" style={{ marginBottom: 20, gap: 16 }}>
@@ -99,34 +135,74 @@ export default function Dashboard() {
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 16 }}>
-                {filtered.map(project => (
-                  <div key={project._id} className="lp-card lp-card-clickable" onClick={() => navigate(`/projects/${project._id}`)}>
-                    <div className="flex-between" style={{ marginBottom: 16 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--gradient-glow)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
-                          {project.framework === 'next' ? '▲' : project.framework === 'node' ? '🟢' : '⚛️'}
+                {filtered.map(project => {
+                  const health = project.lastHealthScore ?? 100;
+                  const hasCritical = (project.vulnSummary?.critical || 0) > 0;
+                  const hasHigh = (project.vulnSummary?.high || 0) > 0;
+                  return (
+                    <div key={project._id} className="lp-card lp-card-clickable" onClick={() => navigate(`/projects/${project._id}`)}>
+                      <div className="flex-between" style={{ marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--gradient-glow)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                            {STACK_ICONS[project.stack] || STACK_ICONS[project.framework] || '📦'}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 15 }}>{project.name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>{project.repoFullName}</div>
+                          </div>
                         </div>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 15 }}>{project.name}</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>{project.repoFullName}</div>
-                        </div>
+                        <span className={`lp-badge ${project.status || 'idle'}`}>{project.status || 'idle'}</span>
                       </div>
-                      <span className={`lp-badge ${project.status || 'idle'}`}>{project.status || 'idle'}</span>
-                    </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: 6, marginBottom: 16 }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                      <span style={{ fontSize: 12, color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {project.subdomain ? `${project.subdomain}.${import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io'}` : 'No domain assigned'}
-                      </span>
-                    </div>
+                      {/* Status indicators row */}
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                        {/* Health badge */}
+                        <span style={{
+                          padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+                          background: health >= 80 ? 'rgba(52,211,153,0.1)' : health >= 50 ? 'rgba(251,191,36,0.1)' : 'rgba(248,113,113,0.1)',
+                          color: health >= 80 ? '#34d399' : health >= 50 ? '#fbbf24' : '#f87171',
+                          border: `1px solid ${health >= 80 ? 'rgba(52,211,153,0.2)' : health >= 50 ? 'rgba(251,191,36,0.2)' : 'rgba(248,113,113,0.2)'}`,
+                        }}>
+                          {health >= 80 ? '🟢' : health >= 50 ? '🟡' : '🔴'} {health}% health
+                        </span>
 
-                    <div className="flex-between" style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-                      <span>Branch: <span style={{ color: 'var(--text-muted)' }}>{project.branch || 'main'}</span></span>
-                      <span>{project.buildCount || 0} builds</span>
+                        {/* CVE badge */}
+                        {(hasCritical || hasHigh) && (
+                          <span style={{
+                            padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+                            background: 'rgba(248,113,113,0.1)', color: '#f87171',
+                            border: '1px solid rgba(248,113,113,0.2)',
+                          }}>
+                            ⚠️ {(project.vulnSummary?.critical || 0) + (project.vulnSummary?.high || 0)} CVEs
+                          </span>
+                        )}
+
+                        {/* Active previews */}
+                        {(project.previews?.filter(p => p.status === 'live').length || 0) > 0 && (
+                          <span style={{
+                            padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+                            background: 'rgba(56,189,248,0.1)', color: '#38bdf8',
+                            border: '1px solid rgba(56,189,248,0.2)',
+                          }}>
+                            🔍 {project.previews.filter(p => p.status === 'live').length} previews
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: 6, marginBottom: 12 }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                        <span style={{ fontSize: 12, color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {project.subdomain ? `${project.subdomain}.${import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io'}` : 'No domain assigned'}
+                        </span>
+                      </div>
+
+                      <div className="flex-between" style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                        <span>Branch: <span style={{ color: 'var(--text-muted)' }}>{project.branch || 'main'}</span></span>
+                        <span>{project.buildCount || 0} builds</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -147,7 +223,9 @@ export default function Dashboard() {
                   <tr>
                     <th>Project</th>
                     <th>Status</th>
+                    <th>Health</th>
                     <th>Branch</th>
+                    <th>Builds</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -156,7 +234,16 @@ export default function Dashboard() {
                     <tr key={p._id}>
                       <td style={{ fontWeight: 600 }}>{p.name}</td>
                       <td><span className={`lp-badge ${p.status || 'idle'}`}>{p.status || 'idle'}</span></td>
+                      <td>
+                        <span style={{
+                          fontSize: 12, fontWeight: 600,
+                          color: (p.lastHealthScore || 100) >= 80 ? '#34d399' : (p.lastHealthScore || 100) >= 50 ? '#fbbf24' : '#f87171'
+                        }}>
+                          {p.lastHealthScore || 100}%
+                        </span>
+                      </td>
                       <td><span className="mono" style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.branch}</span></td>
+                      <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>{p.buildCount || 0}</td>
                       <td><button className="lp-btn-secondary" style={{ padding: '5px 14px', fontSize: 12 }} onClick={() => navigate(`/projects/${p._id}`)}>View</button></td>
                     </tr>
                   ))}
@@ -180,9 +267,16 @@ export default function Dashboard() {
                     {p.subdomain}.{import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io'}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.name}</div>
+                  {p.customDomain && (
+                    <div style={{ fontSize: 12, color: '#818cf8', marginTop: 2 }}>
+                      Custom: {p.customDomain} — <span style={{ color: p.customDomainStatus === 'active' ? '#34d399' : '#fbbf24' }}>{p.customDomainStatus}</span>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <span className="lp-badge success">TLS Active</span>
+                  <span className={`lp-badge ${p.sslStatus === 'active' ? 'success' : 'idle'}`}>
+                    {p.sslStatus === 'active' ? 'TLS Active' : 'TLS Pending'}
+                  </span>
                   <button className="lp-btn-secondary" style={{ padding: '5px 14px', fontSize: 12 }} onClick={() => navigate(`/projects/${p._id}`)}>Manage</button>
                 </div>
               </div>

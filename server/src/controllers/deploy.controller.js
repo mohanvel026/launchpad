@@ -44,7 +44,12 @@ const githubWebhook = async (req, res) => {
 
     await buildQueue.add(
       { deploymentId: deployment._id.toString(), projectId: project._id.toString() },
-      { attempts: 1, removeOnComplete: 50, removeOnFail: 50 }
+      {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 50,
+        removeOnFail: 50
+      }
     );
 
     res.status(200).json({ message: 'Build queued', deploymentId: deployment._id });
@@ -78,7 +83,12 @@ const triggerDeploy = async (req, res) => {
 
     await buildQueue.add(
       { deploymentId: deployment._id.toString(), projectId: project._id.toString() },
-      { attempts: 1, removeOnComplete: 50, removeOnFail: 50 }
+      {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 50,
+        removeOnFail: 50
+      }
     );
 
     res.status(202).json({ deployment });

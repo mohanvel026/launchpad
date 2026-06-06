@@ -241,6 +241,20 @@ buildQueue.process(1, async (job) => {
   }
 
   try {
+    // ── PRE-FLIGHT: Disk Space Check ──────────────────────────────────────────
+    if (!isWindows) {
+      try {
+        const dfOut = execSync(`df -BG "${REPOS_DIR}" | tail -1`, { stdio: 'pipe' }).toString();
+        const available = parseInt(dfOut.split(/\s+/)[3]) || 999;
+        if (available < 2) {
+          const pruneMsg = 'Server disk is nearly full. Running Docker cleanup to free space...';
+          await log(`⚠️  ${pruneMsg}`);
+          try { execSync('docker system prune -f --volumes', { stdio: 'pipe', timeout: 30000 }); } catch {}
+          await log('   ✅ Docker cleanup done. Retrying build...');
+        }
+      } catch {}
+    }
+
     // ── PHASE 1: Fetch Source ──
     await log(`📦 PHASE 1: Fetching source code…`);
     await log(`   ↳ Target: ${project.repoFullName}@${project.branch}`);
@@ -979,7 +993,12 @@ buildQueue.process(1, async (job) => {
 
             await buildQueue.add(
               { deploymentId: autoHealDep._id.toString(), projectId: project._id.toString() },
-              { attempts: 1, removeOnComplete: 50, removeOnFail: 50 }
+              {
+                attempts: 2,
+                backoff: { type: 'exponential', delay: 5000 },
+                removeOnComplete: 50,
+                removeOnFail: 50
+              }
             );
 
             await log(`🤖 Successfully queued auto-healed deployment: ${autoHealDep._id}`);

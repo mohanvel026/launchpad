@@ -37,6 +37,30 @@ export default function DomainManager({ project, onUpdate }) {
     fetchDomainInfo();
   }, [project._id]);
 
+  // ── Auto-poll DNS status every 15s when pending verification ─────────────────
+  useEffect(() => {
+    const status = domainInfo?.customDomainStatus;
+    if (status !== 'pending_dns') return; // Only poll when DNS is pending
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const url = `/domains/${project._id}/verify${mockVerify ? '?mock=true' : ''}`;
+        const res = await api.get(url);
+        // If DNS is now verified, refresh everything and stop polling
+        if (res.data.verified) {
+          await fetchDomainInfo();
+          if (onUpdate) onUpdate();
+          setMessage('✅ DNS has propagated! Your domain is now pointing to LaunchPad.');
+          clearInterval(pollInterval);
+        }
+      } catch {
+        // Silently ignore poll errors
+      }
+    }, 15000); // Poll every 15 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [domainInfo?.customDomainStatus, project._id, mockVerify]);
+
   const domain = import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io';
   const subUrl = `http://${project.subdomain}.${domain}`;
   const targetCname = `${project.subdomain}.${domain}`;

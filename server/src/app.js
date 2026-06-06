@@ -25,9 +25,11 @@ const { projectProxyMiddleware } = require('./middleware/projectProxy.middleware
 
 const app = express();
 connectDB().then(() => {
-  // 1. Resume active container monitors on server boot
   const Project = require('./models/Project.model');
   const { startMonitoring } = require('./services/healthMonitor.service');
+  const { stopContainer } = require('./services/docker.service');
+
+  // 1. Resume active container monitors on server boot
   Project.find({ status: 'live' })
     .then(projects => {
       console.log(`[HealthMonitor] Restoring health monitoring for ${projects.length} live projects...`);
@@ -49,6 +51,38 @@ connectDB().then(() => {
       }
     })
     .catch(err => console.error('[Preview] Stuck clean up failed:', err));
+
+  // 3. Hourly PR preview auto-cleanup: destroy previews older than 24 hours
+  const cleanupStalePreviewsJob = async () => {
+    try {
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24h ago
+      const projectsWithPreviews = await Project.find({ 'previews.0': { $exists: true } });
+      for (const project of projectsWithPreviews) {
+        const stalePreviews = (project.previews || []).filter(p =>
+          p.status === 'live' && p.createdAt && new Date(p.createdAt) < cutoff
+        );
+        for (const preview of stalePreviews) {
+          console.log(`[Preview] Auto-cleanup: destroying stale preview PR #${preview.prNumber} for project ${project._id}`);
+          if (preview.containerId) {
+            try { await stopContainer(preview.containerId); } catch {}
+          }
+        }
+        if (stalePreviews.length > 0) {
+          const stalePRNumbers = stalePreviews.map(p => p.prNumber);
+          await Project.findByIdAndUpdate(project._id, {
+            $pull: { previews: { prNumber: { $in: stalePRNumbers } } }
+          });
+          console.log(`[Preview] Cleaned up ${stalePreviews.length} stale previews for project ${project.name}`);
+        }
+      }
+    } catch (err) {
+      console.error('[Preview] Hourly cleanup failed:', err.message);
+    }
+  };
+
+  // Run immediately on boot and then every hour
+  cleanupStalePreviewsJob();
+  setInterval(cleanupStalePreviewsJob, 60 * 60 * 1000);
 });
 
 // ── Security / logging (these don't consume the body, so they go first) ───────

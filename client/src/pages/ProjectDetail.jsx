@@ -1174,6 +1174,57 @@ export default function ProjectDetail() {
               <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>Permanently delete this project and all its deployments. This action is irreversible.</p>
               <button className="lp-btn-danger" onClick={handleDeleteProject}>Delete Project</button>
             </div>
+
+            {/* GitHub Webhook Setup Card */}
+            <div className="lp-card glass" style={{
+              padding: 28,
+              borderLeft: '4px solid #f59e0b',
+              background: 'linear-gradient(135deg, rgba(245,158,11,0.05) 0%, rgba(251,191,36,0.02) 100%)'
+            }}>
+              <h3 style={{ fontSize: 16, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🔔 GitHub Auto-Deploy Webhook
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
+                Add this webhook to your GitHub repository to trigger automatic deployments on every push to <code style={{ color: 'var(--accent-primary)' }}>{settings.branch || 'main'}</code>.
+              </p>
+              <div style={{ display: 'grid', gap: 14 }}>
+                {/* Webhook URL */}
+                <div>
+                  <div className="lp-section-label" style={{ marginBottom: 6 }}>WEBHOOK URL</div>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <input
+                      readOnly
+                      value={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/deploy/webhook`}
+                      className="lp-input lp-input-mono"
+                      style={{ flex: 1, fontSize: 12, cursor: 'text' }}
+                      onFocus={e => e.target.select()}
+                    />
+                    <button
+                      className="lp-btn-secondary"
+                      style={{ flexShrink: 0, padding: '8px 16px', fontSize: 12 }}
+                      onClick={() => {
+                        const url = `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/deploy/webhook`;
+                        navigator.clipboard.writeText(url);
+                        alert('Webhook URL copied to clipboard!');
+                      }}
+                    >
+                      📋 Copy
+                    </button>
+                  </div>
+                </div>
+                {/* Instructions */}
+                <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, color: 'var(--text-muted)' }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: 6 }}>Setup steps in GitHub:</div>
+                  <ol style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 6, lineHeight: 1.6 }}>
+                    <li>Go to your repo → <strong>Settings</strong> → <strong>Webhooks</strong> → <strong>Add webhook</strong></li>
+                    <li>Paste the URL above as <strong>Payload URL</strong></li>
+                    <li>Set <strong>Content type</strong> to <code style={{ color: 'var(--accent-primary)' }}>application/json</code></li>
+                    <li>Select <strong>Just the push event</strong></li>
+                    <li>Click <strong>Add webhook</strong> — deployments will trigger automatically!</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

@@ -11,7 +11,27 @@ const getProjectAnalytics = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     const analytics = await getAnalytics(project._id.toString());
-    res.json({ analytics, project: { name: project.name, status: project.status, subdomain: project.subdomain } });
+
+    // ── Compute real uptime from deployment history ──────────────────────────
+    let uptimePercent = '100%';
+    try {
+      const Deployment = require('../models/Deployment.model');
+      const allDeploys = await Deployment.find({ project: project._id })
+        .sort({ createdAt: 1 })
+        .select('status createdAt duration');
+
+      if (allDeploys.length > 0) {
+        const total = allDeploys.length;
+        const successful = allDeploys.filter(d => d.status === 'success').length;
+        const pct = Math.round((successful / total) * 100);
+        uptimePercent = `${pct}%`;
+      }
+    } catch {}
+
+    res.json({
+      analytics: { ...analytics, uptime: uptimePercent },
+      project: { name: project.name, status: project.status, subdomain: project.subdomain }
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
