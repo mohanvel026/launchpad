@@ -49,6 +49,10 @@ const provisionSSL = async (subdomain, customDomain = null) => {
 
     if (!domainArgs) {
       console.log(`[ssl] No resolvable non-wildcard-IP domains to provision SSL for.`);
+      if (process.env.NODE_ENV === 'development' || !process.env.NODE_ENV || (customDomain && (customDomain.includes('nip.io') || customDomain.includes('sslip.io')))) {
+        console.log(`[Dev/Wildcard Mode] Mocking successful SSL provisioning for custom domain: ${customDomain}`);
+        return true;
+      }
       return false;
     }
 

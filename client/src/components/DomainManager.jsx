@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react';
 import api from '../lib/api';
 
 export default function DomainManager({ project, onUpdate }) {
-  const [customDomain, setCustomDomain] = useState(project.customDomain || '');
+  const domain = import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io';
+  
+  const [domainPrefix, setDomainPrefix] = useState(project.subdomain || '');
+  const [domainSuffix, setDomainSuffix] = useState(`.${domain}`);
+  const [customSuffix, setCustomSuffix] = useState('.com');
   const [saving,       setSaving]       = useState(false);
   const [removing,     setRemoving]     = useState(false);
   const [verifying,    setVerifying]    = useState(false);
@@ -19,12 +23,43 @@ export default function DomainManager({ project, onUpdate }) {
   const [copiedText,   setCopiedText]   = useState('');
   const [mockVerify,   setMockVerify]   = useState(process.env.NODE_ENV === 'development' || true); // Default true for testing convenience
 
+  const parseAndSyncDomainStates = (cd) => {
+    if (!cd) return;
+    const wildcardSuffix = `.${domain}`;
+    if (cd.endsWith(wildcardSuffix)) {
+      setDomainPrefix(cd.substring(0, cd.length - wildcardSuffix.length));
+      setDomainSuffix(wildcardSuffix);
+    } else {
+      const common = ['.com', '.net', '.org'];
+      let matched = false;
+      for (const s of common) {
+        if (cd.endsWith(s)) {
+          setDomainPrefix(cd.substring(0, cd.length - s.length));
+          setDomainSuffix(s);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        const lastDot = cd.lastIndexOf('.');
+        if (lastDot !== -1) {
+          setDomainPrefix(cd.substring(0, lastDot));
+          setDomainSuffix('custom');
+          setCustomSuffix(cd.substring(lastDot));
+        } else {
+          setDomainPrefix(cd);
+          setDomainSuffix('.com');
+        }
+      }
+    }
+  };
+
   const fetchDomainInfo = async () => {
     try {
       const res = await api.get(`/domains/${project._id}`);
       setDomainInfo(res.data);
       if (res.data.customDomain) {
-        setCustomDomain(res.data.customDomain);
+        parseAndSyncDomainStates(res.data.customDomain);
       }
     } catch (err) {
       console.error('[DomainManager] Error fetching domain info:', err);
@@ -44,7 +79,9 @@ export default function DomainManager({ project, onUpdate }) {
 
     const pollInterval = setInterval(async () => {
       try {
-        const url = `/domains/${project._id}/verify${mockVerify ? '?mock=true' : ''}`;
+        const isWildcardSelected = domainSuffix === `.${domain}` || (domainInfo?.customDomain && domainInfo.customDomain.endsWith(`.${domain}`));
+        const forceMock = mockVerify || isWildcardSelected;
+        const url = `/domains/${project._id}/verify${forceMock ? '?mock=true' : ''}`;
         const res = await api.get(url);
         // If DNS is now verified, automatically provision SSL certificate in the background!
         if (res.data.verified) {
@@ -66,9 +103,8 @@ export default function DomainManager({ project, onUpdate }) {
     }, 15000); // Poll every 15 seconds
 
     return () => clearInterval(pollInterval);
-  }, [domainInfo?.customDomainStatus, project._id, mockVerify, onUpdate]);
+  }, [domainInfo?.customDomainStatus, project._id, mockVerify, domainSuffix, onUpdate]);
 
-  const domain = import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io';
   const subUrl = `http://${project.subdomain}.${domain}`;
   const targetCname = `${project.subdomain}.${domain}`;
 
@@ -78,21 +114,26 @@ export default function DomainManager({ project, onUpdate }) {
     setTimeout(() => setCopiedText(''), 2000);
   };
 
-  const handleAddDomain = async () => {
-    let domainToLink = customDomain.trim();
-    if (!domainToLink) return;
+  const handleLinkAutomatedDomain = async () => {
+    const prefix = domainPrefix.trim();
+    if (!prefix) {
+      setError('Please enter a domain prefix.');
+      return;
+    }
 
-    // Auto-detect TLD suffix. If missing, auto-suggest appending the server's root domain!
-    if (!domainToLink.includes('.')) {
-      const suggested = `${domainToLink}.${domain}`;
-      const confirmUse = window.confirm(`Your domain "${domainToLink}" is missing a domain extension (like .com). Would you like to automatically use "${suggested}"?`);
-      if (confirmUse) {
-        domainToLink = suggested;
-        setCustomDomain(suggested);
-      } else {
+    let suffix = domainSuffix;
+    if (suffix === 'custom') {
+      suffix = customSuffix.trim();
+      if (!suffix) {
+        setError('Please enter a custom suffix.');
         return;
       }
+      if (!suffix.startsWith('.')) {
+        suffix = '.' + suffix;
+      }
     }
+
+    const domainToLink = `${prefix}${suffix}`.toLowerCase();
 
     setSaving(true); setError(''); setMessage(''); setDnsStatus(null);
     try {
@@ -100,6 +141,11 @@ export default function DomainManager({ project, onUpdate }) {
       setMessage(res.data.message);
       await fetchDomainInfo();
       if (onUpdate) onUpdate();
+
+      // If instant wildcard is chosen, force mockVerify to true
+      if (suffix === `.${domain}`) {
+        setMockVerify(true);
+      }
 
       // AUTOMATIC: Immediately run verification after linking, bypassing any manual lookup clicks!
       setTimeout(() => handleVerifyDNS(), 100);
@@ -114,7 +160,9 @@ export default function DomainManager({ project, onUpdate }) {
     try {
       const res = await api.delete(`/domains/${project._id}/custom`);
       setMessage(res.data.message);
-      setCustomDomain('');
+      setDomainPrefix(project.subdomain || '');
+      setDomainSuffix(`.${domain}`);
+      setCustomSuffix('.com');
       setDomainInfo(null);
       await fetchDomainInfo();
       if (onUpdate) onUpdate();
@@ -126,7 +174,9 @@ export default function DomainManager({ project, onUpdate }) {
   const handleVerifyDNS = async () => {
     setVerifying(true); setError(''); setMessage('');
     try {
-      const url = `/domains/${project._id}/verify${mockVerify ? '?mock=true' : ''}`;
+      const isWildcardSelected = domainSuffix === `.${domain}` || (domainInfo?.customDomain && domainInfo.customDomain.endsWith(`.${domain}`));
+      const forceMock = mockVerify || isWildcardSelected;
+      const url = `/domains/${project._id}/verify${forceMock ? '?mock=true' : ''}`;
       const res = await api.get(url);
       setDnsStatus(res.data);
 
@@ -300,17 +350,62 @@ export default function DomainManager({ project, onUpdate }) {
                 </p>
 
                 {!activeDomain ? (
-                  <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-                    <input
-                      value={customDomain}
-                      onChange={(e) => setCustomDomain(e.target.value)}
-                      placeholder="e.g. my-launchpad-app.com"
-                      className="lp-search"
-                      style={{ flex: 1, backgroundImage: 'none', paddingLeft: 14, borderRadius: 8, fontSize: 13, height: 42, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)' }}
-                    />
-                    <button onClick={handleAddDomain} disabled={saving} className="lp-btn-primary" style={{ padding: '0 20px', borderRadius: 8, fontSize: 13, height: 42 }}>
-                      {saving ? 'Linking...' : 'Link'}
-                    </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Subdomain Prefix</span>
+                        <input
+                          value={domainPrefix}
+                          onChange={(e) => setDomainPrefix(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                          placeholder="e.g. netflixbymohan"
+                          className="lp-search"
+                          style={{ width: '100%', backgroundImage: 'none', paddingLeft: 14, borderRadius: 8, fontSize: 13, height: 42, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-main)' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Extension / Suffix</span>
+                        <select
+                          value={domainSuffix}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setDomainSuffix(val);
+                            if (val === `.${domain}`) {
+                              setMockVerify(true);
+                            }
+                          }}
+                          className="lp-input"
+                          style={{ width: '100%', padding: '0 10px', borderRadius: 8, fontSize: 13, height: 42, background: 'rgba(24, 18, 39, 0.9)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-main)', cursor: 'pointer', outline: 'none' }}
+                        >
+                          <option value={`.${domain}`} style={{ background: '#181227', color: '#fff' }}>.{domain} (✨ Free & Instant)</option>
+                          <option value=".com" style={{ background: '#181227', color: '#fff' }}>.com</option>
+                          <option value=".net" style={{ background: '#181227', color: '#fff' }}>.net</option>
+                          <option value=".org" style={{ background: '#181227', color: '#fff' }}>.org</option>
+                          <option value="custom" style={{ background: '#181227', color: '#fff' }}>Custom Suffix...</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {domainSuffix === 'custom' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Custom Suffix</span>
+                        <input
+                          value={customSuffix}
+                          onChange={(e) => setCustomSuffix(e.target.value.toLowerCase().replace(/[^a-z0-9.-]/g, ''))}
+                          placeholder="e.g. .co.uk"
+                          className="lp-search"
+                          style={{ width: '100%', backgroundImage: 'none', paddingLeft: 14, borderRadius: 8, fontSize: 13, height: 42, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-main)' }}
+                        />
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, background: 'rgba(255, 255, 255, 0.02)', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.04)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        Compiled Domain: <strong style={{ color: 'var(--accent-primary)', fontSize: 13 }}>{domainPrefix || 'myapp'}{domainSuffix === 'custom' ? (customSuffix.startsWith('.') ? customSuffix : '.' + customSuffix) : domainSuffix}</strong>
+                      </span>
+                      <button onClick={handleLinkAutomatedDomain} disabled={saving} className="lp-btn-primary" style={{ padding: '0 20px', borderRadius: 8, fontSize: 13, height: 38, fontWeight: 600 }}>
+                        {saving ? 'Linking...' : 'Link & Automate'}
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 10 }}>
@@ -331,20 +426,22 @@ export default function DomainManager({ project, onUpdate }) {
                         </button>
                       </div>
 
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', marginTop: 4 }}>
-                        <input
-                          type="checkbox"
-                          checked={mockVerify}
-                          onChange={(e) => {
-                            setMockVerify(e.target.checked);
-                            if (e.target.checked && domainStatus === 'pending_dns') {
-                              setTimeout(() => handleVerifyDNS(), 100);
-                            }
-                          }}
-                          style={{ accentColor: 'var(--accent-primary)' }}
-                        />
-                        <span>Mock DNS verification (Useful for testing without live DNS records)</span>
-                      </label>
+                      {!(domainSuffix === `.${domain}` || (activeDomain && activeDomain.endsWith(`.${domain}`))) && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', marginTop: 4 }}>
+                          <input
+                            type="checkbox"
+                            checked={mockVerify}
+                            onChange={(e) => {
+                              setMockVerify(e.target.checked);
+                              if (e.target.checked && domainStatus === 'pending_dns') {
+                                setTimeout(() => handleVerifyDNS(), 100);
+                              }
+                            }}
+                            style={{ accentColor: 'var(--accent-primary)' }}
+                          />
+                          <span>Mock DNS verification (Useful for testing without live DNS records)</span>
+                        </label>
+                      )}
                     </div>
                   </div>
                 )}
@@ -357,39 +454,54 @@ export default function DomainManager({ project, onUpdate }) {
                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-success)" strokeWidth="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>DNS Record Config</h3>
               </div>
-              <p className="text-muted" style={{ fontSize: 13, lineHeight: '1.5', marginBottom: 14 }}>
-                Log in to your DNS provider (e.g. Cloudflare, Namecheap) and create a CNAME record:
-              </p>
               
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {/* CNAME Name */}
-                <div className="glass" style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Host / Name</div>
-                    <code style={{ fontSize: 13, color: 'var(--accent-primary)', fontWeight: 600 }}>@</code>
+              {(domainSuffix === `.${domain}` || (activeDomain && activeDomain.endsWith(`.${domain}`))) ? (
+                <div style={{ padding: '16px 20px', borderRadius: 12, background: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.15)', height: 'calc(100% - 46px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#10b981', fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    Fully Automated Suffix
                   </div>
-                  <button
-                    onClick={() => copyToClipboard('@', 'host')}
-                    style={{ background: 'transparent', border: 'none', color: copiedText === 'host' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}
-                  >
-                    {copiedText === 'host' ? 'Copied' : '📋 Copy'}
-                  </button>
+                  <p style={{ margin: 0, fontSize: 13, lineHeight: '1.6', color: 'var(--text-muted)' }}>
+                    No manual CNAME setup is required. The <code>.{domain}</code> wildcard instantly maps directly to your deployment environment.
+                  </p>
                 </div>
+              ) : (
+                <>
+                  <p className="text-muted" style={{ fontSize: 13, lineHeight: '1.5', marginBottom: 14 }}>
+                    Log in to your DNS provider (e.g. Cloudflare, Namecheap) and create a CNAME record:
+                  </p>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {/* CNAME Name */}
+                    <div className="glass" style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Host / Name</div>
+                        <code style={{ fontSize: 13, color: 'var(--accent-primary)', fontWeight: 600 }}>@</code>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard('@', 'host')}
+                        style={{ background: 'transparent', border: 'none', color: copiedText === 'host' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}
+                      >
+                        {copiedText === 'host' ? 'Copied' : '📋 Copy'}
+                      </button>
+                    </div>
 
-                {/* CNAME Value */}
-                <div className="glass" style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ minWidth: 0, flex: 1, marginRight: 10 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Value / Destination</div>
-                    <code style={{ fontSize: 12, color: 'var(--text-main)', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{targetCname}</code>
+                    {/* CNAME Value */}
+                    <div className="glass" style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ minWidth: 0, flex: 1, marginRight: 10 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Value / Destination</div>
+                        <code style={{ fontSize: 12, color: 'var(--text-main)', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{targetCname}</code>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(targetCname, 'value')}
+                        style={{ background: 'transparent', border: 'none', color: copiedText === 'value' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}
+                      >
+                        {copiedText === 'value' ? 'Copied' : '📋 Copy'}
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => copyToClipboard(targetCname, 'value')}
-                    style={{ background: 'transparent', border: 'none', color: copiedText === 'value' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}
-                  >
-                    {copiedText === 'value' ? 'Copied' : '📋 Copy'}
-                  </button>
-                </div>
-              </div>
+                </>
+              )}
             </div>
 
           </div>
