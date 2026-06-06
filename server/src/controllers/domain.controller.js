@@ -15,12 +15,13 @@ const addCustomDomainToProject = async (req, res) => {
     if (project.status !== 'live') return res.status(400).json({ message: 'Project must be live before adding a custom domain' });
 
     // Create a CNAME in Cloudflare pointing customDomain → subdomain.launchpad.dev
-    const dnsId = await addCustomDomain(customDomain, project.subdomain);
+    const sanitizedDomain = customDomain.trim().toLowerCase();
+    const dnsId = await addCustomDomain(sanitizedDomain, project.subdomain);
 
-    await Project.findByIdAndUpdate(project._id, { customDomain });
+    await Project.findByIdAndUpdate(project._id, { customDomain: sanitizedDomain });
 
     // Rewrite Nginx configuration to support the custom domain immediately
-    updateNginxPort(project.subdomain, project.port, customDomain.trim());
+    updateNginxPort(project.subdomain, project.port, sanitizedDomain);
 
     res.json({
       message: 'Custom domain registered and proxy config updated. Point your domain CNAME to your subdomain, then verify.',

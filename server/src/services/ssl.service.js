@@ -18,7 +18,7 @@ const provisionSSL = (subdomain, customDomain = null) => {
     }
 
     execSync(
-      `certbot certonly --nginx ${domainArgs} --non-interactive --agree-tos ${emailArg} --redirect --expand`,
+      `certbot certonly --nginx ${domainArgs} --non-interactive --agree-tos ${emailArg} --expand`,
       { stdio: 'pipe' }
     );
     console.log(`SSL certificate provisioned for ${fullDomain}${customDomain ? ' and ' + customDomain : ''}`);

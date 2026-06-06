@@ -574,9 +574,34 @@ buildQueue.process(1, async (job) => {
       runCmd += ` --name ${containerName} ${imageTag}`;
 
       let containerId;
+      let runSuccess = false;
+      let runError = null;
+
       try {
-        const { stdout } = await execAsync(runCmd);
-        containerId = stdout.trim();
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const { stdout } = await execAsync(runCmd);
+            containerId = stdout.trim();
+            runSuccess = true;
+            break;
+          } catch (err) {
+            runError = err;
+            if (attempt === 1 && (err.message.includes('name') || err.message.includes('already in use') || err.message.includes('Conflict'))) {
+              await log(`   ⏳ Container name conflict detected. Retrying force cleanup...`);
+              try { await execAsync(`docker rm -f ${containerName}`); } catch {}
+              await new Promise(r => setTimeout(r, 1000)); // wait 1s for Docker name release
+              continue;
+            }
+            break;
+          }
+        }
+
+        if (!runSuccess) {
+          if (runError.message.includes('health check failed') || runError.message.includes('exited')) throw runError;
+          await log(`   ❌ docker run failed: ${runError.message}`);
+          throw new Error('Runtime execution failure');
+        }
+
         await log(`   ✅ Container started (ID: ${containerId.slice(0, 12)}) — verifying...`);
 
         // ── Real HTTP Health Check with retries ──

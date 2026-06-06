@@ -22,3 +22,12 @@ server.listen(PORT, () => {
 });
 
 module.exports = server;
+
+// Prevent sudden unhandled promise rejections or uncaught errors from crashing the main process
+process.on('unhandledRejection', (reason) => {
+  console.error('[Unhandled Rejection SRE Alert]:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Uncaught Exception SRE Alert]:', err.message, err.stack);
+});

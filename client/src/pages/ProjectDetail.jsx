@@ -26,7 +26,7 @@ const TABS = [
 
 function LogLine({ line }) {
   let cls = '';
-  if (/🤖|diagnosis|root cause|quick fix/i.test(line)) cls = 'lp-log-error';
+  if (/🤖|diagnosis|root cause|quick fix|detected issue|suggested commands|🛠️|💻|fix:/i.test(line) || /^\s*\$/i.test(line)) cls = 'lp-log-error';
   else if (/✅|success|done|built|complete|ready/i.test(line)) cls = 'lp-log-success';
   else if (/❌|error|failed|exit code [^0]/i.test(line)) cls = 'lp-log-error';
   else if (/⚠️|warn/i.test(line)) cls = 'lp-log-warn';

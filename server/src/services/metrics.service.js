@@ -1,7 +1,11 @@
 const Docker  = require('dockerode');
 const redis   = require('redis');
 
-const docker  = new Docker({ socketPath: '/var/run/docker.sock' });
+const docker = new Docker(
+  process.platform === 'win32'
+    ? { host: '127.0.0.1', port: 2375 }
+    : { socketPath: '/var/run/docker.sock' }
+);
 
 // Redis client for caching metrics (short TTL)
 let redisClient;
