@@ -218,7 +218,7 @@ buildQueue.process(1, async (job) => {
   if (!deployment || !project) throw new Error('Deployment or project not found');
 
   const domain = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
-  const liveUrl = `http://${project.subdomain}.${domain}`;
+  const liveUrl = `https://${project.subdomain}.${domain}`;
 
   // ── Logger ────────────────────────────────────────────────────────────────
   const log = async (msg) => {

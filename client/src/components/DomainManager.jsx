@@ -106,7 +106,7 @@ export default function DomainManager({ project, onUpdate }) {
     return () => clearInterval(pollInterval);
   }, [domainInfo?.customDomainStatus, project._id, mockVerify, domainSuffix, onUpdate]);
 
-  const subUrl = `http://${project.subdomain}.${domain}`;
+  const subUrl = `https://${project.subdomain}.${domain}`;
   const targetCname = `${project.subdomain}.${domain}`;
 
   const copyToClipboard = (text, type) => {

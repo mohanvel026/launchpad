@@ -794,7 +794,7 @@ Your tone should be highly professional, technical, direct, and authoritative.
 ### IMPORTANT RULE FOR ZERO TRAFFIC STATE:
 If total traffic is 0 or empty, DO NOT just say "there is no traffic, we cannot audit". Instead, trigger our **Elite Ingress Diagnostic & Connectivity Protocol**:
 1. **Explain exactly why traffic shows 0** (e.g. DNS not propagated, client didn't visit subdomain URL yet, or Nginx edge configuration mismatch).
-2. **Provide concrete test commands** using \`curl\` to test connection (e.g. \`curl -I http://${project.subdomain}.${domain}\`).
+2. **Provide concrete test commands** using \`curl\` to test connection (e.g. \`curl -I https://${project.subdomain}.${domain}\`).
 3. **Draft a pre-emptive SRE protection policy** (rate limiting, Nginx caching, connection bounds) that they can apply *before* the traffic hits.
 
 Structure your markdown report exactly with the following sections (use bold titles and styled metrics):

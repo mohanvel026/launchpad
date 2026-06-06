@@ -623,7 +623,7 @@ export default function ProjectDetail() {
       const scheme = (isSslActive && !isWildcard) ? 'https' : 'http';
       return `${scheme}://${project.customDomain}`;
     }
-    return `http://${project.subdomain}.${domain}`;
+    return `https://${project.subdomain}.${domain}`;
   };
   const deployUrl = getDeployUrl();
 
