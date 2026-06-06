@@ -168,10 +168,23 @@ export default function ProjectDetail() {
       }
     } else if (activeTab === 'runtime-logs') {
       connectToRuntimeLogs();
+    } else if (activeTab === 'previews') {
+      handleLoadPreviews();
     } else {
       socketRef.current?.disconnect();
     }
-  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTab, handleLoadPreviews]);
+
+  // Poller for previews in building state
+  useEffect(() => {
+    let interval;
+    if (activeTab === 'previews' && previews.some(p => p.status === 'building')) {
+      interval = setInterval(() => {
+        handleLoadPreviews();
+      }, 5000);
+    }
+    return () => clearInterval(interval);
+  }, [activeTab, previews, handleLoadPreviews]);
 
   useEffect(() => {
     if (activeTab === 'logs') logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -460,6 +473,78 @@ export default function ProjectDetail() {
       setError(err.response?.data?.message || 'Auto-fix generation failed');
     } finally {
       setVulnFixLoading(false);
+    }
+  };
+
+  const handleLoadPreviews = useCallback(async () => {
+    setPreviewsLoading(true);
+    try {
+      const res = await api.get(`/previews/${id}`);
+      setPreviews(res.data.previews || []);
+    } catch (err) {
+      console.error('Failed to load previews:', err);
+    } finally {
+      setPreviewsLoading(false);
+    }
+  }, [id]);
+
+  const handleCreatePreview = async (e) => {
+    e.preventDefault();
+    if (!newPreviewPR || !newPreviewBranch) return;
+    setCreatingPreview(true);
+    try {
+      await api.post(`/previews/${id}`, {
+        prNumber: parseInt(newPreviewPR),
+        prBranch: newPreviewBranch
+      });
+      setNewPreviewPR('');
+      setNewPreviewBranch('');
+      handleLoadPreviews();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to create preview');
+    } finally {
+      setCreatingPreview(false);
+    }
+  };
+
+  const handleDestroyPreview = async (prNumber) => {
+    if (!window.confirm(`Are you sure you want to destroy preview for PR #${prNumber}?`)) return;
+    try {
+      await api.delete(`/previews/${id}/${prNumber}`);
+      handleLoadPreviews();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to destroy preview');
+    }
+  };
+
+  const handleAiScanMissingVars = async () => {
+    setMissingVarsLoading(true);
+    setMissingVars(null);
+    try {
+      const res = await api.get(`/env/${id}/ai-scan`);
+      setMissingVars(res.data.missingVars || []);
+      if (res.data.missingVars?.length === 0) {
+        alert('✨ All environment variables referenced in code are already configured in this vault!');
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to scan environment variables');
+    } finally {
+      setMissingVarsLoading(false);
+    }
+  };
+
+  const handleAddMissingVarDirect = async (key) => {
+    const value = prompt(`Enter value for environment variable: ${key}`);
+    if (value === null || value === '') return; // cancelled/empty
+    setAddingMissingVar(key);
+    try {
+      await api.post(`/env/${id}`, { key, value });
+      setMissingVars(prev => prev.filter(v => v !== key));
+      loadEnvVars();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to add environment variable');
+    } finally {
+      setAddingMissingVar(null);
     }
   };
 
@@ -813,6 +898,9 @@ export default function ProjectDetail() {
                   <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Encrypted secrets injected at build and runtime.</p>
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
+                  <button className="lp-btn-secondary" style={{ padding: '7px 14px', fontSize: 13, background: 'linear-gradient(135deg, rgba(168,85,247,0.1) 0%, rgba(129,140,248,0.1) 100%)', border: '1px solid rgba(168,85,247,0.3)', color: '#c084fc' }} onClick={handleAiScanMissingVars} disabled={missingVarsLoading}>
+                    {missingVarsLoading ? 'Scanning...' : '🔮 Scan Missing Keys'}
+                  </button>
                   <button className="lp-btn-secondary" style={{ padding: '7px 14px', fontSize: 13, background: 'linear-gradient(135deg, rgba(56,189,248,0.1) 0%, rgba(59,130,246,0.1) 100%)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8' }} onClick={handleAiAutoDetect} disabled={aiScanning}>
                     {aiScanning ? 'Scanning...' : '🔍 AI Auto-Detect'}
                   </button>
@@ -821,6 +909,40 @@ export default function ProjectDetail() {
                   </button>
                 </div>
               </div>
+
+              {/* Suggestion Chips */}
+              {missingVars && missingVars.length > 0 && (
+                <div className="glass fade-in" style={{ padding: '16px 20px', borderRadius: 12, border: '1px solid rgba(192, 132, 252, 0.25)', background: 'rgba(168, 85, 247, 0.02)', marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#c084fc', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                    <span>💡</span> Referenced Keys Missing from Vault (Click to add):
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {missingVars.map(v => (
+                      <button
+                        key={v}
+                        onClick={() => handleAddMissingVarDirect(v)}
+                        disabled={addingMissingVar === v}
+                        style={{
+                          background: 'rgba(168, 85, 247, 0.1)',
+                          border: '1px solid rgba(168, 85, 247, 0.25)',
+                          color: '#c084fc',
+                          padding: '6px 12px',
+                          borderRadius: 20,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          borderStyle: 'solid'
+                        }}
+                      >
+                        {addingMissingVar === v ? 'Adding...' : `+ ${v}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Add single */}
               {!showBulk && (
@@ -1268,6 +1390,132 @@ export default function ProjectDetail() {
                   )}
 
                   <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 16 }}>Last scanned: {vulnData.scannedAt ? new Date(vulnData.scannedAt).toLocaleString() : 'Just now'}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── PR Previews ── */}
+        {activeTab === 'previews' && (
+          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <div className="lp-card glass" style={{ padding: 28 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
+                <div>
+                  <h3 style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    🔍 PR Preview Environments
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
+                    Deploy isolated sandboxed versions of your application for active GitHub Pull Requests.
+                  </p>
+                </div>
+              </div>
+
+              {/* Form to manual deploy PR */}
+              <form onSubmit={handleCreatePreview} style={{ display: 'flex', flexWrap: 'wrap', gap: 12, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', padding: 18, borderRadius: 12, marginBottom: 24 }}>
+                <div style={{ flex: 1, minWidth: 140 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6, fontWeight: 700 }}>PR Number</div>
+                  <input
+                    type="number"
+                    value={newPreviewPR}
+                    onChange={e => setNewPreviewPR(e.target.value)}
+                    placeholder="e.g. 12"
+                    className="lp-input"
+                    style={{ background: 'rgba(0,0,0,0.2)' }}
+                    required
+                  />
+                </div>
+                <div style={{ flex: 2, minWidth: 200 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6, fontWeight: 700 }}>PR Branch Name</div>
+                  <input
+                    type="text"
+                    value={newPreviewBranch}
+                    onChange={e => setNewPreviewBranch(e.target.value)}
+                    placeholder="e.g. feature/login-page"
+                    className="lp-input"
+                    style={{ background: 'rgba(0,0,0,0.2)' }}
+                    required
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                  <button
+                    type="submit"
+                    disabled={creatingPreview || !project.subdomain}
+                    className="lp-btn-primary"
+                    style={{ height: 42, padding: '0 24px', fontSize: 13, borderRadius: 8, background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)', fontWeight: 600 }}
+                  >
+                    {creatingPreview ? 'Building Preview...' : '🚀 Spin Up Preview'}
+                  </button>
+                </div>
+              </form>
+
+              {/* Previews List */}
+              {previewsLoading && previews.length === 0 ? (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>
+                  <div className="loading-spinner" style={{ width: 16, height: 16 }} />
+                  Loading active preview environments...
+                </div>
+              ) : previews.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 0', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: 12, background: 'rgba(0,0,0,0.05)' }}>
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>
+                  <h4 style={{ margin: '0 0 6px 0', color: 'var(--text-main)', fontSize: 14 }}>No Active PR Previews</h4>
+                  <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 13 }}>Specify a PR number and branch above to spawn a dedicated test container.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
+                  {previews.map(p => (
+                    <div key={p.prNumber} className="lp-card glass" style={{ padding: 20, border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 14 }}>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                          <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-main)' }}>PR #{p.prNumber}</span>
+                          
+                          {/* Badge */}
+                          {p.status === 'live' && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 6px #10b981' }}></span> Live
+                            </span>
+                          )}
+                          {p.status === 'building' && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', display: 'inline-block', animation: 'pulse-dot 1s infinite' }}></span> Building
+                            </span>
+                          )}
+                          {p.status === 'failed' && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>
+                              ⚠️ Failed
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                          Branch: <code style={{ color: 'var(--accent-primary)', fontSize: 12 }}>{p.branch}</code>
+                        </div>
+
+                        {p.previewUrl && p.status === 'live' && (
+                          <div style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 8 }}>
+                            URL: <a href={p.previewUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>{p.previewUrl}</a>
+                          </div>
+                        )}
+
+                        {p.error && p.status === 'failed' && (
+                          <div style={{ fontSize: 11, background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 8, padding: 10, color: '#ef4444', fontFamily: 'var(--font-mono)', maxHeight: 100, overflowY: 'auto', wordBreak: 'break-all' }}>
+                            Error: {p.error}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 10, borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 12 }}>
+                        {p.status === 'live' && p.previewUrl && (
+                          <a href={p.previewUrl} target="_blank" rel="noreferrer" className="lp-btn-primary" style={{ flex: 1, textAlign: 'center', textDecoration: 'none', padding: '8px 0', fontSize: 12, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            Open Preview ↗
+                          </a>
+                        )}
+                        <button onClick={() => handleDestroyPreview(p.prNumber)} className="lp-btn-secondary" style={{ flex: 1, color: 'var(--accent-danger)', border: '1px solid rgba(239,68,68,0.15)', padding: '8px 0', fontSize: 12, borderRadius: 6, height: 'auto' }}>
+                          Destroy Preview
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

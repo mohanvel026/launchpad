@@ -2,7 +2,7 @@ const express     = require('express');
 const { protect } = require('../middleware/auth.middleware');
 const {
   triggerDeploy, getDeployments, getDeployment,
-  rollback, githubWebhook, rollbackDeployment
+  rollback, githubWebhook
 } = require('../controllers/deploy.controller');
 
 const router = express.Router();
@@ -21,8 +21,5 @@ router.get('/:projectId/:deploymentId',           protect, getDeployment);
 
 // Roll back to a previous successful deployment
 router.post('/:projectId/rollback/:deploymentId', protect, rollback);
-
-// POST /api/deploy/:id/rollback/:deploymentId — rollback to a specific deployment
-router.post('/:id/rollback/:deploymentId', protect, rollbackDeployment);
 
 module.exports = router;

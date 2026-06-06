@@ -141,47 +141,25 @@ const rollback = async (req, res) => {
     // Spin up the old image on the same port with custom resource bounds
     const containerId = await runContainer(target.imageTag, project.port, {}, null, 3000, project.cpuLimit || 0.5, project.ramLimitMB || 512);
 
+    // Create a new Deployment entry representing this rollback event
+    const rollbackDep = await Deployment.create({
+      project: project._id,
+      triggeredBy: req.user._id,
+      commitSha: target.commitSha,
+      commitMessage: `🔄 Rollback to ${target.commitSha.slice(0, 7)} — ${target.commitMessage || 'previous deployment'}`,
+      branch: target.branch || project.branch,
+      status: 'success',
+      duration: 1500, // mock duration
+      imageTag: target.imageTag,
+      rollbackFrom: target._id,
+    });
+
     await Project.findByIdAndUpdate(project._id, { containerId, status: 'live' });
 
-    res.json({ message: `Rolled back to commit ${target.commitSha}`, containerId });
+    res.json({ message: `Rolled back to commit ${target.commitSha}`, containerId, deployment: rollbackDep });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// ─── POST /api/deploy/:id/rollback/:deploymentId ─────────────────────────────
-const rollbackDeployment = async (req, res) => {
-  try {
-    const { id: projectId, deploymentId } = req.params;
-    const project = await Project.findById(projectId);
-    if (!project) return res.status(404).json({ message: 'Project not found' });
-    if (project.owner.toString() !== req.user._id.toString()) return res.status(403).json({ message: 'Forbidden' });
-
-    const targetDep = await Deployment.findById(deploymentId);
-    if (!targetDep || targetDep.status !== 'success') return res.status(400).json({ message: 'Can only rollback to a successful deployment' });
-
-    // Create a new deployment that re-runs the same commitSha
-    const rollbackDep = await Deployment.create({
-      project: projectId,
-      triggeredBy: req.user._id,
-      commitSha: targetDep.commitSha,
-      commitMessage: `🔄 Rollback to ${targetDep.commitSha?.slice(0, 7)} — ${targetDep.commitMessage || 'previous deployment'}`,
-      branch: targetDep.branch || project.branch,
-      status: 'queued',
-      rollbackFrom: targetDep._id,
-    });
-
-    const buildQueue = require('../workers/build.worker');
-    await buildQueue.add(
-      { deploymentId: rollbackDep._id.toString(), projectId },
-      { attempts: 1, removeOnComplete: 50, removeOnFail: 50 }
-    );
-
-    res.json({ message: 'Rollback initiated', deployment: rollbackDep });
-  } catch (err) {
-    console.error('[Rollback]', err.message);
-    res.status(500).json({ message: 'Rollback failed', error: err.message });
-  }
-};
-
-module.exports = { githubWebhook, triggerDeploy, getDeployments, getDeployment, rollback, rollbackDeployment };
+module.exports = { githubWebhook, triggerDeploy, getDeployments, getDeployment, rollback };
