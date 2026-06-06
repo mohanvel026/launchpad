@@ -322,40 +322,55 @@ export default function NewProject() {
 
             {/* Project Settings Card */}
             <div className="lp-card" style={{ padding: 24, marginBottom: 16, border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-dim)', letterSpacing: '0.08em', marginBottom: 16 }}>PROJECT SETTINGS</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-dim)', letterSpacing: '0.08em', marginBottom: 6 }}>PROJECT SETTINGS</div>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 16px 0' }}>
+                Your project name determines your default deployment URL. Subdomains must be alphanumeric and can contain hyphens.
+              </p>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Project Name (defines your URL)</label>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={{ fontSize: 12, color: 'var(--text-main)', fontWeight: 600 }}>Project Name / Subdomain</label>
                   <input
                     value={projectName}
                     onChange={e => setProjectName(e.target.value)}
                     placeholder="e.g. my-awesome-app"
                     className="lp-input"
-                    style={{ flex: 1, height: 42, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '0 14px', fontSize: 14 }}
+                    style={{ height: 42, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '0 14px', fontSize: 14, color: 'var(--text-main)' }}
                   />
                 </div>
                 
                 {/* Subdomain availability indicator */}
                 {projectName.trim() && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginTop: 4 }}>
+                  <div style={{ marginTop: 4 }}>
                     {checkingSubdomain ? (
-                      <>
+                      <div className="flex-center" style={{ gap: 8, fontSize: 12, color: 'var(--text-muted)', justifyContent: 'flex-start' }}>
                         <div className="loading-spinner" style={{ width: 12, height: 12, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent-primary)' }} />
-                        <span style={{ color: 'var(--text-muted)' }}>Checking URL availability...</span>
-                      </>
+                        <span>Checking domain availability...</span>
+                      </div>
                     ) : subdomainAvailable === true ? (
-                      <>
-                        <span style={{ color: '#10b981' }}>🟢</span>
-                        <span style={{ color: '#10b981', fontWeight: 600 }}>Available:</span>
-                        <code style={{ color: 'var(--accent-primary)' }}>{projectName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.129.159.22.142.nip.io</code>
-                      </>
+                      <div style={{
+                        display: 'flex', flexDirection: 'column', gap: 4, padding: 12, borderRadius: 8,
+                        background: 'rgba(16, 185, 129, 0.03)', border: '1px solid rgba(16, 185, 129, 0.15)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#10b981', fontWeight: 600 }}>
+                          <span>✓</span> Subdomain is available!
+                        </div>
+                        <div style={{ fontSize: 13, color: 'var(--accent-primary)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                          https://{projectName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.129.159.22.142.nip.io
+                        </div>
+                      </div>
                     ) : subdomainAvailable === false ? (
-                      <>
-                        <span style={{ color: '#ef4444' }}>🔴</span>
-                        <span style={{ color: '#ef4444', fontWeight: 600 }}>Already Taken:</span>
-                        <code style={{ color: 'var(--text-muted)', textDecoration: 'line-through' }}>{projectName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.129.159.22.142.nip.io</code>
-                      </>
+                      <div style={{
+                        display: 'flex', flexDirection: 'column', gap: 4, padding: 12, borderRadius: 8,
+                        background: 'rgba(239, 68, 68, 0.03)', border: '1px solid rgba(239, 68, 68, 0.15)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
+                          <span>✗</span> Subdomain already exists!
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          Please choose another project name to get a unique deployment URL.
+                        </div>
+                      </div>
                     ) : null}
                   </div>
                 )}
