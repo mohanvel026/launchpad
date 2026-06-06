@@ -508,6 +508,60 @@ export default function ProjectDetail() {
                     {activeDeployment.autoHealDiff}
                   </pre>
                 )}
+
+                {/* ── SRE Auto-Healing Audit Trail Timeline ── */}
+                {activeDeployment.autoHealAuditTrail && activeDeployment.autoHealAuditTrail.length > 0 && (
+                  <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                    <div className="lp-section-label" style={{ marginBottom: 12 }}>SRE AUTO-HEALING TIMELINE</div>
+                    <div style={{ display: 'grid', gap: 14, position: 'relative', paddingLeft: 16 }}>
+                      {/* Vertical line indicator */}
+                      <div style={{ 
+                        position: 'absolute', 
+                        left: 4, 
+                        top: 8, 
+                        bottom: 8, 
+                        width: 2, 
+                        background: 'var(--border)' 
+                      }} />
+                      
+                      {activeDeployment.autoHealAuditTrail.map((step, idx) => {
+                        const statusColors = {
+                          success: '#34d399',
+                          failure: '#f87171',
+                          info: '#818cf8'
+                        };
+                        const color = statusColors[step.status] || 'var(--text-dim)';
+                        
+                        return (
+                          <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', position: 'relative' }}>
+                            {/* Dot indicator */}
+                            <div style={{ 
+                              position: 'absolute',
+                              left: -20,
+                              top: 5,
+                              width: 10,
+                              height: 10,
+                              borderRadius: '50%',
+                              background: color,
+                              border: '2px solid var(--bg-primary)',
+                              boxShadow: `0 0 8px ${color}`
+                            }} />
+                            
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{step.step}</span>
+                                <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+                                  {new Date(step.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </span>
+                              </div>
+                              <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 2 }}>{step.details}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <div className="lp-terminal">

@@ -70,4 +70,17 @@ const createPullRequest = async (accessToken, repoFullName, title, head, base, b
   }
 };
 
-module.exports = { listUserRepos, createWebhook, deleteWebhook, createPullRequest };
+const createPullRequestComment = async (accessToken, repoFullName, prNumber, commentBody) => {
+  const api = githubApi(accessToken);
+  try {
+    const res = await api.post(`/repos/${repoFullName}/issues/${prNumber}/comments`, {
+      body: commentBody,
+    });
+    return res.data;
+  } catch (err) {
+    console.error('Failed to create PR comment:', err.response?.data || err.message);
+    throw err;
+  }
+};
+
+module.exports = { listUserRepos, createWebhook, deleteWebhook, createPullRequest, createPullRequestComment };

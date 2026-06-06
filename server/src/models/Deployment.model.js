@@ -17,6 +17,12 @@ const deploymentSchema = new mongoose.Schema({
   parentDeployment: { type: mongoose.Schema.Types.ObjectId, ref: 'Deployment' },
   autoHealFixDescription: { type: String },
   autoHealDiff:    { type: String },
+  autoHealAuditTrail: [{
+    timestamp: { type: Date, default: Date.now },
+    step: String,
+    status: String,
+    details: String
+  }],
 }, { timestamps: true });
 
 deploymentSchema.index({ project: 1, createdAt: -1 });

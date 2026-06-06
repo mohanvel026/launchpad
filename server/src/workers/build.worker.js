@@ -57,6 +57,20 @@ const safeExec = (cmd, opts = {}) => {
 
 const isWindows = process.platform === 'win32';
 
+const pushAuditStep = async (deploymentId, step, status, details) => {
+  try {
+    const mongoose = require('mongoose');
+    const Deployment = mongoose.model('Deployment');
+    await Deployment.findByIdAndUpdate(deploymentId, {
+      $push: {
+        autoHealAuditTrail: { step, status, details, timestamp: new Date() }
+      }
+    });
+  } catch (err) {
+    console.error('[Auto-Heal Audit] Failed to record step:', err.message);
+  }
+};
+
 // ─── Local Pattern-Based Error Diagnosis (no AI needed) ────────────────────────
 // Provides instant, useful diagnosis even when the AI service is unavailable.
 const localDiagnoseError = (output = '', stack = 'unknown') => {
@@ -865,11 +879,23 @@ buildQueue.process(1, async (job) => {
     if (deployment.isAutoHeal) {
       try {
         await log(`🤖 LaunchPad AI Auto-Healing is executing Git updates (${project.autoHealStrategy || 'push-on-success'})...`);
+        await pushAuditStep(deployment.parentDeployment, 'Verifying Build', 'success', 'Health check passed. Container is online and healthy!');
+        await pushAuditStep(deployment._id, 'Verifying Build', 'success', 'Health check passed. Container is online and healthy!');
+
         const { commitAndPushFix } = require('../services/autoHeal.service');
         const gitMessage = await commitAndPushFix(project, repoDir, project.autoHealStrategy || 'push-on-success', deployment.parentDeployment);
         await log(`🤖 Git Action: ${gitMessage}`);
+
+        await pushAuditStep(deployment.parentDeployment, 'Git Push', 'success', gitMessage);
+        await pushAuditStep(deployment._id, 'Git Push', 'success', gitMessage);
+
+        try {
+          await execAsync(`git -C "${repoDir}" tag -d launchpad-checkpoint-${deployment.parentDeployment}`);
+        } catch {}
       } catch (gitErr) {
         await log(`⚠️ Git push failed: ${gitErr.message}`);
+        await pushAuditStep(deployment.parentDeployment, 'Git Push', 'failure', gitErr.message);
+        await pushAuditStep(deployment._id, 'Git Push', 'failure', gitErr.message);
       }
     }
 
@@ -909,15 +935,27 @@ buildQueue.process(1, async (job) => {
     if (project.autoHeal && !deployment.isAutoHeal) {
       try {
         await log(`\n🤖 LaunchPad AI Auto-Healing is analyzing repository for a fix...`);
+        await pushAuditStep(deploymentId, 'Analyzing logs', 'info', 'Parsing error logs to identify relevant files...');
+
         const { generateFixPatch, applyPatchLocally } = require('../services/autoHeal.service');
         const fixPatch = await generateFixPatch(repoDir, logsText, project.stack);
         
         if (fixPatch && fixPatch.patches && fixPatch.patches.length > 0) {
           await log(`🤖 Auto-Healing patch generated: ${fixPatch.description}`);
+          await pushAuditStep(deploymentId, 'Generating Code Fix', 'success', `DevOps AI generated code fix: ${fixPatch.description}`);
+
+          try {
+            await execAsync(`git -C "${repoDir}" tag launchpad-checkpoint-${deploymentId}`);
+            await pushAuditStep(deploymentId, 'Applying Patch', 'info', `Created git checkpoint: launchpad-checkpoint-${deploymentId}`);
+          } catch (gitTagErr) {
+            console.error('[Auto-Heal] Git tag checkpoint creation failed:', gitTagErr.message);
+          }
+
           const { applied, diffOutput } = applyPatchLocally(repoDir, fixPatch.patches);
           
           if (applied.length > 0) {
             await log(`🤖 Applied fixes to files: ${applied.join(', ')}`);
+            await pushAuditStep(deploymentId, 'Applying Patch', 'success', `Patched files: ${applied.join(', ')}`);
             
             // Queue follow-up auto-heal deployment
             const autoHealDep = await Deployment.create({
@@ -931,6 +969,11 @@ buildQueue.process(1, async (job) => {
               parentDeployment: deployment._id,
               autoHealFixDescription: fixPatch.description,
               autoHealDiff: diffOutput,
+              autoHealAuditTrail: [
+                { step: 'Analyzing logs', status: 'success', details: 'Parsed build logs to identify files', timestamp: new Date() },
+                { step: 'Generating Code Fix', status: 'success', details: `DevOps AI generated code fix: ${fixPatch.description}`, timestamp: new Date() },
+                { step: 'Applying Patch', status: 'success', details: `Patched files: ${applied.join(', ')}`, timestamp: new Date() }
+              ]
             });
 
             await buildQueue.add(
@@ -939,6 +982,7 @@ buildQueue.process(1, async (job) => {
             );
 
             await log(`🤖 Successfully queued auto-healed deployment: ${autoHealDep._id}`);
+            await pushAuditStep(deploymentId, 'Queueing Rebuild', 'success', `Queued auto-heal deployment: ${autoHealDep._id}`);
 
             // Mark current deployment as failed
             await Deployment.findByIdAndUpdate(deploymentId, {
@@ -949,19 +993,31 @@ buildQueue.process(1, async (job) => {
             return; // Exit early: follow-up auto-heal job will handle live/failed state
           } else {
             await log(`⚠️ Auto-Healing generated patches but none could be matched/applied to the files.`);
+            await pushAuditStep(deploymentId, 'Applying Patch', 'failure', 'Could not match or apply AI patches to files');
           }
         } else {
           await log(`⚠️ Auto-Healing did not find a reliable code patch for this error.`);
+          await pushAuditStep(deploymentId, 'Generating Code Fix', 'failure', 'DevOps AI could not generate a reliable code patch');
         }
       } catch (autoHealErr) {
         await log(`⚠️ Auto-Healing encountered an error: ${autoHealErr.message}`);
+        await pushAuditStep(deploymentId, 'Analyzing logs', 'failure', `Error: ${autoHealErr.message}`);
       }
     }
 
     if (deployment.isAutoHeal) {
       try {
-        await execAsync(`git -C "${repoDir}" reset --hard HEAD`);
-        await log(`❌ Auto-healing attempt failed. Reverted local file changes.`);
+        await pushAuditStep(deployment.parentDeployment, 'Verifying Build', 'failure', 'Container health check failed. Reverting changes.');
+        await pushAuditStep(deployment._id, 'Verifying Build', 'failure', 'Container health check failed. Reverting changes.');
+
+        try {
+          await execAsync(`git -C "${repoDir}" reset --hard launchpad-checkpoint-${deployment.parentDeployment}`);
+          await execAsync(`git -C "${repoDir}" tag -d launchpad-checkpoint-${deployment.parentDeployment}`);
+          await log(`❌ Auto-healing attempt failed. Reverted local file changes using git checkpoint tag.`);
+        } catch {
+          await execAsync(`git -C "${repoDir}" reset --hard HEAD`);
+          await log(`❌ Auto-healing attempt failed. Reverted local file changes using fallback git reset.`);
+        }
       } catch (revertErr) {
         console.error('[Auto-Heal] Failed to revert repository:', revertErr.message);
       }

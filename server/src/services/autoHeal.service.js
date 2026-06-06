@@ -52,6 +52,43 @@ function normalizeNewlines(str) {
   return str.replace(/\r\n/g, '\n').trim();
 }
 
+// Resilient line-by-line loose replacement (ignores spaces, indentation, and empty line mismatches)
+function looseReplace(fileContent, originalText, replacementText) {
+  const fileLines = fileContent.split('\n');
+  const originalLines = originalText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+  if (originalLines.length === 0) return null;
+
+  for (let i = 0; i <= fileLines.length - originalLines.length; i++) {
+    let match = true;
+    let fileIdx = i;
+    let origIdx = 0;
+
+    while (origIdx < originalLines.length && fileIdx < fileLines.length) {
+      const fileLineTrimmed = fileLines[fileIdx].trim();
+      if (fileLineTrimmed.length === 0) {
+        fileIdx++;
+        continue;
+      }
+
+      if (fileLineTrimmed !== originalLines[origIdx]) {
+        match = false;
+        break;
+      }
+
+      fileIdx++;
+      origIdx++;
+    }
+
+    if (match && origIdx === originalLines.length) {
+      const before = fileLines.slice(0, i);
+      const after = fileLines.slice(fileIdx);
+      return [...before, replacementText, ...after].join('\n');
+    }
+  }
+  return null;
+}
+
 /**
  * Generate code patches using Gemini/Groq
  */
@@ -171,7 +208,15 @@ function applyPatchLocally(repoPath, patches) {
           applied.push(patch.filePath);
           diffOutput += `\n[MODIFY] ${patch.filePath}:\n- ${cleanOriginal.split('\n').join('\n- ')}\n+ ${cleanReplacement.split('\n').join('\n+ ')}\n`;
         } else {
-          console.warn(`[Auto-Heal] Skipping patch for ${patch.filePath} due to content mismatch.`);
+          // Fall back to resilient loose indentation matching
+          const looseContent = looseReplace(fileContent, patch.originalContent, patch.replacementContent);
+          if (looseContent) {
+            fs.writeFileSync(fullPath, looseContent, 'utf8');
+            applied.push(patch.filePath);
+            diffOutput += `\n[MODIFY (LOOSE MATCH)] ${patch.filePath}:\n- ${patch.originalContent.split('\n').join('\n- ')}\n+ ${patch.replacementContent.split('\n').join('\n+ ')}\n`;
+          } else {
+            console.warn(`[Auto-Heal] Skipping patch for ${patch.filePath} due to content mismatch.`);
+          }
         }
         continue;
       }
@@ -219,7 +264,7 @@ async function commitAndPushFix(project, repoPath, strategy, parentDeploymentId)
       await execAsync(`git -C "${repoPath}" commit -m "chore(launchpad): auto-heal deployment failure for build ${parentDeploymentId}"`);
       await execAsync(`git -C "${repoPath}" push origin ${fixBranch}`);
 
-      const { createPullRequest } = require('./github.service');
+      const { createPullRequest, createPullRequestComment } = require('./github.service');
       const prTitle = `chore(launchpad): AI Auto-Healing fix for build ${parentDeploymentId}`;
       const prBody = `LaunchPad AI Auto-Healing detected a deployment failure and successfully generated/verified a patch.
       
@@ -227,6 +272,24 @@ async function commitAndPushFix(project, repoPath, strategy, parentDeploymentId)
 The container was built and verified successfully using this patch. Feel free to merge this PR.`;
 
       const pr = await createPullRequest(token, project.repoFullName, prTitle, fixBranch, branchName, prBody);
+
+      try {
+        const commentBody = `### 🤖 LaunchPad SRE Auto-Healing Report
+        
+LaunchPad successfully resolved a deployment failure in build **#${parentDeploymentId}**.
+
+| Component | Status | Details |
+| --- | --- | --- |
+| **Patch Application** | Success ✅ | Patched files locally and validated build |
+| **SRE Health Check** | Passed ✅ | Verified container is healthy and responding |
+| **Commit Strategy** | Pull Request 🔀 | Opened this PR containing the corrective patches |
+
+*Merge this PR to sync your remote branch with these verified SRE fixes.*`;
+        await createPullRequestComment(token, project.repoFullName, pr.number, commentBody);
+      } catch (commentErr) {
+        console.warn('[Auto-Heal] Failed to post PR comment:', commentErr.message);
+      }
+
       return `Created GitHub Pull Request: ${pr.html_url}`;
     }
 
