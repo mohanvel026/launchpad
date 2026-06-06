@@ -178,13 +178,13 @@ export default function Dashboard() {
                         )}
 
                         {/* Active previews */}
-                        {(project.previews?.filter(p => p.status === 'live').length || 0) > 0 && (
+                        {(project.previews?.filter(p => p.status === 'live')?.length || 0) > 0 && (
                           <span style={{
                             padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
                             background: 'rgba(56,189,248,0.1)', color: '#38bdf8',
                             border: '1px solid rgba(56,189,248,0.2)',
                           }}>
-                            🔍 {project.previews.filter(p => p.status === 'live').length} previews
+                            🔍 {project.previews?.filter(p => p.status === 'live')?.length || 0} previews
                           </span>
                         )}
                       </div>

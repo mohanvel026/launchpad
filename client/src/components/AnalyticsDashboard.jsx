@@ -123,10 +123,10 @@ export default function AnalyticsDashboard({ projectId }) {
     const loadData = () => {
       api.get(`/analytics/${projectId}`)
         .then((r) => setData(r.data))
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => setLoading(false));
     };
     loadData();
-    setLoading(false);
     const interval = setInterval(loadData, 5000); // 5-second live polling
     return () => clearInterval(interval);
   }, [projectId]);
