@@ -46,11 +46,18 @@ export default function DomainManager({ project, onUpdate }) {
       try {
         const url = `/domains/${project._id}/verify${mockVerify ? '?mock=true' : ''}`;
         const res = await api.get(url);
-        // If DNS is now verified, refresh everything and stop polling
+        // If DNS is now verified, automatically provision SSL certificate in the background!
         if (res.data.verified) {
+          setMessage('✅ DNS record detected! Auto-provisioning SSL certificate...');
+          try {
+            await api.post(`/domains/${project._id}/ssl`);
+            setMessage('✨ DNS verification & SSL provisioning successful! Your domain is secure and active.');
+          } catch (sslErr) {
+            console.error('[DomainManager] Auto-SSL provisioning failed:', sslErr);
+            setMessage('✅ DNS record detected, but SSL auto-provisioning failed. Click "Secure with SSL" to try again.');
+          }
           await fetchDomainInfo();
           if (onUpdate) onUpdate();
-          setMessage('✅ DNS has propagated! Your domain is now pointing to LaunchPad.');
           clearInterval(pollInterval);
         }
       } catch {
@@ -59,7 +66,7 @@ export default function DomainManager({ project, onUpdate }) {
     }, 15000); // Poll every 15 seconds
 
     return () => clearInterval(pollInterval);
-  }, [domainInfo?.customDomainStatus, project._id, mockVerify]);
+  }, [domainInfo?.customDomainStatus, project._id, mockVerify, onUpdate]);
 
   const domain = import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io';
   const subUrl = `http://${project.subdomain}.${domain}`;
@@ -72,10 +79,24 @@ export default function DomainManager({ project, onUpdate }) {
   };
 
   const handleAddDomain = async () => {
-    if (!customDomain.trim()) return;
+    let domainToLink = customDomain.trim();
+    if (!domainToLink) return;
+
+    // Auto-detect TLD suffix. If missing, auto-suggest appending the server's root domain!
+    if (!domainToLink.includes('.')) {
+      const suggested = `${domainToLink}.${domain}`;
+      const confirmUse = window.confirm(`Your domain "${domainToLink}" is missing a domain extension (like .com). Would you like to automatically use "${suggested}"?`);
+      if (confirmUse) {
+        domainToLink = suggested;
+        setCustomDomain(suggested);
+      } else {
+        return;
+      }
+    }
+
     setSaving(true); setError(''); setMessage(''); setDnsStatus(null);
     try {
-      const res = await api.post(`/domains/${project._id}/custom`, { customDomain: customDomain.trim() });
+      const res = await api.post(`/domains/${project._id}/custom`, { customDomain: domainToLink });
       setMessage(res.data.message);
       await fetchDomainInfo();
       if (onUpdate) onUpdate();
@@ -105,14 +126,21 @@ export default function DomainManager({ project, onUpdate }) {
       const url = `/domains/${project._id}/verify${mockVerify ? '?mock=true' : ''}`;
       const res = await api.get(url);
       setDnsStatus(res.data);
-      await fetchDomainInfo();
-      if (onUpdate) onUpdate();
 
       if (res.data.verified) {
-        setMessage('✨ DNS verification successful! Your domain is pointed correctly.');
+        setMessage('✨ DNS verification successful! Auto-provisioning SSL certificate...');
+        try {
+          await api.post(`/domains/${project._id}/ssl`);
+          setMessage('✨ DNS verification & SSL provisioning successful! Your domain is secure and active.');
+        } catch (sslErr) {
+          console.error('[DomainManager] Auto-SSL provisioning failed:', sslErr);
+          setMessage('✅ DNS verification successful, but SSL auto-provisioning failed. Click "Secure with SSL" to try again.');
+        }
       } else {
         setError(`DNS Check failed: Your domain resolves to "${res.data.resolvedTo}" instead of "${res.data.targetCname}".`);
       }
+      await fetchDomainInfo();
+      if (onUpdate) onUpdate();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to verify DNS');
     } finally { setVerifying(false); }
