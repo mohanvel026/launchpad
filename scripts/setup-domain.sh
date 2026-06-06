@@ -5,10 +5,10 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # SUPPORTED FREE DOMAINS (pick one):
-#   Option A: afraid.org FreeDNS → launchpad.mooo.com (instant, free)
-#   Option B: DuckDNS            → launchpad.duckdns.org (instant, free)  
-#   Option C: is-a.dev           → launchpad.is-a.dev (1-2 days, free)
-#   Option D: Your own domain    → anything.com
+#   Option A: Dynu.com           → launchpad.ddnsfree.com (instant, free) [RECOMMENDED - Supports Wildcards]
+#   Option B: desec.io           → launchpad.dedyn.io (instant, free)     [RECOMMENDED - Supports Wildcards]
+#   Option C: DuckDNS            → launchpad.duckdns.org (instant, free)  [WARNING: Does NOT support wildcard DNS natively]
+#   Option D: Your own domain    → anything.com                           [Supports Wildcards via DNS provider]
 #
 # WHAT THIS SCRIPT DOES:
 #   1. Creates nginx wildcard catch-all config
@@ -19,7 +19,7 @@
 set -e
 
 # ─── CONFIGURE THIS ───────────────────────────────────────────────────────────
-YOUR_DOMAIN="launchpad.duckdns.org"   # ← change this to your domain
+YOUR_DOMAIN="launchpad.ddnsfree.com"   # ← change this to your domain (e.g. from Dynu)
 YOUR_EMAIL="your@email.com"            # ← change this for SSL cert alerts
 YOUR_IP="129.159.22.142"              # ← your OCI server IP
 # ─────────────────────────────────────────────────────────────────────────────

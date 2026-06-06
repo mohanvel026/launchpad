@@ -47,7 +47,7 @@ const provisionSSLForProject = async (req, res) => {
     if (project.status !== 'live') return res.status(400).json({ message: 'Project must be live to provision SSL' });
 
     // Run certbot (takes 5-15 seconds) to provision multi-domain SSL for both subdomain and custom domain
-    const success = provisionSSL(project.subdomain, project.customDomain);
+    const success = await provisionSSL(project.subdomain, project.customDomain);
 
     if (success) {
       // Rewrite the nginx config with HTTPS blocks and custom domain routing

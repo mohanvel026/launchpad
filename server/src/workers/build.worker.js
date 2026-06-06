@@ -718,7 +718,7 @@ buildQueue.process(1, async (job) => {
         }
 
         setTimeout(async () => {
-          const ok = provisionSSL(project.subdomain, project.customDomain);
+          const ok = await provisionSSL(project.subdomain, project.customDomain);
           if (ok) {
             const { upgradeToHTTPS } = require('../services/nginx.service');
             upgradeToHTTPS(project.subdomain, hostPort, project.customDomain);
