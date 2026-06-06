@@ -122,11 +122,14 @@ const createProject = async (req, res) => {
     // Build a URL-safe unique subdomain
     const slugSource = name || repo.name;
     const baseSlug = slugSource.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    let subdomain = baseSlug;
-    let attempts = 0;
-    while (await Project.findOne({ subdomain }) && attempts < 10) {
-      subdomain = `${baseSlug}-${Math.random().toString(36).substring(2, 6)}`;
-      attempts++;
+    const subdomain = baseSlug;
+
+    // Check if subdomain is already taken
+    const existing = await Project.findOne({ subdomain });
+    if (existing) {
+      return res.status(400).json({ 
+        message: `The subdomain "${subdomain}" is already in use by project "${existing.name}". Please choose a different project name.` 
+      });
     }
 
     const project = await Project.create({
