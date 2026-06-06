@@ -235,8 +235,8 @@ buildQueue.process(1, async (job) => {
       try {
         await execAsync(
           `git -C "${repoDir}" remote set-url origin ${cloneUrl} && ` +
-          `git -C "${repoDir}" fetch --all && ` +
-          `git -C "${repoDir}" reset --hard origin/${project.branch}`
+          `git -C "${repoDir}" fetch origin ${project.branch} --depth 1 && ` +
+          `git -C "${repoDir}" reset --hard FETCH_HEAD`
         );
         await log('   ✅ Repository synchronized with latest commits.');
       } catch (pullErr) {
@@ -429,7 +429,7 @@ buildQueue.process(1, async (job) => {
         const { spawn } = require('child_process');
         const buildProc = spawn(
           'docker',
-          ['build', '--no-cache', '--progress=plain', ...buildArgParts, '-t', imageTag, repoDir],
+          ['build', '--progress=plain', ...buildArgParts, '-t', imageTag, repoDir],
           { stdio: ['ignore', 'pipe', 'pipe'] }
         );
 

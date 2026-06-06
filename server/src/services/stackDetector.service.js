@@ -31,7 +31,7 @@ const detectPackageManager = (dir) => {
   if (exists(dir, 'pnpm-lock.yaml')) return { name: 'pnpm', install: 'pnpm install', run: 'pnpm run', lockfile: 'pnpm-lock.yaml' };
   if (exists(dir, 'yarn.lock')) return { name: 'yarn', install: 'yarn install', run: 'yarn', lockfile: 'yarn.lock' };
   if (exists(dir, 'bun.lockb')) return { name: 'bun', install: 'bun install', run: 'bun run', lockfile: 'bun.lockb' };
-  return { name: 'npm', install: 'npm install --legacy-peer-deps || npm install', run: 'npm run', lockfile: 'package-lock.json' };
+  return { name: 'npm', install: 'npm ci --legacy-peer-deps || npm install --legacy-peer-deps || npm install', run: 'npm run', lockfile: 'package-lock.json' };
 };
 
 const getStartCommand = (dir, pmName = 'npm') => {

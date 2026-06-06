@@ -9,18 +9,31 @@ const docker = new Docker(
 
 // Redis client for caching metrics (short TTL)
 let redisClient;
+let connectPromise;
 const getRedis = async () => {
-  if (!redisClient) {
-    redisClient = redis.createClient({
+  if (redisClient) return redisClient;
+
+  if (!connectPromise) {
+    const client = redis.createClient({
       socket: {
         host: process.env.REDIS_HOST || '127.0.0.1',
         port: parseInt(process.env.REDIS_PORT) || 6379,
       },
     });
-    redisClient.on('error', (err) => console.warn('Redis metrics error:', err.message));
-    await redisClient.connect();
+    client.on('error', (err) => console.warn('Redis metrics error:', err.message));
+
+    connectPromise = client.connect()
+      .then(() => {
+        redisClient = client;
+        return client;
+      })
+      .catch((e) => {
+        console.warn('Redis metrics connect failed:', e.message);
+        connectPromise = null; // reset to allow retry on next call
+        throw e;
+      });
   }
-  return redisClient;
+  return connectPromise;
 };
 
 // Fetch real-time stats for a single container

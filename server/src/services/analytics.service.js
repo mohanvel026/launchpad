@@ -1,9 +1,12 @@
 const redis = require('redis');
 
 let redisClient;
+let connectPromise;
 
 const getRedis = async () => {
-  if (!redisClient) {
+  if (redisClient) return redisClient;
+
+  if (!connectPromise) {
     const client = redis.createClient({
       socket: {
         host: process.env.REDIS_HOST || '127.0.0.1',
@@ -12,23 +15,27 @@ const getRedis = async () => {
       },
     });
     client.on('error', (err) => console.warn('Redis analytics error:', err.message));
-    try {
-      await client.connect();
-      redisClient = client;
-    } catch (e) {
-      console.warn('Redis connect failed, falling back to mock analytics client:', e.message);
-      redisClient = {
-        hIncrBy: async () => 1,
-        hGet: async () => null,
-        hSet: async () => {},
-        hGetAll: async () => ({}),
-        expire: async () => {},
-        del: async () => {},
-        connect: async () => {},
-      };
-    }
+
+    connectPromise = client.connect()
+      .then(() => {
+        redisClient = client;
+        return client;
+      })
+      .catch((e) => {
+        console.warn('Redis connect failed, using temporary mock client:', e.message);
+        connectPromise = null; // reset to allow retry on next call
+        return {
+          hIncrBy: async () => 1,
+          hGet: async () => null,
+          hSet: async () => {},
+          hGetAll: async () => ({}),
+          expire: async () => {},
+          del: async () => {},
+          connect: async () => {},
+        };
+      });
   }
-  return redisClient;
+  return connectPromise;
 };
 
 // Record a visit to a project's deployed app with advanced edge parameters
