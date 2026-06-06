@@ -593,7 +593,7 @@ export default function ProjectDetail() {
     <div className="launchpad-container">
       {/* Header */}
       <header className="lp-header" style={{ display: 'block', padding: 0 }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px' }}>
+        <div style={{ height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <button className="lp-btn-secondary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => navigate('/dashboard')}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
@@ -662,8 +662,8 @@ export default function ProjectDetail() {
       </header>
 
       {/* Project Info Bar */}
-      <div style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', padding: '12px 0' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', gap: 32, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)', padding: '0 40px' }}>
+      <div style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', padding: '12px 24px' }}>
+        <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)' }}>
           <span>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: 6 }}><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
             {project.repoFullName}
@@ -674,8 +674,8 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      <main className="lp-main" style={{ maxWidth: 'none', margin: 0, padding: '40px 0', width: '100%' }}>
-        <div className="lp-detail-layout" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px' }}>
+      <main className="lp-main" style={{ maxWidth: 'none', margin: 0, padding: 0, width: '100%' }}>
+        <div className="lp-detail-layout">
           {/* Left Sidebar */}
           <div className="lp-sidebar-container">
             {SIDEBAR_GROUPS.map((group, idx) => (
@@ -698,7 +698,9 @@ export default function ProjectDetail() {
                       className={`lp-sidebar-link ${activeTab === item.id ? 'active' : ''}`}
                       onClick={() => setActiveTab(item.id)}
                     >
-                      <span style={{ fontSize: '15px', display: 'inline-flex', alignItems: 'center' }}>{item.icon}</span>
+                      <span style={{ width: 20, display: 'inline-flex', justifyContent: 'center', marginRight: 8, fontSize: '15px' }}>
+                        {item.icon}
+                      </span>
                       <span>{item.label}</span>
                     </div>
                   ))}
@@ -709,6 +711,7 @@ export default function ProjectDetail() {
 
           {/* Right Content Area */}
           <div className="lp-content-container">
+            <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
           {error && (
             <div className="lp-status-bar error" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
             <span>⚠️ {error}</span>
@@ -1765,6 +1768,7 @@ export default function ProjectDetail() {
             <AIChat projectId={id} />
           </div>
         )}
+            </div>
           </div>
         </div>
       </main>
