@@ -944,17 +944,18 @@ buildQueue.process(1, async (job) => {
           await log(`🤖 Auto-Healing patch generated: ${fixPatch.description}`);
           await pushAuditStep(deploymentId, 'Generating Code Fix', 'success', `DevOps AI generated code fix: ${fixPatch.description}`);
 
+          const checkpointTag = `launchpad-checkpoint-${deploymentId}`;
           try {
-            await execAsync(`git -C "${repoDir}" tag launchpad-checkpoint-${deploymentId}`);
-            await pushAuditStep(deploymentId, 'Applying Patch', 'info', `Created git checkpoint: launchpad-checkpoint-${deploymentId}`);
+            await execAsync(`git -C "${repoDir}" tag -f "${checkpointTag}"`);
+            await pushAuditStep(deploymentId, 'Applying Patch', 'info', `Created git checkpoint: ${checkpointTag}`);
           } catch (gitTagErr) {
             console.error('[Auto-Heal] Git tag checkpoint creation failed:', gitTagErr.message);
           }
 
           const { applied, diffOutput } = applyPatchLocally(repoDir, fixPatch.patches);
           
-          if (applied.length > 0) {
-            await log(`🤖 Applied fixes to files: ${applied.join(', ')}`);
+          if (applied.length > 0 && applied.length === fixPatch.patches.length) {
+            await log(`🤖 Applied all fixes to files: ${applied.join(', ')}`);
             await pushAuditStep(deploymentId, 'Applying Patch', 'success', `Patched files: ${applied.join(', ')}`);
             
             // Queue follow-up auto-heal deployment
@@ -992,8 +993,20 @@ buildQueue.process(1, async (job) => {
             await Project.findByIdAndUpdate(projectId, { status: 'building' });
             return; // Exit early: follow-up auto-heal job will handle live/failed state
           } else {
-            await log(`⚠️ Auto-Healing generated patches but none could be matched/applied to the files.`);
-            await pushAuditStep(deploymentId, 'Applying Patch', 'failure', 'Could not match or apply AI patches to files');
+            // Revert any partially applied files and untracked files
+            try {
+              await execAsync(`git -C "${repoDir}" reset --hard "${checkpointTag}"`);
+              await execAsync(`git -C "${repoDir}" clean -fd`);
+              await execAsync(`git -C "${repoDir}" tag -d "${checkpointTag}"`);
+            } catch (revertErr) {
+              await execAsync(`git -C "${repoDir}" reset --hard HEAD`);
+              await execAsync(`git -C "${repoDir}" clean -fd`);
+            }
+            const details = applied.length > 0 
+              ? `Applied only ${applied.length} of ${fixPatch.patches.length} patches. Rollback completed.` 
+              : 'Could not apply any generated AI patches to files.';
+            await log(`⚠️ Auto-Healing aborted: ${details}`);
+            await pushAuditStep(deploymentId, 'Applying Patch', 'failure', details);
           }
         } else {
           await log(`⚠️ Auto-Healing did not find a reliable code patch for this error.`);
@@ -1012,10 +1025,12 @@ buildQueue.process(1, async (job) => {
 
         try {
           await execAsync(`git -C "${repoDir}" reset --hard launchpad-checkpoint-${deployment.parentDeployment}`);
+          await execAsync(`git -C "${repoDir}" clean -fd`);
           await execAsync(`git -C "${repoDir}" tag -d launchpad-checkpoint-${deployment.parentDeployment}`);
           await log(`❌ Auto-healing attempt failed. Reverted local file changes using git checkpoint tag.`);
         } catch {
           await execAsync(`git -C "${repoDir}" reset --hard HEAD`);
+          await execAsync(`git -C "${repoDir}" clean -fd`);
           await log(`❌ Auto-healing attempt failed. Reverted local file changes using fallback git reset.`);
         }
       } catch (revertErr) {
