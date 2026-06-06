@@ -586,6 +586,7 @@ export default function ProjectDetail() {
     </div>
   );
 
+  const domain = import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io';
   const deployUrl = project.subdomain ? `http://${project.subdomain}.${domain}` : null;
 
   return (
