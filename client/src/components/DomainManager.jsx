@@ -652,6 +652,18 @@ export default function DomainManager({ project, onUpdate }) {
               )}
             </div>
 
+            {domainSuffix !== `.${domain}` && (
+              <div className="lp-card glass" style={{ padding: 22, border: '1px solid rgba(245, 158, 11, 0.15)', background: 'rgba(245, 158, 11, 0.02)', marginTop: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, color: '#f59e0b', fontSize: 14, fontWeight: 700 }}>
+                  <span>ℹ️</span> DNS Propagation & Troubleshooting
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 6, lineHeight: 1.5 }}>
+                  <li>DNS records can take up to <strong>24-48 hours</strong> to propagate globally, though they usually update within an hour.</li>
+                  <li>Verify your setup with a public lookup tool: <a href={`https://dnschecker.org/#CNAME/${domainPrefix}${domainSuffix === 'custom' ? (customSuffix.startsWith('.') ? customSuffix.substring(1) : customSuffix) : domainSuffix}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'underline', fontWeight: 600 }}>Check DNS Propagation on DNSChecker</a></li>
+                  <li>Ensure no conflicting records exist (e.g., duplicate CNAME/A records or old GoDaddy parking page records).</li>
+                </ul>
+              </div>
+            )}
           </div>
 
           {/* Stepper DNS Connection Timeline */}
