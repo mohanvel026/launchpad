@@ -710,23 +710,35 @@ buildQueue.process(1, async (job) => {
       const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || 'launchlive.in').toLowerCase();
       const isNipIo = DOMAIN.includes('nip.io');
 
-      if (!project.dnsRecordId && !isNipIo) {
-        const dnsRecordId = await createSubdomain(project.subdomain);
+      // Ensure DNS subdomain exists
+      let dnsRecordId = project.dnsRecordId;
+      if (!dnsRecordId && !isNipIo) {
+        dnsRecordId = await createSubdomain(project.subdomain);
         if (dnsRecordId) {
           await Project.findByIdAndUpdate(projectId, { dnsRecordId });
           await log('   ✅ DNS records propagated to Edge Network.');
         }
+      }
 
+      // Provision/retry SSL on every deployment (resilient to previous failures)
+      if (!isNipIo) {
         setTimeout(async () => {
-          const ok = await provisionSSL(project.subdomain, project.customDomain);
-          if (ok) {
-            const { upgradeToHTTPS } = require('../services/nginx.service');
-            upgradeToHTTPS(project.subdomain, hostPort, project.customDomain);
-            await log('   🔒 SSL certificate provisioned. HTTP → HTTPS upgrade complete.');
+          try {
+            await log('   🔒 Checking and provisioning SSL certificate...');
+            const ok = await provisionSSL(project.subdomain, project.customDomain);
+            if (ok) {
+              const { upgradeToHTTPS } = require('../services/nginx.service');
+              upgradeToHTTPS(project.subdomain, hostPort, project.customDomain);
+              await log('   🔒 SSL certificate active. HTTP → HTTPS upgrade complete.');
+              await Project.findByIdAndUpdate(projectId, { sslStatus: 'active' });
+            } else {
+              await log('   ⚠️ SSL provisioning failed or was skipped. Please check server logs.');
+              await Project.findByIdAndUpdate(projectId, { sslStatus: 'failed' });
+            }
+          } catch (sslErr) {
+            await log(`   ❌ SSL provisioning background task error: ${sslErr.message}`);
           }
         }, 15_000);
-      } else if (isNipIo) {
-        await log('   ℹ️ nip.io domain detected. Skipping DNS and SSL provisioning.');
       }
 
       await Project.findByIdAndUpdate(projectId, { containerId, port: hostPort });
