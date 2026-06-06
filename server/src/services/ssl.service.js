@@ -43,7 +43,8 @@ const provisionSSL = async (subdomain, customDomain = null) => {
     if (isFullDomainOk && !isWildcardIpDomain) {
       domainArgs += `-d ${fullDomain}`;
     }
-    if (customDomain && isCustomDomainOk) {
+    const isCustomWildcardIpDomain = customDomain && (customDomain.includes('nip.io') || customDomain.includes('sslip.io'));
+    if (customDomain && isCustomDomainOk && !isCustomWildcardIpDomain) {
       domainArgs += `${domainArgs ? ' ' : ''}-d ${customDomain}`;
     }
 
