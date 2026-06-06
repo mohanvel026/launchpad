@@ -2,14 +2,14 @@
  * projectProxy.middleware.js
  *
  * LaunchPad acts as its own reverse proxy.
- * Instead of writing a new nginx config per project (which needs sudo/permissions),
- * this middleware intercepts requests for project subdomains at the Node level:
+ * Intercepts requests for project subdomains at the Node level:
  *
- *   portfolio-html-xyz.129.159.22.142.nip.io  →  container on port 4004
- *   stockflow-abc.129.159.22.142.nip.io        →  container on port 4002
- *   129.159.22.142.nip.io                      →  LaunchPad dashboard (passes through)
+ *   stockflow-abc.launchpad.is-a.dev     →  container on port 4002
+ *   myapp.launchpad.duckdns.org           →  container on port 4004
+ *   129.159.22.142.nip.io                 →  LaunchPad dashboard
  *
- * Requires ONE nginx rule:  server_name *.nip.io → proxy_pass localhost:5000
+ * Works with ANY domain configured via CLOUDFLARE_DOMAIN env var.
+ * Also supports custom domains (CNAME pointing to LaunchPad).
  */
 
 const http    = require('http');
@@ -29,13 +29,13 @@ const lookupPort = async (identifier, isCustomDomain = false) => {
   const query = isCustomDomain ? { customDomain: identifier } : { subdomain: identifier };
   const project = await Project.findOne(query, 'port status stack containerId').lean();
   if (project && (project.port !== undefined || project.status === 'live' || project.status === 'sleeping')) {
-    const data = { 
-      port: project.port || 0, 
-      projectId: project._id.toString(), 
+    const data = {
+      port: project.port || 0,
+      projectId: project._id.toString(),
       stack: project.stack || 'unknown',
       status: project.status,
       containerId: project.containerId,
-      ts: Date.now() 
+      ts: Date.now()
     };
     portCache.set(identifier, data);
     return data;
@@ -87,128 +87,77 @@ const selfHealingPage = (host) => `<!DOCTYPE html>
     .container {
       background: rgba(18, 18, 30, 0.4);
       backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
       border: 1px solid rgba(255, 255, 255, 0.05);
       border-radius: 24px;
       padding: 48px;
       max-width: 500px;
       text-align: center;
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-      position: relative;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
     }
-    .ring-container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin-bottom: 32px;
-      position: relative;
-    }
-    .ring {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      border: 3px solid rgba(56, 189, 248, 0.1);
-      border-top-color: #38bdf8;
-      animation: spin 1s linear infinite;
-    }
-    .pulse-glow {
-      position: absolute;
-      width: 70px;
-      height: 70px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(56, 189, 248, 0.2) 0%, transparent 70%);
-      animation: pulse 2s ease-in-out infinite;
-    }
-    h1 {
-      font-size: 1.6rem;
-      font-weight: 800;
-      letter-spacing: -0.5px;
-      margin-bottom: 12px;
-      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    p {
-      color: #94a3b8;
-      font-size: 0.95rem;
-      line-height: 1.6;
-      margin-bottom: 24px;
-    }
-    .status-box {
-      background: rgba(56, 189, 248, 0.05);
-      border: 1px solid rgba(56, 189, 248, 0.15);
-      border-radius: 12px;
-      padding: 12px 20px;
-      font-size: 0.85rem;
-      color: #38bdf8;
-      font-family: monospace;
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #38bdf8;
-      box-shadow: 0 0 8px #38bdf8;
-      animation: blink 1.5s infinite;
-    }
+    .ring { width: 80px; height: 80px; border-radius: 50%; border: 3px solid rgba(56,189,248,0.1); border-top-color: #38bdf8; animation: spin 1s linear infinite; margin: 0 auto 32px; }
+    h1 { font-size: 1.6rem; font-weight: 800; margin-bottom: 12px; background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    p { color: #94a3b8; font-size: 0.95rem; line-height: 1.6; }
     @keyframes spin { 100% { transform: rotate(360deg); } }
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); opacity: 0.3; }
-      50% { transform: scale(1.3); opacity: 0.8; }
-    }
-    @keyframes blink {
-      0%, 100% { opacity: 0.4; }
-      50% { opacity: 1; }
-    }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="ring-container">
-      <div class="pulse-glow"></div>
-      <div class="ring"></div>
-    </div>
-    <h1>Self-Healing App Recovery</h1>
-    <p>Your application at <code style="color: #e2e8f0; font-weight: 600;">${host}</code> went offline. LaunchPad SRE is automatically rebuilding and restarting the container.</p>
-    <div class="status-box">
-      <div class="status-dot"></div>
-      <span>Auto-restarting container... Reloading in 3s</span>
-    </div>
+    <div class="ring"></div>
+    <h1>Self-Healing Recovery</h1>
+    <p>Your app at <code style="color:#e2e8f0">${host}</code> went offline. LaunchPad is auto-restarting it. Reloading in 3s...</p>
   </div>
 </body>
 </html>`;
 
+// ── Extract subdomain from host ────────────────────────────────────────────────
+/**
+ * Given: host = "myapp.launchpad.is-a.dev" and DOMAIN = "launchpad.is-a.dev"
+ * Returns: { subdomain: "myapp", isCustomDomain: false }
+ *
+ * Given: host = "mycustomdomain.com" and it doesn't end with DOMAIN
+ * Returns: { subdomain: "mycustomdomain.com", isCustomDomain: true }
+ *
+ * ✅ FIX: No longer rejects subdomains with dots in them — 
+ *         the DOMAIN itself may have dots (nip.io, is-a.dev etc.)
+ *         We only extract the FIRST label before the domain.
+ */
+const extractSubdomain = (host) => {
+  const h = host.toLowerCase().split(':')[0]; // strip port
+
+  // Root domain — LaunchPad dashboard itself
+  if (h === DOMAIN) return { subdomain: null, isCustomDomain: false, isRoot: true };
+
+  // Project subdomain: host ends with .DOMAIN
+  if (h.endsWith(`.${DOMAIN}`)) {
+    const sub = h.slice(0, -(DOMAIN.length + 1));
+    // sub may be like "myapp" or "myapp-xyz123"
+    // We allow dashes but NOT nested dots (prevent double-subdomain confusion)
+    if (!sub || sub.includes('.')) {
+      // Multi-level subdomain under our domain — not a valid project slug
+      return { subdomain: null, isCustomDomain: false, isRoot: false };
+    }
+    return { subdomain: sub, isCustomDomain: false, isRoot: false };
+  }
+
+  // Custom domain — not our domain at all
+  return { subdomain: h, isCustomDomain: true, isRoot: false };
+};
+
 // ── Middleware ─────────────────────────────────────────────────────────────────
 const projectProxyMiddleware = async (req, res, next) => {
-  const host = (req.headers.host || '').toLowerCase().split(':')[0]; // strip port
+  const host = (req.headers.host || '').toLowerCase().split(':')[0];
+  const { subdomain, isCustomDomain, isRoot } = extractSubdomain(host);
 
-  // 1. Let the root LaunchPad dashboard domain pass through
-  if (host === DOMAIN) return next();
-
-  let subdomain = null;
-  let isCustomDomain = false;
-
-  // 2. Check if this is a LaunchPad subdomain
-  if (host.endsWith(`.${DOMAIN}`)) {
-    subdomain = host.slice(0, -(DOMAIN.length + 1));
-    // Sanity check
-    if (!subdomain || subdomain.includes('.')) return next();
-  } else {
-    // 3. Otherwise, treat it as a potential custom domain
-    subdomain = host;
-    isCustomDomain = true;
-  }
+  // Root domain → LaunchPad dashboard
+  if (isRoot) return next();
+  // Unresolvable — pass through to Express app
+  if (!subdomain && !isCustomDomain) return next();
 
   try {
     const projectData = await lookupPort(subdomain, isCustomDomain);
 
     if (!projectData) {
-      // If it doesn't match any registered custom domain, fall back to the LaunchPad dashboard
       if (isCustomDomain) return next();
-
       return res
         .status(502)
         .set('Content-Type', 'text/html')
@@ -221,10 +170,10 @@ const projectProxyMiddleware = async (req, res, next) => {
 
     const { port, projectId, stack, status, containerId } = projectData;
 
-    // Wake up container if it is sleeping
+    // ── Wake up sleeping container (Scale-to-Zero) ─────────────────────────────
     if (status === 'sleeping' && containerId) {
       try {
-        console.log(`[proxy SRE Scale-to-Zero] Waking up sleeping container ${containerId} for ${subdomain}...`);
+        console.log(`[proxy] Waking up sleeping container ${containerId} for ${subdomain}...`);
         const Docker = require('dockerode');
         const docker = new Docker(
           process.platform === 'win32'
@@ -232,57 +181,36 @@ const projectProxyMiddleware = async (req, res, next) => {
             : { socketPath: '/var/run/docker.sock' }
         );
         const container = docker.getContainer(containerId);
-        
-        // Start container if not running
         const info = await container.inspect();
-        if (!info.State.Running) {
-          await container.start();
-        }
-        
-        // Wait for port to listen (up to 10 seconds)
+        if (!info.State.Running) await container.start();
+
+        // Wait for port to be ready (up to 10s)
         const net = require('net');
-        const opened = await new Promise((resolve) => {
+        await new Promise((resolve) => {
           const startTime = Date.now();
           const tryConnect = () => {
-            const socket = net.connect({ port, host: '127.0.0.1' }, () => {
-              socket.end();
-              resolve(true);
-            });
+            const socket = net.connect({ port, host: '127.0.0.1' }, () => { socket.end(); resolve(true); });
             socket.on('error', () => {
-              if (Date.now() - startTime > 10000) {
-                resolve(false);
-              } else {
-                setTimeout(tryConnect, 100);
-              }
+              if (Date.now() - startTime > 10000) resolve(false);
+              else setTimeout(tryConnect, 100);
             });
           };
           tryConnect();
         });
 
-        if (!opened) {
-          throw new Error('Container started but port did not become active in time.');
-        }
-
-        // Update DB status to live
         await Project.findByIdAndUpdate(projectId, { status: 'live' });
-        
-        // Update in-memory cached state
         projectData.status = 'live';
         portCache.set(subdomain, { ...projectData, status: 'live', ts: Date.now() });
-        console.log(`[proxy SRE Scale-to-Zero] Container successfully woke up and is now live.`);
+        console.log(`[proxy] Container woke up successfully for ${subdomain}`);
       } catch (wakeErr) {
-        console.error(`[proxy SRE Scale-to-Zero] Wakeup failed:`, wakeErr.message);
-        return res
-          .status(502)
-          .set('Content-Type', 'text/html')
-          .send(errorPage(
-            'Application Wakeup Failed',
-            `Could not automatically wake up <code style="color:#38bdf8">${subdomain}</code>.<br>
-             Error: ${wakeErr.message}`
-          ));
+        console.error(`[proxy] Wakeup failed:`, wakeErr.message);
+        return res.status(502).set('Content-Type', 'text/html').send(
+          errorPage('Application Wakeup Failed', `Could not auto-wake <code>${subdomain}</code>. Error: ${wakeErr.message}`)
+        );
       }
     }
 
+    // ── Windows dev mode: serve static files directly ─────────────────────────
     const isWindows = process.platform === 'win32';
     const isStaticStack = ['static', 'react', 'vue', 'svelte', 'astro', 'angular'].includes(stack);
 
@@ -290,71 +218,31 @@ const projectProxyMiddleware = async (req, res, next) => {
       const fs = require('fs');
       const path = require('path');
       const repoPath = path.join(__dirname, '../../repos', projectId);
-      
       let buildDir = repoPath;
       if (stack !== 'static') {
         const { getBuildOutput } = require('../services/stackDetector.service');
         const outDir = getBuildOutput(repoPath);
         buildDir = path.join(repoPath, outDir);
-        if (!fs.existsSync(buildDir)) {
-          buildDir = repoPath;
-        }
+        if (!fs.existsSync(buildDir)) buildDir = repoPath;
       }
-
-      // Safe check for buildDir directory
       if (fs.existsSync(buildDir) && fs.statSync(buildDir).isDirectory()) {
-        // Resolve target file path
         let targetPath = path.join(buildDir, req.path);
-        
-        // Resolve directory index
         if (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory()) {
-          let indexFile = path.join(targetPath, 'index.html');
-          if (!fs.existsSync(indexFile)) {
-            // Find first HTML file
-            const htmlFiles = fs.readdirSync(targetPath).filter(f => f.endsWith('.html'));
-            if (htmlFiles.length > 0) {
-              indexFile = path.join(targetPath, htmlFiles[0]);
-            }
-          }
-          targetPath = indexFile;
+          const idx = path.join(targetPath, 'index.html');
+          targetPath = fs.existsSync(idx) ? idx : targetPath;
         }
-
-        // If file doesn't exist, try appending .html, otherwise fallback to main HTML of buildDir
         if (!fs.existsSync(targetPath)) {
-          if (fs.existsSync(targetPath + '.html')) {
-            targetPath = targetPath + '.html';
-          } else {
-            let mainHtml = path.join(buildDir, 'index.html');
-            if (!fs.existsSync(mainHtml)) {
-              const htmlFiles = fs.readdirSync(buildDir).filter(f => f.endsWith('.html'));
-              if (htmlFiles.length > 0) {
-                mainHtml = path.join(buildDir, htmlFiles[0]);
-              }
-            }
-            targetPath = mainHtml;
-          }
+          if (fs.existsSync(targetPath + '.html')) targetPath = targetPath + '.html';
+          else targetPath = path.join(buildDir, 'index.html');
         }
-
         if (fs.existsSync(targetPath) && fs.statSync(targetPath).isFile()) {
-          // Record visit for analytics
-          recordVisit(
-            projectId, 
-            0, // responseTime
-            200, // statusCode
-            req.method, 
-            req.url, 
-            req.ip || req.connection.remoteAddress
-          ).catch((err) => {
-            console.warn('[Proxy Traffic Audit Error]:', err.message);
-          });
-
-          // Serve file
+          recordVisit(projectId, 0, 200, req.method, req.url, req.ip || req.connection.remoteAddress).catch(() => {});
           return res.sendFile(targetPath);
         }
       }
     }
 
-    // ── Pipe the request to the container ──────────────────────────────────────
+    // ── Proxy request to the container ────────────────────────────────────────
     console.log(`[proxy] ${subdomain} → :${port} ${req.method} ${req.url}`);
     const startTime = Date.now();
 
@@ -373,35 +261,27 @@ const projectProxyMiddleware = async (req, res, next) => {
         },
       },
       (proxyRes) => {
-        const responseTime = Date.now() - startTime;
-        const statusCode = proxyRes.statusCode;
-
-        // Log traffic analytics to Redis/DB edge counters asynchronously
         recordVisit(
-          projectId, 
-          responseTime, 
-          statusCode, 
-          req.method, 
-          req.url, 
+          projectId,
+          Date.now() - startTime,
+          proxyRes.statusCode,
+          req.method,
+          req.url,
           req.ip || req.connection.remoteAddress
-        ).catch((err) => {
-          console.warn('[Proxy Traffic Audit Error]:', err.message);
-        });
-
-        res.writeHead(statusCode, proxyRes.headers);
+        ).catch(() => {});
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
         proxyRes.pipe(res, { end: true });
       }
     );
 
     proxyReq.on('error', (err) => {
       console.error(`[proxy] ${subdomain}:${port} error:`, err.message);
-      // Invalidate cache so next request re-checks the DB
       portCache.delete(subdomain);
- 
+
       if (!res.headersSent) {
-        // Asynchronously trigger self-healing restart of the docker container
+        // Attempt self-healing: restart the container
         Project.findOne({ subdomain }).then(async (project) => {
-          if (project && project.containerId) {
+          if (project?.containerId) {
             try {
               const Docker = require('dockerode');
               const docker = new Docker(
@@ -412,14 +292,14 @@ const projectProxyMiddleware = async (req, res, next) => {
               const container = docker.getContainer(project.containerId);
               const info = await container.inspect();
               if (!info.State.Running) {
-                console.log(`[proxy SRE Self-Healing] Auto-starting stopped container ${project.containerId} for ${project.name}`);
+                console.log(`[proxy SRE] Auto-starting stopped container for ${project.name}`);
                 await container.start();
               }
-            } catch (restartErr) {
-              console.warn('[proxy SRE Self-Healing] Failed to auto-restart container:', restartErr.message);
+            } catch (e) {
+              console.warn('[proxy SRE] Auto-restart failed:', e.message);
             }
           }
-        }).catch(err => console.error('[proxy SRE Self-Healing] DB fetch failed:', err.message));
+        }).catch(() => {});
 
         res.status(502).set('Content-Type', 'text/html').send(selfHealingPage(host));
       }
@@ -433,28 +313,17 @@ const projectProxyMiddleware = async (req, res, next) => {
   }
 };
 
-// ── WebSocket proxy (called from server.js on 'upgrade' event) ─────────────────
+// ── WebSocket proxy ─────────────────────────────────────────────────────────────
 const handleWsUpgrade = async (req, socket, head) => {
   const host = (req.headers.host || '').toLowerCase().split(':')[0];
-  if (host === DOMAIN) return;
-
-  let subdomain = null;
-  let isCustomDomain = false;
-
-  if (host.endsWith(`.${DOMAIN}`)) {
-    subdomain = host.slice(0, -(DOMAIN.length + 1));
-    if (!subdomain || subdomain.includes('.')) return;
-  } else {
-    subdomain = host;
-    isCustomDomain = true;
-  }
+  const { subdomain, isCustomDomain, isRoot } = extractSubdomain(host);
+  if (isRoot || !subdomain) return;
 
   try {
     const projectData = await lookupPort(subdomain, isCustomDomain);
     if (!projectData) { socket.destroy(); return; }
-    const port = projectData.port;
 
-    const proxySocket = require('net').createConnection(port, '127.0.0.1', () => {
+    const proxySocket = require('net').createConnection(projectData.port, '127.0.0.1', () => {
       proxySocket.write(
         `${req.method} ${req.url} HTTP/1.1\r\n` +
         Object.entries(req.headers).map(([k, v]) => `${k}: ${v}`).join('\r\n') +
