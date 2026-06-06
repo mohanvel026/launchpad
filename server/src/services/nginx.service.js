@@ -87,9 +87,16 @@ const createNginxConfig = (subdomain, port, useSSL = false, customDomain = null)
   // Always route traffic through LaunchPad Node.js edge proxy on port 5000
   // to ensure full SRE observability, telemetry, analytics and auto-remediation!
   const proxyPort = 5000;
-  const isWildcard = DOMAIN.includes('nip.io') || DOMAIN.includes('sslip.io') || (customDomain && (customDomain.includes('nip.io') || customDomain.includes('sslip.io')));
+
+  // Prevent duplicate domain values in nginx config (such as when custom domain == default subdomain)
+  let actualCustomDomain = customDomain;
+  if (customDomain && customDomain.trim().toLowerCase() === `${subdomain}.${DOMAIN}`.toLowerCase()) {
+    actualCustomDomain = null;
+  }
+
+  const isWildcard = DOMAIN.includes('nip.io') || DOMAIN.includes('sslip.io') || (actualCustomDomain && (actualCustomDomain.includes('nip.io') || actualCustomDomain.includes('sslip.io')));
   const actualUseSSL = useSSL && !isWildcard;
-  const config  = actualUseSSL ? httpsTemplate(subdomain, proxyPort, customDomain) : httpTemplate(subdomain, proxyPort, customDomain);
+  const config  = actualUseSSL ? httpsTemplate(subdomain, proxyPort, actualCustomDomain) : httpTemplate(subdomain, proxyPort, actualCustomDomain);
   const lpFile  = path.join(LP_NGINX_DIR, `${subdomain}.conf`);
   const sysFile = path.join(NGINX_SITES,  `${subdomain}.conf`);
 

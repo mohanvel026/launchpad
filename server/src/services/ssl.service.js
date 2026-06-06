@@ -45,7 +45,10 @@ const provisionSSL = async (subdomain, customDomain = null) => {
     }
     const isCustomWildcardIpDomain = customDomain && (customDomain.includes('nip.io') || customDomain.includes('sslip.io'));
     if (customDomain && isCustomDomainOk && !isCustomWildcardIpDomain) {
-      domainArgs += `${domainArgs ? ' ' : ''}-d ${customDomain}`;
+      // Prevent duplicate domains in certbot args which cause Certbot to fail
+      if (customDomain.trim().toLowerCase() !== fullDomain.trim().toLowerCase()) {
+        domainArgs += `${domainArgs ? ' ' : ''}-d ${customDomain}`;
+      }
     }
 
     if (!domainArgs) {
