@@ -589,10 +589,17 @@ buildQueue.process(1, async (job) => {
             break;
           } catch (err) {
             runError = err;
-            if (attempt === 1 && (err.message.includes('name') || err.message.includes('already in use') || err.message.includes('Conflict'))) {
-              await log(`   ⏳ Container name conflict detected. Retrying force cleanup...`);
+            if (attempt === 1 && (
+              err.message.includes('name') || 
+              err.message.includes('already in use') || 
+              err.message.includes('Conflict') ||
+              err.message.includes('port') ||
+              err.message.includes('allocated') ||
+              err.message.includes('address already')
+            )) {
+              await log(`   ⏳ Container name or port bind conflict detected. Retrying force cleanup and delay release...`);
               try { await execAsync(`docker rm -f ${containerName}`); } catch {}
-              await new Promise(r => setTimeout(r, 1000)); // wait 1s for Docker name release
+              await new Promise(r => setTimeout(r, 1500)); // wait 1.5s for Docker port/name release
               continue;
             }
             break;

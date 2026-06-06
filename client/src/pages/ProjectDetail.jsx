@@ -26,12 +26,12 @@ const TABS = [
 
 function LogLine({ line }) {
   let cls = '';
-  if (/🤖|diagnosis|root cause|quick fix|detected issue|suggested commands|🛠️|💻|fix:/i.test(line) || /^\s*\$/i.test(line)) cls = 'lp-log-error';
-  else if (/✅|success|done|built|complete|ready/i.test(line)) cls = 'lp-log-success';
-  else if (/❌|error|failed|exit code [^0]/i.test(line)) cls = 'lp-log-error';
-  else if (/⚠️|warn/i.test(line)) cls = 'lp-log-warn';
-  else if (/📦|📝|🔍|🐳|phase|cloning|pulling|building/i.test(line)) cls = 'lp-log-step';
-  else if (/🚀|live|deployed/i.test(line)) cls = 'lp-log-info';
+  if (/🤖|diagnosis|root\s+cause|quick\s+fix|detected\s+issue|suggested\s+commands|🛠️|💻|\bfix:/i.test(line) || /^\s*\$/i.test(line)) cls = 'lp-log-error';
+  else if (/✅|\b(success|done|built|complete|ready)/i.test(line)) cls = 'lp-log-success';
+  else if (/❌|\b(error|failed|exit\s+code\s+[^0])/i.test(line)) cls = 'lp-log-error';
+  else if (/⚠️|\b(warn)/i.test(line)) cls = 'lp-log-warn';
+  else if (/📦|📝|🔍|🐳|\b(phase|cloning|pulling|building)/i.test(line)) cls = 'lp-log-step';
+  else if (/🚀|\b(live|deployed)/i.test(line)) cls = 'lp-log-info';
   return <div className={cls}>{line}</div>;
 }
 
