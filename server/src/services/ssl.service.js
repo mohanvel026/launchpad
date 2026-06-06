@@ -61,7 +61,7 @@ const provisionSSL = async (subdomain, customDomain = null) => {
     }
 
     execSync(
-      `certbot certonly --nginx ${domainArgs} --non-interactive --agree-tos ${emailArg} --expand`,
+      `sudo certbot certonly --nginx ${domainArgs} --non-interactive --agree-tos ${emailArg} --expand`,
       { stdio: 'pipe' }
     );
     console.log(`SSL certificate provisioned for ${domainArgs}`);
@@ -82,7 +82,7 @@ const revokeSSL = (subdomain) => {
   const domain     = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
   const fullDomain = `${subdomain}.${domain}`;
   try {
-    execSync(`certbot delete --cert-name ${fullDomain} --non-interactive`, { stdio: 'pipe' });
+    execSync(`sudo certbot delete --cert-name ${fullDomain} --non-interactive`, { stdio: 'pipe' });
     console.log(`SSL certificate revoked for ${fullDomain}`);
   } catch (err) {
     console.warn(`SSL revoke skipped:`, err.message.slice(0, 100));
@@ -92,7 +92,7 @@ const revokeSSL = (subdomain) => {
 // Renew all certs (called by cron job weekly)
 const renewAllSSL = () => {
   try {
-    execSync('certbot renew --quiet', { stdio: 'pipe' });
+    execSync('sudo certbot renew --quiet', { stdio: 'pipe' });
     console.log('SSL certificates renewed');
   } catch (err) {
     console.error('SSL renewal error:', err.message);
