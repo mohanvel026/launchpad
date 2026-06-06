@@ -151,4 +151,56 @@ const getContainerStats = async (containerId) => {
   }
 };
 
-module.exports = { buildImage, runContainer, stopContainer, removeImage, getContainerStats };
+
+/**
+ * Stop a container without removing it.
+ * @param {string} containerId
+ */
+const stopContainerOnly = async (containerId) => {
+  try {
+    const container = docker.getContainer(containerId);
+    const info = await container.inspect();
+    if (info.State.Running) {
+      await container.stop({ t: 10 });
+    }
+  } catch (err) {
+    console.warn(`stopContainerOnly: ${err.message}`);
+    throw err;
+  }
+};
+
+/**
+ * Start a stopped container.
+ * @param {string} containerId
+ */
+const startContainer = async (containerId) => {
+  try {
+    const container = docker.getContainer(containerId);
+    const info = await container.inspect();
+    if (!info.State.Running) {
+      await container.start();
+    }
+  } catch (err) {
+    console.warn(`startContainer: ${err.message}`);
+    throw err;
+  }
+};
+
+/**
+ * Restart a container.
+ * @param {string} containerId
+ */
+const restartContainer = async (containerId) => {
+  try {
+    const container = docker.getContainer(containerId);
+    await container.restart({ t: 10 });
+  } catch (err) {
+    console.warn(`restartContainer: ${err.message}`);
+    throw err;
+  }
+};
+
+module.exports = {
+  buildImage, runContainer, stopContainer, removeImage, getContainerStats,
+  stopContainerOnly, startContainer, restartContainer
+};

@@ -3,13 +3,16 @@ const { protect } = require('../middleware/auth.middleware');
 const {
   triggerDeploy, getDeployments, getDeployment,
   rollback, githubWebhook,
-  cancelDeploy, stopProject, startProject, restartProject,
+  cancelDeploy, stopProject, startProject, restartProject, getRecentActivity
 } = require('../controllers/deploy.controller');
 
 const router = express.Router();
 
 // GitHub calls this on every push — no auth, verified by signature
 router.post('/webhook', githubWebhook);
+
+// GET recent activity across all user projects
+router.get('/recent-activity',                    protect, getRecentActivity);
 
 // Manual deploy trigger
 router.post('/:projectId',                        protect, triggerDeploy);

@@ -2,7 +2,7 @@ const crypto     = require('crypto');
 const Deployment = require('../models/Deployment.model');
 const Project    = require('../models/Project.model');
 const buildQueue = require('../workers/build.worker');
-const { stopContainer, runContainer } = require('../services/docker.service');
+const { stopContainer, runContainer, stopContainerOnly, startContainer, restartContainer } = require('../services/docker.service');
 
 // ─── POST /api/deploy/webhook ─────────────────────────────────────────────────
 const githubWebhook = async (req, res) => {
@@ -115,7 +115,13 @@ const getDeployments = async (req, res) => {
 // ─── GET /api/deploy/:projectId/:deploymentId ─────────────────────────────────
 const getDeployment = async (req, res) => {
   try {
-    const deployment = await Deployment.findById(req.params.deploymentId)
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const deployment = await Deployment.findOne({ _id: req.params.deploymentId, project: project._id })
       .populate('triggeredBy', 'username avatarUrl');
     if (!deployment) return res.status(404).json({ message: 'Deployment not found' });
     res.json({ deployment });
@@ -127,7 +133,7 @@ const getDeployment = async (req, res) => {
 // ─── POST /api/deploy/:projectId/rollback/:deploymentId ──────────────────────
 const rollback = async (req, res) => {
   try {
-    const project = await Project.findOne({ _id: req.params.projectId, owner: req.user._id });
+    const project = await Project.findOne({ _id: req.params.projectId, $or: [{ owner: req.user._id }, { collaborators: req.user._id }] });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     const target = await Deployment.findOne({
@@ -212,7 +218,7 @@ const cancelDeploy = async (req, res) => {
   }
 };
 
-// ─── POST /api/deploy/:projectId/stop — stop a running container ─────────────
+// ─── POST /api/deploy/:projectId/stop — stop a running container (without remove) ───
 const stopProject = async (req, res) => {
   try {
     const project = await Project.findOne({
@@ -222,21 +228,7 @@ const stopProject = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
     if (!project.containerId) return res.status(400).json({ message: 'No container running for this project' });
 
-    // Stop but do NOT remove the container so we can restart it
-    const Docker = require('dockerode');
-    const docker = new Docker(
-      process.platform === 'win32'
-        ? { host: '127.0.0.1', port: 2375 }
-        : { socketPath: '/var/run/docker.sock' }
-    );
-    try {
-      const container = docker.getContainer(project.containerId);
-      const info = await container.inspect();
-      if (info.State.Running) await container.stop({ t: 10 });
-    } catch (dockerErr) {
-      console.warn('[stopProject] Docker stop error:', dockerErr.message);
-    }
-
+    await stopContainerOnly(project.containerId);
     await Project.findByIdAndUpdate(project._id, { status: 'stopped' });
     res.json({ message: 'Container stopped successfully', status: 'stopped' });
   } catch (err) {
@@ -254,21 +246,7 @@ const startProject = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
     if (!project.containerId) return res.status(400).json({ message: 'No container found. Please redeploy.' });
 
-    const Docker = require('dockerode');
-    const docker = new Docker(
-      process.platform === 'win32'
-        ? { host: '127.0.0.1', port: 2375 }
-        : { socketPath: '/var/run/docker.sock' }
-    );
-
-    try {
-      const container = docker.getContainer(project.containerId);
-      const info = await container.inspect();
-      if (!info.State.Running) await container.start();
-    } catch (dockerErr) {
-      return res.status(500).json({ message: `Failed to start container: ${dockerErr.message}` });
-    }
-
+    await startContainer(project.containerId);
     await Project.findByIdAndUpdate(project._id, { status: 'live' });
     res.json({ message: 'Container started successfully', status: 'live' });
   } catch (err) {
@@ -286,20 +264,7 @@ const restartProject = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
     if (!project.containerId) return res.status(400).json({ message: 'No container found. Please redeploy.' });
 
-    const Docker = require('dockerode');
-    const docker = new Docker(
-      process.platform === 'win32'
-        ? { host: '127.0.0.1', port: 2375 }
-        : { socketPath: '/var/run/docker.sock' }
-    );
-
-    try {
-      const container = docker.getContainer(project.containerId);
-      await container.restart({ t: 10 });
-    } catch (dockerErr) {
-      return res.status(500).json({ message: `Failed to restart container: ${dockerErr.message}` });
-    }
-
+    await restartContainer(project.containerId);
     await Project.findByIdAndUpdate(project._id, { status: 'live' });
     res.json({ message: 'Container restarted successfully', status: 'live' });
   } catch (err) {
@@ -307,7 +272,30 @@ const restartProject = async (req, res) => {
   }
 };
 
+// ─── GET /api/deploy/recent-activity — get recent deployments across all user projects ───
+const getRecentActivity = async (req, res) => {
+  try {
+    const projects = await Project.find({
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
+    }).select('_id name');
+
+    const projectIds = projects.map(p => p._id);
+
+    const deployments = await Deployment.find({ project: { $in: projectIds } })
+      .sort({ createdAt: -1 })
+      .limit(15)
+      .populate('triggeredBy', 'username avatarUrl')
+      .populate('project', 'name')
+      .select('-logs');
+
+    res.json({ deployments });
+  } catch (err) {
+    console.error('[Recent Activity]', err.message);
+    res.status(500).json({ message: 'Failed to fetch recent activity', error: err.message });
+  }
+};
+
 module.exports = {
   githubWebhook, triggerDeploy, getDeployments, getDeployment, rollback,
-  cancelDeploy, stopProject, startProject, restartProject,
+  cancelDeploy, stopProject, startProject, restartProject, getRecentActivity,
 };

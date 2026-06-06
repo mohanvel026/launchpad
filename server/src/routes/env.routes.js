@@ -32,29 +32,26 @@ router.post('/:projectId/bulk', protect, async (req, res) => {
       return res.status(400).json({ message: 'vars must be a non-empty array of { key, value }' });
     }
 
-    const EnvVar      = require('../models/EnvVar.model');
-    const crypto      = require('crypto');
-    const ALGO        = 'aes-256-cbc';
-    const ENC_KEY     = Buffer.from(process.env.ENCRYPTION_KEY || 'x'.repeat(32)).slice(0, 32);
+    // Use the SAME encryption as env.controller.js (CryptoJS.AES) so vars
+    // saved here are readable by the build worker's decryptValue helper.
+    const CryptoJS = require('crypto-js');
+    const EnvVar   = require('../models/EnvVar.model');
 
-    const encrypt = (val) => {
-      const iv = crypto.randomBytes(16);
-      const cipher = crypto.createCipheriv(ALGO, ENC_KEY, iv);
-      const encrypted = Buffer.concat([cipher.update(String(val), 'utf8'), cipher.final()]);
-      return iv.toString('hex') + ':' + encrypted.toString('hex');
-    };
+    const encrypt = (val) =>
+      CryptoJS.AES.encrypt(String(val), process.env.ENCRYPTION_KEY).toString();
 
     let created = 0, updated = 0;
     const results = [];
 
     for (const { key, value } of vars) {
       if (!key || typeof key !== 'string') continue;
-      const trimmedKey = key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+      // Normalise: uppercase, only A-Z 0-9 underscore
+      const trimmedKey = key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/^_+|_+$/g, '');
       if (!trimmedKey) continue;
 
       const encryptedValue = encrypt(value || '');
-      const existing = await EnvVar.findOne({ project: project._id, key: trimmedKey });
 
+      const existing = await EnvVar.findOne({ project: project._id, key: trimmedKey });
       if (existing) {
         await EnvVar.findByIdAndUpdate(existing._id, { value: encryptedValue });
         updated++;
@@ -71,6 +68,7 @@ router.post('/:projectId/bulk', protect, async (req, res) => {
     res.status(500).json({ message: 'Bulk import failed', error: err.message });
   }
 });
+
 
 // GET /api/env/:projectId/ai-scan  — scan repo for missing env var references
 router.get('/:projectId/ai-scan', protect, async (req, res) => {

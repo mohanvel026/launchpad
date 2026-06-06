@@ -25,20 +25,16 @@ export default function Dashboard() {
     }
   }, [user, loading]);
 
-  const loadActivity = async (projectList) => {
-    const list = projectList || projects;
-    if (!list.length) return;
+  const loadActivity = async () => {
     setActivityLoading(true);
     try {
-      const results = await Promise.allSettled(
-        list.map(p => api.get('/deploy/' + p._id).then(r => (r.data.deployments || []).slice(0, 3).map(d => ({ ...d, projectName: p.name, projectId: p._id }))))
-      );
-      const all = results
-        .filter(r => r.status === 'fulfilled')
-        .flatMap(r => r.value)
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        .slice(0, 15);
-      setRecentActivity(all);
+      const res = await api.get('/deploy/recent-activity');
+      const mapped = (res.data.deployments || []).map(d => ({
+        ...d,
+        projectId: d.project?._id,
+        projectName: d.project?.name
+      }));
+      setRecentActivity(mapped);
     } catch (e) {
       console.error(e);
     } finally {
@@ -47,10 +43,10 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (activeTab === 'Activity' && recentActivity.length === 0 && projects.length > 0) {
-      loadActivity(projects);
+    if (activeTab === 'Activity' && recentActivity.length === 0) {
+      loadActivity();
     }
-  }, [activeTab, projects]);
+  }, [activeTab]);
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -341,7 +337,7 @@ export default function Dashboard() {
                 <button
                   className="lp-btn-secondary"
                   style={{ padding: '6px 14px', fontSize: 12 }}
-                  onClick={() => loadActivity(projects)}
+                  onClick={() => loadActivity()}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>

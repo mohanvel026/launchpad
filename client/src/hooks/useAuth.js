@@ -6,13 +6,17 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     const token = localStorage.getItem('lp_token');
     if (!token) { setLoading(false); return; }
 
     api.get('/auth/me')
-      .then((res) => setUser(res.data.user))
-      .catch(() => localStorage.removeItem('lp_token'))
-      .finally(() => setLoading(false));
+      .then((res) => { if (!cancelled) setUser(res.data.user); })
+      .catch(() => { if (!cancelled) localStorage.removeItem('lp_token'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    // Cleanup: prevent state updates after unmount
+    return () => { cancelled = true; };
   }, []);
 
   const logout = () => {

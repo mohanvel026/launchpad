@@ -951,11 +951,11 @@ export default function ProjectDetail() {
                             <span style={{ fontWeight: 600, fontSize: 14 }}>{dep.commitMessage || 'Manual Deploy'}</span>
                             <span className={`lp-badge ${dep.status}`} style={{ fontSize: 11 }}>{dep.status}</span>
                             {isProduction && <span className="lp-badge live" style={{ fontSize: 10 }}>⚡ Production</span>}
-                            {dep.isAutoHeal && <span className="lp-badge" style={{ fontSize: 10, background: 'rgba(56,189,248,0.1)', color: 'var(--accent-info)', border: '1px solid rgba(56,189,248,0.2)' }} title={dep.autoHealFixDescription}>🤖 AI Healed</span>}
+                            {dep.isAutoHeal && <span className="lp-badge" style={{ fontSize: 10, background: 'rgba(56,189,248,0.1)', color: 'var(--accent-primary)', border: '1px solid rgba(56,189,248,0.2)' }} title={dep.autoHealFixDescription}>🤖 AI Healed</span>}
                             {dep.rollbackFrom && <span className="lp-badge" style={{ fontSize: 10, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)' }}>🔄 Rollback</span>}
                           </div>
                           <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {dep.commitSha && <span style={{ background: 'var(--bg-hover)', padding: '1px 6px', borderRadius: 4 }}>{dep.commitSha.slice(0, 7)}</span>}
+                            {dep.commitSha && <span style={{ background: 'rgba(255,255,255,0.05)', padding: '1px 6px', borderRadius: 4 }}>{dep.commitSha.slice(0, 7)}</span>}
                             {dep.branch && <span>↳ {dep.branch}</span>}
                             {dur && <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>⏱ {dur}</span>}
                             <span>{new Date(dep.createdAt).toLocaleString()}</span>
@@ -992,7 +992,7 @@ export default function ProjectDetail() {
             {activeDeployment && activeDeployment.isAutoHeal && activeDeployment.autoHealDiff && (
               <div className="lp-card glass" style={{ 
                 padding: '20px 24px', 
-                borderLeft: '4px solid var(--accent-info)',
+                borderLeft: '4px solid var(--accent-primary)',
                 background: 'rgba(56, 189, 248, 0.04)',
                 borderRadius: 16
               }}>
@@ -1064,13 +1064,13 @@ export default function ProjectDetail() {
                               height: 10,
                               borderRadius: '50%',
                               background: color,
-                              border: '2px solid var(--bg-primary)',
+                              border: '2px solid var(--bg-main)',
                               boxShadow: `0 0 8px ${color}`
                             }} />
                             
                             <div style={{ flex: 1 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{step.step}</span>
+                                <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-main)' }}>{step.step}</span>
                                 <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
                                   {new Date(step.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                                 </span>
@@ -1211,7 +1211,9 @@ export default function ProjectDetail() {
                     style={{ fontFamily: 'var(--font-mono)', fontSize: 12, height: 140 }}
                   />
                   <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-                    <button className="lp-btn-primary" onClick={handleBulkImport}>Import All</button>
+                    <button className="lp-btn-primary" onClick={handleBulkImport} disabled={bulkImporting}>
+                      {bulkImporting ? 'Importing...' : 'Import All'}
+                    </button>
                     <button className="lp-btn-secondary" onClick={() => { setShowBulk(false); setBulkEnv(''); }}>Cancel</button>
                   </div>
                 </div>
@@ -1267,6 +1269,9 @@ export default function ProjectDetail() {
                 <div className="flex-between" style={{ paddingTop: 8 }}>
                   {saveStatus === 'saved' && <div className="lp-status-bar success" style={{ padding: '6px 14px', fontSize: 12 }}>✓ Settings saved</div>}
                   {saveStatus === 'error' && <div className="lp-status-bar error" style={{ padding: '6px 14px', fontSize: 12 }}>Failed to save</div>}
+                  {saveStatus && saveStatus !== 'saved' && saveStatus !== 'error' && saveStatus !== 'saving' && (
+                    <div className="lp-status-bar success" style={{ padding: '6px 14px', fontSize: 12 }}>{saveStatus}</div>
+                  )}
                   {!saveStatus && <div />}
                   <button className="lp-btn-primary" onClick={handleSaveSettings} disabled={saveStatus === 'saving'}>
                     {saveStatus === 'saving' ? 'Saving...' : 'Save Changes'}
@@ -1363,7 +1368,7 @@ export default function ProjectDetail() {
 
             <div className="lp-card glass" style={{ 
               padding: 28,
-              borderLeft: '4px solid var(--accent-info)',
+              borderLeft: '4px solid var(--accent-primary)',
               background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, rgba(129, 140, 248, 0.02) 100%)'
             }}>
               <h3 style={{ fontSize: 16, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1381,7 +1386,7 @@ export default function ProjectDetail() {
                       type="checkbox" 
                       checked={settings.autoHeal} 
                       onChange={e => setSettings(s => ({ ...s, autoHeal: e.target.checked }))}
-                      style={{ width: 40, height: 20, accentColor: 'var(--accent-info)', cursor: 'pointer' }}
+                      style={{ width: 40, height: 20, accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
                     />
                   </label>
                 </div>
@@ -1393,7 +1398,7 @@ export default function ProjectDetail() {
                       value={settings.autoHealStrategy}
                       onChange={e => setSettings(s => ({ ...s, autoHealStrategy: e.target.value }))}
                       className="lp-input"
-                      style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                      style={{ background: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border)' }}
                     >
                       <option value="push-on-success">Push on Success (Recommended)</option>
                       <option value="pr">Create Pull Request (PR)</option>
@@ -1520,13 +1525,13 @@ export default function ProjectDetail() {
                       { label: 'Avg CPU Usage', value: `${costData.avgCpuPercent}%`, color: 'var(--accent-primary)' },
                       { label: 'Avg RAM Usage', value: `${costData.avgRamMB} MB`, color: 'var(--accent-secondary)' },
                     ].map(s => (
-                      <div key={s.label} style={{ padding: '16px 20px', background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                      <div key={s.label} style={{ padding: '16px 20px', background: 'var(--bg-surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
                         <div className="lp-section-label">{s.label}</div>
                         <div style={{ fontSize: 24, fontWeight: 800, color: s.color, marginTop: 4 }}>{s.value}</div>
                       </div>
                     ))}
                   </div>
-                  <div style={{ background: 'var(--bg-secondary)', borderRadius: 12, padding: 16, marginBottom: 12 }}>
+                  <div style={{ background: 'var(--bg-surface)', borderRadius: 12, padding: 16, marginBottom: 12 }}>
                     <div className="lp-section-label" style={{ marginBottom: 8 }}>COST BREAKDOWN</div>
                     <div style={{ display: 'flex', gap: 24, fontSize: 13, color: 'var(--text-muted)' }}>
                       <span>Base: <strong style={{ color: 'var(--text-main)' }}>${costData.breakdown?.base}</strong></span>
@@ -1573,7 +1578,7 @@ export default function ProjectDetail() {
                       { label: 'Total Builds', value: buildTrends.totalBuilds || 0, color: 'var(--text-main)' },
                       { label: 'Trend', value: buildTrends.trend === 'improving' ? '↑ Improving' : buildTrends.trend === 'degrading' ? '↓ Degrading' : '→ Stable', color: buildTrends.trend === 'improving' ? '#34d399' : buildTrends.trend === 'degrading' ? '#f87171' : '#fbbf24' },
                     ].map(s => (
-                      <div key={s.label} style={{ padding: '16px 20px', background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                      <div key={s.label} style={{ padding: '16px 20px', background: 'var(--bg-surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
                         <div className="lp-section-label">{s.label}</div>
                         <div style={{ fontSize: 24, fontWeight: 800, color: s.color, marginTop: 4 }}>{s.value}</div>
                       </div>
@@ -1647,7 +1652,7 @@ export default function ProjectDetail() {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                       {vulnData.packages?.map(pkg => (
-                        <div key={pkg.name} style={{ background: 'var(--bg-secondary)', borderRadius: 12, padding: '16px 20px', border: '1px solid var(--border)' }}>
+                        <div key={pkg.name} style={{ background: 'var(--bg-surface)', borderRadius: 12, padding: '16px 20px', border: '1px solid var(--border)' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 14 }}>{pkg.name}</span>
@@ -1656,7 +1661,7 @@ export default function ProjectDetail() {
                             <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{pkg.vulns.length} issue{pkg.vulns.length !== 1 ? 's' : ''}</span>
                           </div>
                           {pkg.vulns.map(v => (
-                            <div key={v.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 8, padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 8, border: `1px solid ${{ critical: 'rgba(248,113,113,0.3)', high: 'rgba(251,146,60,0.3)', medium: 'rgba(251,191,36,0.3)', low: 'rgba(52,211,153,0.2)' }[v.severity] || 'var(--border)'}` }}>
+                            <div key={v.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 8, padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 8, border: `1px solid ${{ critical: 'rgba(248,113,113,0.3)', high: 'rgba(251,146,60,0.3)', medium: 'rgba(251,191,36,0.3)', low: 'rgba(52,211,153,0.2)' }[v.severity] || 'var(--border)'}` }}>
                               <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700, background: { critical: 'rgba(248,113,113,0.2)', high: 'rgba(251,146,60,0.2)', medium: 'rgba(251,191,36,0.2)', low: 'rgba(52,211,153,0.15)' }[v.severity], color: { critical: '#f87171', high: '#fb923c', medium: '#fbbf24', low: '#34d399' }[v.severity], flexShrink: 0, textTransform: 'uppercase' }}>{v.severity}</span>
                               <div style={{ flex: 1 }}>
                                 <div style={{ fontSize: 13, color: 'var(--text-main)', marginBottom: 2 }}>{v.summary}</div>
@@ -1843,7 +1848,7 @@ export default function ProjectDetail() {
               {readiness && !readinessLoading && (
                 <div>
                   {/* Score Display */}
-                  <div style={{ display: 'flex', gap: 32, alignItems: 'center', marginBottom: 28, padding: '24px 28px', background: 'var(--bg-secondary)', borderRadius: 16, border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', gap: 32, alignItems: 'center', marginBottom: 28, padding: '24px 28px', background: 'var(--bg-surface)', borderRadius: 16, border: '1px solid var(--border)' }}>
                     {/* Animated score circle */}
                     <div style={{ position: 'relative', width: 100, height: 100, flexShrink: 0 }}>
                       <svg width="100" height="100" viewBox="0 0 100 100">

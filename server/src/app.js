@@ -87,8 +87,25 @@ connectDB().then(() => {
 
 // ── Security / logging (these don't consume the body, so they go first) ───────
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: '*', credentials: true }));
-if (process.env.NODE_ENV !== 'production') app.use(morgan('tiny'));
+app.use(cors({
+  origin: ['https://launchlive.in', 'http://localhost:5173', 'http://localhost:4173'],
+  credentials: true,
+}));
+if (process.env.NODE_ENV !== 'production') {
+  app.use(morgan('tiny'));
+} else {
+  // In production only log 4xx/5xx so errors are visible without noise
+  app.use(morgan('combined', { skip: (req, res) => res.statusCode < 400 }));
+}
+
+// ── Auth rate limiter (brute-force protection) ─────────────────────────────────
+const rateLimit = require('express-rate-limit');
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  message: { message: 'Too many requests, please try again later.' },
+});
+app.use('/api/auth', authLimiter);
 
 // ── Project subdomain proxy — MUST be before body parsers ─────────────────────
 // When the Host header is a project subdomain (e.g. portfolio-xyz.nip.io),
@@ -117,7 +134,7 @@ app.use('/api/previews', previewRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
 
-// ── Serve LaunchPad React dashboard (SPA fallback) ────────────────────────────
+// ── Serve LaunchLive React dashboard (SPA fallback) ────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
 
 // Long-term immutable cache for hashed JS/CSS/font bundles (Vite adds content hashes)
@@ -134,7 +151,8 @@ app.use(express.static(clientDist, {
   }
 }));
 
-app.get(/(.*)/, (req, res) => {
+// Exclude /api/* routes so a missing API endpoint doesn't silently return index.html
+app.get(/^\/(?!api).*$/, (req, res) => {
   res.sendFile(path.join(clientDist, 'index.html'));
 });
 

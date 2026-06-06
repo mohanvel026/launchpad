@@ -10,7 +10,7 @@ const router = express.Router();
 router.get('/github', (req, res) => {
   const params = new URLSearchParams({
     client_id:    process.env.GITHUB_CLIENT_ID,
-    scope:        'repo,user:email,admin:repo_hook',
+    scope:        'repo,user:email,write:repo_hook',
   });
   const url = `https://github.com/login/oauth/authorize?${params.toString()}`;
   res.redirect(url);

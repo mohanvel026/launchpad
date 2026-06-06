@@ -1,5 +1,6 @@
 const { execSync } = require('child_process');
 const { inspectRuntimeLogs } = require('./ai.service');
+const { restartContainer } = require('./docker.service');
 
 // In-memory store for active monitors: { projectId: { intervalId, lastScore, alerts } }
 const monitors = new Map();
@@ -56,7 +57,7 @@ function startMonitoring(project) {
         if (!prevRecovery || (now - new Date(prevRecovery).getTime()) > 5 * 60 * 1000) {
           console.warn(`[HealthMonitor] 🔴 Critical health (${healthScore}) for project ${projectId}. Auto-restarting container...`);
           try {
-            execSync(`docker restart ${containerId}`, { timeout: 30000, stdio: 'pipe' });
+            await restartContainer(containerId);
             console.log(`[HealthMonitor] ✅ Container ${containerId} restarted successfully.`);
             monitors.set(String(projectId), {
               ...monitors.get(String(projectId)) || {},

@@ -53,10 +53,16 @@ const resetProjectAnalytics = async (req, res) => {
 // GET /api/analytics/:projectId/build-trends
 const getBuildTrends = async (req, res) => {
   try {
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
     const Deployment = require('../models/Deployment.model');
     const { analyzeBuildTrends } = require('../services/ai.service');
 
-    const deployments = await Deployment.find({ project: req.params.projectId })
+    const deployments = await Deployment.find({ project: project._id })
       .sort({ createdAt: -1 })
       .limit(50)
       .select('status duration createdAt branch commitMessage isAutoHeal');

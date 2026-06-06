@@ -357,7 +357,10 @@ const resizeResourceLimits = async (req, res) => {
 // ─── POST /api/projects/:id/readiness ───────────────────────────────────────────────
 const deploymentReadinessCheck = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     const path = require('path');
