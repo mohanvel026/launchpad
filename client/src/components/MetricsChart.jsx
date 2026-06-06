@@ -41,6 +41,37 @@ export default function MetricsChart({ projectId }) {
   const [project, setProject] = useState(null);
   const socketRef = useRef(null);
 
+  // AI Health Telemetry monitor states
+  const [healthStatus, setHealthStatus] = useState(null);
+  const [loadingHealth, setLoadingHealth] = useState(false);
+
+  const fetchHealthStatus = async () => {
+    try {
+      const res = await api.get(`/health/${projectId}`);
+      setHealthStatus(res.data);
+    } catch (err) {
+      console.error('[MetricsChart] Error fetching health status:', err);
+    }
+  };
+
+  const handleAckAlerts = async () => {
+    setLoadingHealth(true);
+    try {
+      await api.post(`/health/${projectId}/ack`);
+      await fetchHealthStatus();
+    } catch (err) {
+      console.error('[MetricsChart] Error acknowledging alerts:', err);
+    } finally {
+      setLoadingHealth(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHealthStatus();
+    const interval = setInterval(fetchHealthStatus, 20000); // Poll health status every 20s
+    return () => clearInterval(interval);
+  }, [projectId]);
+
   useEffect(() => {
     api.get(`/projects/${projectId}`)
       .then((r) => setProject(r.data.project))
@@ -82,6 +113,75 @@ export default function MetricsChart({ projectId }) {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 24 }}>
+      
+      {/* 🧠 AI Runtime Health Telemetry (Full Width) */}
+      {healthStatus && (
+        <div className="lp-card glass" style={{ gridColumn: '1 / -1', padding: 32, borderLeft: '4px solid var(--accent-primary)', background: 'linear-gradient(135deg, rgba(56,189,248,0.04) 0%, rgba(129,140,248,0.01) 100%)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
+            <div>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10, fontSize: 18 }}>
+                🧠 AI Runtime Health Telemetry
+              </h3>
+              <p className="text-muted" style={{ margin: '6px 0 0', fontSize: 13 }}>
+                Continuous logs and container anomaly scanning with automated remediation.
+              </p>
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ padding: '6px 16px', borderRadius: 30, background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Health Score:</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: healthStatus.lastScore >= 80 ? '#10b981' : healthStatus.lastScore >= 50 ? '#fbbf24' : '#ef4444' }}>
+                  {healthStatus.lastScore ?? 100} / 100
+                </span>
+              </div>
+              <div style={{ padding: '6px 16px', borderRadius: 30, background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: healthStatus.isHealthy ? '#10b981' : '#ef4444', boxShadow: `0 0 6px ${healthStatus.isHealthy ? '#10b981' : '#ef4444'}` }}></span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-main)' }}>
+                  {healthStatus.isHealthy ? 'HEALTHY' : 'ANOMALY DETECTED'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Anomalies and alerts list */}
+          {healthStatus.anomalies && healthStatus.anomalies.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ padding: '14px 20px', borderRadius: 12, background: 'rgba(239, 68, 68, 0.03)', border: '1px solid rgba(239, 68, 68, 0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                <div style={{ fontSize: 13, color: '#ef4444', fontWeight: 600 }}>
+                  ⚠️ {healthStatus.anomalies.length} runtime anomaly/anomalies detected! Auto-recovery cooldown active.
+                </div>
+                <button className="lp-btn-secondary" style={{ padding: '6px 14px', fontSize: 12, color: 'var(--text-main)', border: '1px solid rgba(255, 255, 255, 0.1)', background: 'transparent', height: 'auto', width: 'auto' }} onClick={handleAckAlerts} disabled={loadingHealth}>
+                  {loadingHealth ? 'Clearing...' : '✓ Acknowledge & Clear Alerts'}
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                {healthStatus.anomalies.map((a, idx) => (
+                  <div key={idx} className="glass" style={{ padding: 18, borderRadius: 12, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: a.severity === 'critical' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)', color: a.severity === 'critical' ? '#ef4444' : '#fbbf24' }}>
+                        {a.type || 'Anomaly'}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{a.severity?.toUpperCase()}</span>
+                    </div>
+                    <p style={{ margin: '0 0 12px 0', fontSize: 13, color: 'var(--text-main)', lineHeight: 1.5 }}>{a.message}</p>
+                    {a.fix && (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: 10 }}>
+                        <strong style={{ color: 'var(--accent-primary)' }}>AI Fix:</strong> {a.fix}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderRadius: 12, background: 'rgba(16, 185, 129, 0.02)', border: '1px solid rgba(16, 185, 129, 0.15)', fontSize: 13, color: '#10b981' }}>
+              <span>✓</span> AI Continuous Health Scan is running. No runtime anomalies or errors detected in the last 90 seconds.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* CPU Usage */}
       <div className="lp-card glass" style={{ padding: 32 }}>
         <div className="flex-between" style={{ marginBottom: 24 }}>
