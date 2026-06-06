@@ -1027,6 +1027,207 @@ Do not include markdown blocks or extra text around the JSON object.`;
   }
 };
 
+// ─── Feature 12: Deployment Readiness Advisor ──────────────────────────────────
+/**
+ * Pre-deploy health check: scores the repository 0-100 and returns a checklist.
+ * Returns: { score, checks: [{ name, passed, recommendation, severity }] }
+ */
+const generateDeploymentReadinessReport = async (repoPath, stack) => {
+  const fs = require('fs');
+  const path = require('path');
+
+  // Run local static checks first (fast, no AI needed)
+  const checks = [];
+
+  // 1. Check for health endpoint
+  let hasHealthEndpoint = false;
+  try {
+    const dirs = ['server', 'backend', '.'].map(d => path.join(repoPath, d));
+    for (const dir of dirs) {
+      if (!fs.existsSync(dir)) continue;
+      const files = fs.readdirSync(dir).filter(f => /\.(js|ts)$/.test(f));
+      for (const file of files.slice(0, 10)) {
+        const content = fs.readFileSync(path.join(dir, file), 'utf8');
+        if (/\/health|\/ping|\/status/i.test(content)) { hasHealthEndpoint = true; break; }
+      }
+      if (hasHealthEndpoint) break;
+    }
+  } catch {}
+  checks.push({ name: 'Health Endpoint', passed: hasHealthEndpoint, severity: 'medium', recommendation: hasHealthEndpoint ? 'Good — health endpoint detected.' : 'Add a GET /health route that returns 200 OK for container health probing.' });
+
+  // 2. Check for error handling middleware
+  let hasErrorHandling = false;
+  try {
+    const appFiles = ['app.js', 'server.js', 'index.js'].map(f => path.join(repoPath, f));
+    for (const f of appFiles) {
+      if (fs.existsSync(f)) {
+        const c = fs.readFileSync(f, 'utf8');
+        if (/app\.use.*err.*req.*res.*next|express.*error/i.test(c)) { hasErrorHandling = true; break; }
+      }
+    }
+  } catch {}
+  checks.push({ name: 'Error Handling Middleware', passed: hasErrorHandling, severity: 'high', recommendation: hasErrorHandling ? 'Good — error handler detected.' : 'Add an Express error-handler: app.use((err, req, res, next) => res.status(500).json({ error: err.message }))' });
+
+  // 3. Check for .env.example or documented env vars
+  const hasEnvExample = ['.env.example', '.env.sample', 'env.example'].some(f => fs.existsSync(path.join(repoPath, f)));
+  checks.push({ name: '.env.example File', passed: hasEnvExample, severity: 'low', recommendation: hasEnvExample ? 'Good — .env.example present.' : 'Create a .env.example documenting all required environment variables.' });
+
+  // 4. Check for package.json scripts (start, build)
+  let hasStartScript = false, hasBuildScript = false;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(repoPath, 'package.json'), 'utf8'));
+    hasStartScript = !!(pkg.scripts?.start || pkg.scripts?.['node:start']);
+    hasBuildScript = !!(pkg.scripts?.build);
+  } catch {}
+  const needsBuild = ['react', 'vue', 'next', 'nuxt', 'svelte', 'angular', 'astro'].includes(stack);
+  checks.push({ name: 'Start Script (package.json)', passed: hasStartScript || stack === 'static', severity: 'critical', recommendation: hasStartScript ? 'Good — start script detected.' : 'Add "start": "node server.js" to package.json scripts.' });
+  if (needsBuild) {
+    checks.push({ name: 'Build Script (package.json)', passed: hasBuildScript, severity: 'high', recommendation: hasBuildScript ? 'Good — build script detected.' : 'Add "build" script to package.json for production bundling.' });
+  }
+
+  // 5. Check for helmet / security headers
+  let hasHelmet = false;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(repoPath, 'package.json'), 'utf8'));
+    hasHelmet = !!(pkg.dependencies?.helmet || pkg.devDependencies?.helmet);
+  } catch {}
+  if (['node', 'mern', 'fullstack-split'].includes(stack)) {
+    checks.push({ name: 'Security Headers (helmet)', passed: hasHelmet, severity: 'medium', recommendation: hasHelmet ? 'Good — helmet is configured.' : 'Install helmet: npm install helmet and add app.use(helmet()) to your Express app.' });
+  }
+
+  const passed = checks.filter(c => c.passed).length;
+  const total = checks.length;
+  const criticalFails = checks.filter(c => !c.passed && c.severity === 'critical').length;
+  const highFails = checks.filter(c => !c.passed && c.severity === 'high').length;
+  let score = Math.round((passed / total) * 100);
+  if (criticalFails > 0) score = Math.min(score, 40);
+  else if (highFails > 0) score = Math.min(score, 70);
+
+  return { score, checks, passed, total };
+};
+
+// ─── Feature 13: Runtime Health AI Analyzer ─────────────────────────────────
+/**
+ * Analyzes runtime logs and container metrics for anomalies.
+ * Returns: { score: 0-100, status: 'healthy'|'degraded'|'critical', anomalies[], recommendation }
+ */
+const analyzeRuntimeHealth = async (logs, metrics, stack = 'unknown') => {
+  const systemPrompt = `You are an expert SRE observing live production container telemetry and logs.
+Detect anomalies: memory leaks (RAM climbing without GC drops), crash loops (repeated exits), high CPU throttling, unhandled exceptions, or connection failures.
+
+Respond ONLY with valid JSON:
+{
+  "score": <0-100 health score>,
+  "status": "healthy" | "degraded" | "critical",
+  "anomalies": [
+    { "type": "MemoryLeak" | "CrashLoop" | "HighCPU" | "UnhandledException" | "ConnectionFailure" | "SlowResponse", "severity": "critical" | "warning", "message": "Specific finding.", "fix": "Actionable fix." }
+  ],
+  "recommendation": "One-sentence summary recommendation."
+}
+
+If no issues, return score: 100, status: 'healthy', anomalies: []. No markdown.`;
+
+  const metricsStr = metrics ? `CPU: ${metrics.cpu}%, RAM: ${metrics.memMB}MB / ${metrics.memLimit}MB (${metrics.memPct}%)` : 'No live metrics available.';
+  const safeLogs = (logs || '').slice(0, 4000);
+
+  const raw = await callAI(systemPrompt, `Stack: ${stack}\nMetrics: ${metricsStr}\nRuntime Logs:\n${safeLogs}`, 600, true);
+  if (!raw) return { score: 100, status: 'healthy', anomalies: [], recommendation: 'AI telemetry offline.' };
+
+  try {
+    const parsed = JSON.parse(raw.replace(/^```json/, '').replace(/```$/, '').trim());
+    return {
+      score: parsed.score ?? 100,
+      status: parsed.status || 'healthy',
+      anomalies: Array.isArray(parsed.anomalies) ? parsed.anomalies : [],
+      recommendation: parsed.recommendation || 'System looks healthy.'
+    };
+  } catch { return { score: 100, status: 'healthy', anomalies: [], recommendation: 'Parse error — treating as healthy.' }; }
+};
+
+// ─── Feature 14: Cost Estimator ──────────────────────────────────────────────
+/**
+ * Estimates monthly VPS cost from CPU/RAM usage history.
+ * Returns: { currentMonthlyCostUSD, projectedCostUSD, breakdown, recommendations[] }
+ */
+const estimateMonthlyCost = async (metricsHistory = [], project = {}) => {
+  // Base VPS cost assumptions (Oracle Free Tier / equivalent)
+  const BASE_VPS_COST = 6.0; // USD/month for 1 OCPU 6GB VPS
+  const CPU_PRICE_PER_OCPU = 4.0; // USD/month per OCPU
+  const RAM_PRICE_PER_GB = 0.5; // USD/month per GB
+
+  const avgCpu = metricsHistory.length > 0
+    ? metricsHistory.reduce((a, m) => a + (m.cpu || 0), 0) / metricsHistory.length
+    : 5;
+  const avgRam = metricsHistory.length > 0
+    ? metricsHistory.reduce((a, m) => a + (m.memMB || 0), 0) / metricsHistory.length
+    : 128;
+
+  const cpuCost = (project.cpuLimit || 0.5) * CPU_PRICE_PER_OCPU;
+  const ramCost = ((project.ramLimitMB || 256) / 1024) * RAM_PRICE_PER_GB * 30;
+  const currentCost = parseFloat((BASE_VPS_COST * 0.3 + cpuCost + ramCost).toFixed(2));
+
+  // Growth projection (assume 20% monthly traffic growth)
+  const projectedCost = parseFloat((currentCost * 1.2).toFixed(2));
+
+  const recommendations = [];
+  if ((project.cpuLimit || 0.5) > 0.5 && avgCpu < 20) {
+    recommendations.push(`CPU is ${avgCpu.toFixed(1)}% avg — downsize to 0.25 CPU to save ~$${(CPU_PRICE_PER_OCPU * 0.25).toFixed(2)}/mo.`);
+  }
+  if ((project.ramLimitMB || 256) > 256 && avgRam < 100) {
+    recommendations.push(`RAM usage is ${avgRam.toFixed(0)}MB avg — downsize to 256MB to save ~$${(RAM_PRICE_PER_GB * 0.25).toFixed(2)}/mo.`);
+  }
+  if (recommendations.length === 0) {
+    recommendations.push('Resource allocation looks optimal for current usage.');
+  }
+
+  return {
+    currentMonthlyCostUSD: currentCost,
+    projectedCostUSD: projectedCost,
+    breakdown: {
+      base: parseFloat((BASE_VPS_COST * 0.3).toFixed(2)),
+      cpu: parseFloat(cpuCost.toFixed(2)),
+      ram: parseFloat(ramCost.toFixed(2)),
+    },
+    avgCpuPercent: parseFloat(avgCpu.toFixed(1)),
+    avgRamMB: parseFloat(avgRam.toFixed(0)),
+    recommendations,
+  };
+};
+
+// ─── Feature 15: Build Performance Trend Analyzer ───────────────────────────
+/**
+ * Analyzes deployment duration trends and returns AI optimization tips.
+ * Returns: { avgBuildTimeMs, successRate, trend: 'improving'|'degrading'|'stable', tips[] }
+ */
+const analyzeBuildTrends = async (deployments = []) => {
+  if (deployments.length === 0) return { avgBuildTimeMs: 0, successRate: 100, trend: 'stable', tips: [] };
+
+  const successful = deployments.filter(d => d.status === 'success');
+  const successRate = Math.round((successful.length / deployments.length) * 100);
+  const withDuration = deployments.filter(d => d.duration && d.duration > 0);
+  const avgBuildTimeMs = withDuration.length > 0
+    ? Math.round(withDuration.reduce((a, d) => a + d.duration, 0) / withDuration.length)
+    : 0;
+
+  // Trend: compare first half vs second half build times
+  let trend = 'stable';
+  if (withDuration.length >= 4) {
+    const half = Math.floor(withDuration.length / 2);
+    const older = withDuration.slice(half).reduce((a, d) => a + d.duration, 0) / half;
+    const newer = withDuration.slice(0, half).reduce((a, d) => a + d.duration, 0) / half;
+    if (newer > older * 1.15) trend = 'degrading';
+    else if (newer < older * 0.85) trend = 'improving';
+  }
+
+  const tips = [];
+  if (avgBuildTimeMs > 120000) tips.push('Builds averaging >2min — add Docker layer caching (COPY package.json first, then npm install).');
+  if (successRate < 70) tips.push('Low success rate — enable AI Auto-Healing to automatically patch build failures.');
+  if (trend === 'degrading') tips.push('Build times are increasing — check if node_modules or dependencies grew significantly.');
+  if (tips.length === 0) tips.push('Build pipeline looks healthy. No optimizations needed at this time.');
+
+  return { avgBuildTimeMs, successRate, trend, tips, totalBuilds: deployments.length, successCount: successful.length };
+};
+
 // ─── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
   callAI,
@@ -1046,4 +1247,8 @@ module.exports = {
   auditLeakedSecrets,
   // Exported for direct local static fallback analysis
   extractEnvVarsLocally,
+  generateDeploymentReadinessReport,
+  analyzeRuntimeHealth,
+  estimateMonthlyCost,
+  analyzeBuildTrends,
 };

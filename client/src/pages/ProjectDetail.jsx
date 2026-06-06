@@ -12,16 +12,18 @@ import TeamManager from '../components/TeamManager';
 import AIChat from '../components/AIChat';
 
 const TABS = [
-  { id: 'deployments', label: 'Deployments' },
-  { id: 'logs',        label: 'Build Logs' },
-  { id: 'runtime-logs',label: 'Runtime Logs' },
-  { id: 'env',         label: 'Environment' },
-  { id: 'domains',     label: 'Domains' },
-  { id: 'metrics',     label: 'Live Metrics' },
-  { id: 'analytics',   label: 'Analytics' },
-  { id: 'team',        label: 'Team' },
-  { id: 'ai',          label: 'AI Co-Pilot' },
-  { id: 'settings',    label: 'Settings' },
+  { id: 'deployments', label: '🚀 Deployments' },
+  { id: 'logs',        label: '📋 Build Logs' },
+  { id: 'runtime-logs',label: '🖥️ Runtime Logs' },
+  { id: 'advisor',     label: '🧠 AI Advisor' },
+  { id: 'security',    label: '🛡️ Security' },
+  { id: 'env',         label: '🔐 Environment' },
+  { id: 'domains',     label: '🌐 Domains' },
+  { id: 'metrics',     label: '📊 Live Metrics' },
+  { id: 'analytics',   label: '📈 Analytics' },
+  { id: 'team',        label: '👥 Team' },
+  { id: 'ai',          label: '🤖 AI Co-Pilot' },
+  { id: 'settings',    label: '⚙️ Settings' },
 ];
 
 function LogLine({ line }) {
@@ -76,6 +78,31 @@ export default function ProjectDetail() {
   const [cpuLimit, setCpuLimit] = useState(0.5);
   const [ramLimitMB, setRamLimitMB] = useState(256);
   const [resizing, setResizing] = useState(false);
+
+  // 🛡️ Security / Vulnerability Scanner
+  const [vulnData, setVulnData] = useState(null);
+  const [vulnLoading, setVulnLoading] = useState(false);
+  const [vulnFixData, setVulnFixData] = useState(null);
+  const [vulnFixLoading, setVulnFixLoading] = useState(false);
+
+  // 🧠 AI Deployment Advisor (Readiness)
+  const [readiness, setReadiness] = useState(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+
+  // 📊 Build Performance Trends
+  const [buildTrends, setBuildTrends] = useState(null);
+  const [trendsLoading, setTrendsLoading] = useState(false);
+
+  // 💰 Cost Estimator
+  const [costData, setCostData] = useState(null);
+  const [costLoading, setCostLoading] = useState(false);
+
+  // 🫀 Runtime Health Monitor
+  const [healthData, setHealthData] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+
+  // ⏮️ Rollback
+  const [rollingBack, setRollingBack] = useState(null); // deploymentId being rolled back
 
   const logsEndRef = useRef(null);
   const runtimeLogsEndRef = useRef(null);
@@ -324,6 +351,105 @@ export default function ProjectDetail() {
     }
   };
 
+  // ⏪ Rollback to a specific past deployment
+  const handleRollback = async (dep) => {
+    if (!window.confirm(`Roll back to deployment from ${new Date(dep.createdAt).toLocaleDateString()}? Current live version will be replaced.`)) return;
+    setRollingBack(dep._id);
+    setError('');
+    try {
+      const res = await api.post(`/deploy/${id}/rollback/${dep._id}`);
+      setActiveTab('logs');
+      setLogs([]);
+      connectToLogs(res.data.deployment._id);
+      loadDeployments();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Rollback failed');
+    } finally {
+      setRollingBack(null);
+    }
+  };
+
+  // 🛡️ Run vulnerability scan
+  const handleVulnScan = async () => {
+    setVulnLoading(true);
+    setVulnData(null);
+    setVulnFixData(null);
+    try {
+      const res = await api.get(`/vuln/${id}`);
+      setVulnData(res.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Vulnerability scan failed');
+    } finally {
+      setVulnLoading(false);
+    }
+  };
+
+  // 🧠 Run readiness check
+  const handleReadinessCheck = async () => {
+    setReadinessLoading(true);
+    setReadiness(null);
+    try {
+      const res = await api.post(`/projects/${id}/readiness`);
+      setReadiness(res.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Readiness check failed');
+    } finally {
+      setReadinessLoading(false);
+    }
+  };
+
+  // 📊 Load build trends
+  const handleLoadTrends = async () => {
+    setTrendsLoading(true);
+    try {
+      const res = await api.get(`/analytics/${id}/build-trends`);
+      setBuildTrends(res.data);
+    } catch (err) {
+      console.warn('Build trends unavailable:', err.message);
+    } finally {
+      setTrendsLoading(false);
+    }
+  };
+
+  // 💰 Load cost estimate
+  const handleLoadCostEstimate = async () => {
+    setCostLoading(true);
+    try {
+      const res = await api.get(`/metrics/${id}/cost-estimate`);
+      setCostData(res.data);
+    } catch (err) {
+      console.warn('Cost estimate unavailable:', err.message);
+    } finally {
+      setCostLoading(false);
+    }
+  };
+
+  // 🫀 Load runtime health
+  const handleLoadHealth = async () => {
+    setHealthLoading(true);
+    try {
+      const res = await api.get(`/health/${id}`);
+      setHealthData(res.data);
+    } catch (err) {
+      console.warn('Health status unavailable:', err.message);
+    } finally {
+      setHealthLoading(false);
+    }
+  };
+
+  // Generate vulnerability AI fix commands
+  const handleVulnAutoFix = async () => {
+    setVulnFixLoading(true);
+    try {
+      const res = await api.post(`/vuln/${id}/auto-fix`);
+      setVulnFixData(res.data.fixPatch);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Auto-fix generation failed');
+    } finally {
+      setVulnFixLoading(false);
+    }
+  };
+
   if (!project) return (
     <div className="launchpad-container flex-center" style={{ minHeight: '100vh' }}>
       <div className="loading-spinner" style={{ width: 40, height: 40 }} />
@@ -347,6 +473,32 @@ export default function ProjectDetail() {
           <span className={`lp-badge ${deploying ? 'building' : (project.status || 'idle')}`}>
             {deploying ? 'building' : (project.status || 'idle')}
           </span>
+          {/* Health Score Pill */}
+          {project.lastHealthScore !== undefined && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700,
+              background: project.lastHealthScore >= 80 ? 'rgba(52,211,153,0.15)' : project.lastHealthScore >= 50 ? 'rgba(251,191,36,0.15)' : 'rgba(248,113,113,0.15)',
+              color: project.lastHealthScore >= 80 ? '#34d399' : project.lastHealthScore >= 50 ? '#fbbf24' : '#f87171',
+              border: `1px solid ${project.lastHealthScore >= 80 ? 'rgba(52,211,153,0.3)' : project.lastHealthScore >= 50 ? 'rgba(251,191,36,0.3)' : 'rgba(248,113,113,0.3)'}`,
+              cursor: 'pointer',
+            }} onClick={() => { setActiveTab('runtime-logs'); handleLoadHealth(); }} title="Click to view health status">
+              {project.lastHealthScore >= 80 ? '🟢' : project.lastHealthScore >= 50 ? '🟡' : '🔴'}
+              Health {project.lastHealthScore}%
+            </span>
+          )}
+          {/* Vuln Summary Pill */}
+          {project.vulnSummary && (project.vulnSummary.critical > 0 || project.vulnSummary.high > 0) && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700,
+              background: 'rgba(248,113,113,0.15)', color: '#f87171',
+              border: '1px solid rgba(248,113,113,0.3)',
+              cursor: 'pointer',
+            }} onClick={() => setActiveTab('security')} title="Click to view vulnerabilities">
+              ⚠️ {project.vulnSummary.critical} Critical · {project.vulnSummary.high} High CVEs
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {deployUrl && (
@@ -413,8 +565,14 @@ export default function ProjectDetail() {
         {activeTab === 'deployments' && (
           <div className="fade-in">
             <div className="lp-card" style={{ padding: 0 }}>
-              <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
-                <h3 style={{ fontSize: 16 }}>Deployment History</h3>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ fontSize: 16 }}>Deployment Timeline</h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 2 }}>Click any past deployment to rollback. Production is always the top entry.</p>
+                </div>
+                <button className="lp-btn-secondary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => { handleLoadTrends(); setActiveTab('analytics'); }}>
+                  📈 View Build Trends
+                </button>
               </div>
               {deployments.length === 0 ? (
                 <div className="flex-center" style={{ padding: 60, flexDirection: 'column', gap: 12 }}>
@@ -422,44 +580,63 @@ export default function ProjectDetail() {
                   <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>No deployments yet. Click Redeploy to start.</p>
                 </div>
               ) : (
-                <table className="lp-table">
-                  <thead><tr><th>Commit</th><th>Status</th><th>Duration</th><th>Actions</th></tr></thead>
-                  <tbody>
-                    {deployments.map((dep, i) => (
-                      <tr key={dep._id}>
-                        <td>
-                          <div style={{ fontWeight: 600, fontSize: 14 }}>{dep.commitMessage || 'Manual Deploy'}</div>
-                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
-                            {dep.commitSha?.slice(0,7)} · {dep.branch}
-                            {i === 0 && <span className="lp-badge live" style={{ marginLeft: 8, fontSize: 10 }}>Production</span>}
-                            {dep.isAutoHeal && (
-                              <span 
-                                className="lp-badge" 
-                                style={{ 
-                                  marginLeft: 8, 
-                                  fontSize: 10, 
-                                  background: 'rgba(56, 189, 248, 0.1)', 
-                                  color: 'var(--accent-info)',
-                                  border: '1px solid rgba(56, 189, 248, 0.2)'
-                                }}
-                                title={dep.autoHealFixDescription}
-                              >
-                                🤖 AI HEALED
-                              </span>
-                            )}
+                <div style={{ padding: '8px 0' }}>
+                  {deployments.map((dep, i) => {
+                    const isProduction = i === 0 && dep.status === 'success';
+                    const isRollingBackThis = rollingBack === dep._id;
+                    return (
+                      <div key={dep._id} style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 0,
+                        padding: '16px 24px',
+                        borderBottom: i < deployments.length - 1 ? '1px solid var(--border)' : 'none',
+                        background: isProduction ? 'rgba(52,211,153,0.03)' : 'transparent',
+                        transition: 'background 0.2s',
+                      }}>
+                        {/* Timeline dot + line */}
+                        <div style={{ width: 40, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 4 }}>
+                          <div style={{
+                            width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
+                            background: dep.status === 'success' ? '#34d399' : dep.status === 'failed' ? '#f87171' : dep.status === 'building' ? '#38bdf8' : '#64748b',
+                            boxShadow: dep.status === 'success' ? '0 0 8px rgba(52,211,153,0.5)' : dep.status === 'failed' ? '0 0 8px rgba(248,113,113,0.4)' : 'none',
+                          }} />
+                          {i < deployments.length - 1 && <div style={{ width: 2, flex: 1, minHeight: 32, background: 'var(--border)', marginTop: 4 }} />}
+                        </div>
+
+                        {/* Deployment info */}
+                        <div style={{ flex: 1, paddingLeft: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                            <span style={{ fontWeight: 600, fontSize: 14 }}>{dep.commitMessage || 'Manual Deploy'}</span>
+                            <span className={`lp-badge ${dep.status}`} style={{ fontSize: 11 }}>{dep.status}</span>
+                            {isProduction && <span className="lp-badge live" style={{ fontSize: 10 }}>⚡ Production</span>}
+                            {dep.isAutoHeal && <span className="lp-badge" style={{ fontSize: 10, background: 'rgba(56,189,248,0.1)', color: 'var(--accent-info)', border: '1px solid rgba(56,189,248,0.2)' }} title={dep.autoHealFixDescription}>🤖 AI Healed</span>}
+                            {dep.rollbackFrom && <span className="lp-badge" style={{ fontSize: 10, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)' }}>🔄 Rollback</span>}
                           </div>
-                        </td>
-                        <td><span className={`lp-badge ${dep.status}`}>{dep.status}</span></td>
-                        <td style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 13 }}>
-                          {dep.duration ? `${(dep.duration/1000).toFixed(1)}s` : '—'}
-                        </td>
-                        <td>
-                          <button className="lp-btn-secondary" style={{ padding: '5px 14px', fontSize: 12 }} onClick={() => viewLogs(dep)}>Logs</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', flexWrap: 'wrap' }}>
+                            {dep.commitSha && <span>{dep.commitSha.slice(0, 7)}</span>}
+                            {dep.branch && <span>↳ {dep.branch}</span>}
+                            {dep.duration && <span>⏱ {(dep.duration / 1000).toFixed(1)}s</span>}
+                            <span>{new Date(dep.createdAt).toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+                          <button className="lp-btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => viewLogs(dep)}>Logs</button>
+                          {!isProduction && dep.status === 'success' && (
+                            <button
+                              className="lp-btn-secondary"
+                              style={{ padding: '5px 12px', fontSize: 12, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24' }}
+                              onClick={() => handleRollback(dep)}
+                              disabled={isRollingBackThis || !!rollingBack}
+                            >
+                              {isRollingBackThis ? '↩ Rolling...' : '↩ Rollback'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
@@ -872,7 +1049,7 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* ── Live Metrics ── */}
+        {/* ── Live Metrics + Cost Estimator ── */}
         {activeTab === 'metrics' && (
           <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
@@ -889,13 +1066,290 @@ export default function ProjectDetail() {
               ))}
             </div>
             <MetricsChart projectId={id} />
+
+            {/* 💰 Cost Estimator Card */}
+            <div className="lp-card glass" style={{ padding: 28, borderLeft: '4px solid #a78bfa', background: 'linear-gradient(135deg, rgba(167,139,250,0.06) 0%, rgba(56,189,248,0.03) 100%)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                <div>
+                  <h3 style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>💰 Monthly Cost Estimator</h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>AI analysis of your CPU/RAM usage patterns to predict VPS costs.</p>
+                </div>
+                <button className="lp-btn-secondary" style={{ padding: '7px 16px', fontSize: 13 }} onClick={handleLoadCostEstimate} disabled={costLoading}>
+                  {costLoading ? 'Analyzing...' : '🔄 Run Estimate'}
+                </button>
+              </div>
+              {costLoading && <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--text-muted)' }}><div className="loading-spinner" style={{ width: 16, height: 16 }} /> Analyzing usage patterns...</div>}
+              {costData && (
+                <div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 20 }}>
+                    {[
+                      { label: 'Current Monthly Cost', value: `$${costData.currentMonthlyCostUSD}`, color: '#34d399' },
+                      { label: 'Projected (next month)', value: `$${costData.projectedCostUSD}`, color: '#fbbf24' },
+                      { label: 'Avg CPU Usage', value: `${costData.avgCpuPercent}%`, color: 'var(--accent-primary)' },
+                      { label: 'Avg RAM Usage', value: `${costData.avgRamMB} MB`, color: 'var(--accent-secondary)' },
+                    ].map(s => (
+                      <div key={s.label} style={{ padding: '16px 20px', background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                        <div className="lp-section-label">{s.label}</div>
+                        <div style={{ fontSize: 24, fontWeight: 800, color: s.color, marginTop: 4 }}>{s.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ background: 'var(--bg-secondary)', borderRadius: 12, padding: 16, marginBottom: 12 }}>
+                    <div className="lp-section-label" style={{ marginBottom: 8 }}>COST BREAKDOWN</div>
+                    <div style={{ display: 'flex', gap: 24, fontSize: 13, color: 'var(--text-muted)' }}>
+                      <span>Base: <strong style={{ color: 'var(--text-main)' }}>${costData.breakdown?.base}</strong></span>
+                      <span>CPU: <strong style={{ color: 'var(--text-main)' }}>${costData.breakdown?.cpu}</strong></span>
+                      <span>RAM: <strong style={{ color: 'var(--text-main)' }}>${costData.breakdown?.ram}</strong></span>
+                    </div>
+                  </div>
+                  <div className="lp-section-label" style={{ marginBottom: 8 }}>AI RECOMMENDATIONS</div>
+                  {costData.recommendations?.map((r, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8, fontSize: 13, color: 'var(--text-muted)' }}>
+                      <span style={{ color: '#a78bfa', flexShrink: 0 }}>•</span>
+                      <span>{r}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* ── Edge Analytics ── */}
+        {/* ── Edge Analytics + Build Trends ── */}
         {activeTab === 'analytics' && (
-          <div className="fade-in">
+          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             <AnalyticsDashboard projectId={id} />
+
+            {/* Build Performance Trends */}
+            <div className="lp-card glass" style={{ padding: 28, borderLeft: '4px solid #38bdf8', background: 'linear-gradient(135deg, rgba(56,189,248,0.05) 0%, rgba(129,140,248,0.02) 100%)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                <div>
+                  <h3 style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>📊 Build Performance Trends</h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Track build duration, success rate, and get AI optimization tips.</p>
+                </div>
+                <button className="lp-btn-secondary" style={{ padding: '7px 16px', fontSize: 13 }} onClick={handleLoadTrends} disabled={trendsLoading}>
+                  {trendsLoading ? 'Analyzing...' : '🔄 Analyze Trends'}
+                </button>
+              </div>
+              {trendsLoading && <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--text-muted)' }}><div className="loading-spinner" style={{ width: 16, height: 16 }} /> Analyzing build history...</div>}
+              {buildTrends && (
+                <div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 20 }}>
+                    {[
+                      { label: 'Avg Build Time', value: buildTrends.avgBuildTimeMs ? `${(buildTrends.avgBuildTimeMs/1000).toFixed(1)}s` : 'N/A', color: 'var(--accent-primary)' },
+                      { label: 'Success Rate', value: `${buildTrends.successRate}%`, color: buildTrends.successRate >= 80 ? '#34d399' : buildTrends.successRate >= 50 ? '#fbbf24' : '#f87171' },
+                      { label: 'Total Builds', value: buildTrends.totalBuilds || 0, color: 'var(--text-main)' },
+                      { label: 'Trend', value: buildTrends.trend === 'improving' ? '↑ Improving' : buildTrends.trend === 'degrading' ? '↓ Degrading' : '→ Stable', color: buildTrends.trend === 'improving' ? '#34d399' : buildTrends.trend === 'degrading' ? '#f87171' : '#fbbf24' },
+                    ].map(s => (
+                      <div key={s.label} style={{ padding: '16px 20px', background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                        <div className="lp-section-label">{s.label}</div>
+                        <div style={{ fontSize: 24, fontWeight: 800, color: s.color, marginTop: 4 }}>{s.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {buildTrends.tips?.length > 0 && (
+                    <div>
+                      <div className="lp-section-label" style={{ marginBottom: 8 }}>AI OPTIMIZATION TIPS</div>
+                      {buildTrends.tips.map((tip, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8, padding: '10px 14px', background: 'rgba(56,189,248,0.05)', borderRadius: 8, border: '1px solid rgba(56,189,248,0.15)' }}>
+                          <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
+                          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{tip}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Security Scanner ── */}
+        {activeTab === 'security' && (
+          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div className="lp-card glass" style={{ padding: 28, borderLeft: '4px solid #f87171', background: 'linear-gradient(135deg, rgba(248,113,113,0.05) 0%, rgba(251,191,36,0.02) 100%)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                <div>
+                  <h3 style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>🛡️ Dependency Vulnerability Scanner</h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Powered by OSV.dev — scans your package.json against the global CVE database.</p>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {vulnData && vulnData.packages?.some(p => p.vulns.some(v => v.severity === 'critical' || v.severity === 'high')) && (
+                    <button className="lp-btn-secondary" style={{ padding: '7px 16px', fontSize: 13, background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.3)', color: '#f87171' }} onClick={handleVulnAutoFix} disabled={vulnFixLoading}>
+                      {vulnFixLoading ? '🔄 Generating...' : '🤖 AI Auto-Fix Critical'}
+                    </button>
+                  )}
+                  <button className="lp-btn-primary" style={{ padding: '7px 16px', fontSize: 13 }} onClick={handleVulnScan} disabled={vulnLoading}>
+                    {vulnLoading ? 'Scanning...' : '🔍 Run CVE Scan'}
+                  </button>
+                </div>
+              </div>
+
+              {vulnLoading && (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 20, color: 'var(--text-muted)' }}>
+                  <div className="loading-spinner" style={{ width: 20, height: 20 }} />
+                  Querying OSV.dev vulnerability database...
+                </div>
+              )}
+
+              {vulnData && !vulnLoading && (
+                <div>
+                  {/* Summary Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+                    {[
+                      { label: 'Critical', count: vulnData.summary?.critical || 0, color: '#f87171', bg: 'rgba(248,113,113,0.1)' },
+                      { label: 'High', count: vulnData.summary?.high || 0, color: '#fb923c', bg: 'rgba(251,146,60,0.1)' },
+                      { label: 'Medium', count: vulnData.summary?.medium || 0, color: '#fbbf24', bg: 'rgba(251,191,36,0.1)' },
+                      { label: 'Low', count: vulnData.summary?.low || 0, color: '#34d399', bg: 'rgba(52,211,153,0.1)' },
+                    ].map(s => (
+                      <div key={s.label} style={{ padding: '16px 20px', background: s.bg, borderRadius: 12, border: `1px solid ${s.color}30`, textAlign: 'center' }}>
+                        <div style={{ fontSize: 32, fontWeight: 800, color: s.color }}>{s.count}</div>
+                        <div style={{ fontSize: 12, color: s.color, fontWeight: 600, marginTop: 4 }}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Vulnerable Packages */}
+                  {vulnData.packages?.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px 0', color: '#34d399', fontSize: 15 }}>✅ No known vulnerabilities found in your dependencies!</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {vulnData.packages?.map(pkg => (
+                        <div key={pkg.name} style={{ background: 'var(--bg-secondary)', borderRadius: 12, padding: '16px 20px', border: '1px solid var(--border)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 14 }}>{pkg.name}</span>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-dim)' }}>v{pkg.version}</span>
+                            </div>
+                            <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{pkg.vulns.length} issue{pkg.vulns.length !== 1 ? 's' : ''}</span>
+                          </div>
+                          {pkg.vulns.map(v => (
+                            <div key={v.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 8, padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 8, border: `1px solid ${{ critical: 'rgba(248,113,113,0.3)', high: 'rgba(251,146,60,0.3)', medium: 'rgba(251,191,36,0.3)', low: 'rgba(52,211,153,0.2)' }[v.severity] || 'var(--border)'}` }}>
+                              <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700, background: { critical: 'rgba(248,113,113,0.2)', high: 'rgba(251,146,60,0.2)', medium: 'rgba(251,191,36,0.2)', low: 'rgba(52,211,153,0.15)' }[v.severity], color: { critical: '#f87171', high: '#fb923c', medium: '#fbbf24', low: '#34d399' }[v.severity], flexShrink: 0, textTransform: 'uppercase' }}>{v.severity}</span>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, color: 'var(--text-main)', marginBottom: 2 }}>{v.summary}</div>
+                                <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-dim)' }}>
+                                  <a href={v.url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>{v.id}</a>
+                                  {v.fixedIn && <span>→ Fixed in v{v.fixedIn}</span>}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* AI Fix Commands */}
+                  {vulnFixData && (
+                    <div style={{ marginTop: 20, padding: 20, background: 'rgba(52,211,153,0.05)', borderRadius: 12, border: '1px solid rgba(52,211,153,0.2)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                        <span style={{ fontSize: 16 }}>🤖</span>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: '#34d399' }}>AI-Generated Security Fix Commands</span>
+                      </div>
+                      <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12 }}>{vulnFixData.description}</p>
+                      <pre style={{ background: '#090d16', borderRadius: 8, padding: 16, fontFamily: 'var(--font-mono)', fontSize: 12, color: '#e2e8f0', overflowX: 'auto' }}>
+                        {vulnFixData.patchCommands?.join('\n') || 'No specific commands generated.'}
+                      </pre>
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 16 }}>Last scanned: {vulnData.scannedAt ? new Date(vulnData.scannedAt).toLocaleString() : 'Just now'}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── AI Deployment Advisor ── */}
+        {activeTab === 'advisor' && (
+          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div className="lp-card glass" style={{ padding: 28, borderLeft: '4px solid #818cf8', background: 'linear-gradient(135deg, rgba(129,140,248,0.06) 0%, rgba(56,189,248,0.03) 100%)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                <div>
+                  <h3 style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>🧠 AI Deployment Readiness Advisor</h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Analyzes your repository and scores deployment readiness 0–100 before you go live.</p>
+                </div>
+                <button className="lp-btn-primary" style={{ padding: '7px 18px', fontSize: 13, background: 'var(--accent-secondary)', boxShadow: '0 0 20px rgba(129,140,248,0.25)' }} onClick={handleReadinessCheck} disabled={readinessLoading}>
+                  {readinessLoading ? 'Analyzing...' : '⚡ Run Readiness Check'}
+                </button>
+              </div>
+
+              {readinessLoading && (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 20, color: 'var(--text-muted)' }}>
+                  <div className="loading-spinner" style={{ width: 20, height: 20 }} />
+                  Analyzing repository structure...
+                </div>
+              )}
+
+              {readiness && !readinessLoading && (
+                <div>
+                  {/* Score Display */}
+                  <div style={{ display: 'flex', gap: 32, alignItems: 'center', marginBottom: 28, padding: '24px 28px', background: 'var(--bg-secondary)', borderRadius: 16, border: '1px solid var(--border)' }}>
+                    {/* Animated score circle */}
+                    <div style={{ position: 'relative', width: 100, height: 100, flexShrink: 0 }}>
+                      <svg width="100" height="100" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(129,140,248,0.15)" strokeWidth="10" />
+                        <circle cx="50" cy="50" r="44" fill="none"
+                          stroke={readiness.score >= 80 ? '#34d399' : readiness.score >= 50 ? '#fbbf24' : '#f87171'}
+                          strokeWidth="10" strokeLinecap="round"
+                          strokeDasharray={`${(readiness.score / 100) * 276.5} 276.5`}
+                          transform="rotate(-90 50 50)" style={{ transition: 'stroke-dasharray 1s ease' }}
+                        />
+                      </svg>
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontSize: 24, fontWeight: 900, color: readiness.score >= 80 ? '#34d399' : readiness.score >= 50 ? '#fbbf24' : '#f87171' }}>{readiness.score}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>/ 100</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: readiness.score >= 80 ? '#34d399' : readiness.score >= 50 ? '#fbbf24' : '#f87171', marginBottom: 6 }}>
+                        {readiness.score >= 80 ? '🟢 Ready to Deploy' : readiness.score >= 50 ? '🟡 Needs Attention' : '🔴 Not Recommended'}
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{readiness.passed} of {readiness.total} checks passed.</div>
+                      {readiness.score < 80 && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-dim)' }}>Fix the issues below before deploying to production.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Checklist */}
+                  <div className="lp-section-label" style={{ marginBottom: 12 }}>READINESS CHECKLIST</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {readiness.checks?.map((check, i) => (
+                      <div key={i} style={{
+                        display: 'flex', gap: 14, alignItems: 'flex-start',
+                        padding: '14px 18px', borderRadius: 12,
+                        background: check.passed ? 'rgba(52,211,153,0.05)' : 'rgba(248,113,113,0.05)',
+                        border: `1px solid ${check.passed ? 'rgba(52,211,153,0.2)' : 'rgba(248,113,113,0.2)'}`,
+                      }}>
+                        <span style={{ fontSize: 18, flexShrink: 0 }}>{check.passed ? '✅' : check.severity === 'critical' ? '🔴' : check.severity === 'high' ? '⚠️' : 'ℹ️'}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <span style={{ fontWeight: 600, fontSize: 14 }}>{check.name}</span>
+                            {!check.passed && (
+                              <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                                background: check.severity === 'critical' ? 'rgba(248,113,113,0.2)' : check.severity === 'high' ? 'rgba(251,146,60,0.2)' : 'rgba(251,191,36,0.1)',
+                                color: check.severity === 'critical' ? '#f87171' : check.severity === 'high' ? '#fb923c' : '#fbbf24',
+                              }}>{check.severity}</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{check.recommendation}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!readiness && !readinessLoading && (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-dim)' }}>
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>🧠</div>
+                  <p style={{ fontSize: 14 }}>Click "Run Readiness Check" to analyze your repository.</p>
+                  <p style={{ fontSize: 13, marginTop: 6 }}>This checks for health endpoints, error handling, security headers, and more.</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

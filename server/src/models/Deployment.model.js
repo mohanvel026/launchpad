@@ -23,6 +23,9 @@ const deploymentSchema = new mongoose.Schema({
     status: String,
     details: String
   }],
+  readinessScore:    { type: Number },
+  readinessChecks:   [{ name: String, passed: Boolean, recommendation: String }],
+  rollbackFrom:      { type: mongoose.Schema.Types.ObjectId, ref: 'Deployment' },
 }, { timestamps: true });
 
 deploymentSchema.index({ project: 1, createdAt: -1 });

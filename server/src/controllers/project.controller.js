@@ -345,9 +345,34 @@ const resizeResourceLimits = async (req, res) => {
   }
 };
 
+// ─── POST /api/projects/:id/readiness ───────────────────────────────────────────────
+const deploymentReadinessCheck = async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const path = require('path');
+    const REPOS_DIR = path.join(__dirname, '../../repos');
+    const repoPath = path.join(REPOS_DIR, project._id.toString());
+    const fs = require('fs');
+    if (!fs.existsSync(repoPath)) return res.json({ score: 0, checks: [], message: 'Repository not cloned yet. Deploy first.' });
+
+    const { generateDeploymentReadinessReport } = require('../services/ai.service');
+    const report = await generateDeploymentReadinessReport(repoPath, project.stack || 'unknown');
+
+    // Save readiness score to project
+    await Project.findByIdAndUpdate(project._id, { readinessScore: report.score });
+
+    res.json(report);
+  } catch (err) {
+    console.error('[Readiness]', err.message);
+    res.status(500).json({ message: 'Readiness check failed', error: err.message });
+  }
+};
+
 module.exports = {
   getUserRepos, analyzeRepo, getProjects, createProject,
   getProject, deleteProject, registerWebhook,
   updateProject, clearProjectStuckBuild,
-  resizeResourceLimits,
+  resizeResourceLimits, deploymentReadinessCheck,
 };

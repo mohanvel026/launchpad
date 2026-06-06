@@ -1,6 +1,6 @@
 const express     = require('express');
 const { protect } = require('../middleware/auth.middleware');
-const { getLiveMetrics, getMetricsHistory } = require('../controllers/metrics.controller');
+const { getLiveMetrics, getMetricsHistory, getCostEstimate } = require('../controllers/metrics.controller');
 
 const router = express.Router();
 
@@ -9,5 +9,8 @@ router.get('/:projectId',          protect, getLiveMetrics);
 
 // GET /api/metrics/:projectId/history  — last 10 minutes of history
 router.get('/:projectId/history',  protect, getMetricsHistory);
+
+// GET /api/metrics/:projectId/cost-estimate — AI cost estimation
+router.get('/:projectId/cost-estimate', protect, getCostEstimate);
 
 module.exports = router;

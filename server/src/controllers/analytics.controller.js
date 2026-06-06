@@ -30,4 +30,23 @@ const resetProjectAnalytics = async (req, res) => {
   }
 };
 
-module.exports = { getProjectAnalytics, resetProjectAnalytics };
+// GET /api/analytics/:projectId/build-trends
+const getBuildTrends = async (req, res) => {
+  try {
+    const Deployment = require('../models/Deployment.model');
+    const { analyzeBuildTrends } = require('../services/ai.service');
+
+    const deployments = await Deployment.find({ project: req.params.projectId })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .select('status duration createdAt branch commitMessage isAutoHeal');
+
+    const trends = await analyzeBuildTrends(deployments);
+    res.json(trends);
+  } catch (err) {
+    console.error('[BuildTrends]', err.message);
+    res.status(500).json({ message: 'Failed to get build trends', error: err.message });
+  }
+};
+
+module.exports = { getProjectAnalytics, resetProjectAnalytics, getBuildTrends };

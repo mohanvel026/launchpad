@@ -24,6 +24,24 @@ const projectSchema = new mongoose.Schema({
   ramLimitMB:    { type: Number, default: 512 },
   autoHeal:      { type: Boolean, default: false },
   autoHealStrategy: { type: String, enum: ['push-on-success', 'pr', 'local-only'], default: 'push-on-success' },
+  previews:          [{
+    prNumber:    { type: Number },
+    branch:      { type: String },
+    containerId: { type: String },
+    port:        { type: Number },
+    subdomain:   { type: String },
+    status:      { type: String, enum: ['building', 'live', 'stopped'], default: 'building' },
+    createdAt:   { type: Date, default: Date.now },
+  }],
+  lastHealthScore:    { type: Number, default: 100 },
+  lastVulnScanAt:     { type: Date },
+  vulnSummary:        {
+    critical: { type: Number, default: 0 },
+    high:     { type: Number, default: 0 },
+    medium:   { type: Number, default: 0 },
+    low:      { type: Number, default: 0 },
+  },
+  readinessScore:     { type: Number },
 }, { timestamps: true });
 
 projectSchema.index({ owner: 1 });
