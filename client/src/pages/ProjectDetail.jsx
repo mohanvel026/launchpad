@@ -208,22 +208,7 @@ export default function ProjectDetail() {
     };
   }, [loadProject, loadDeployments, loadEnvVars]);
 
-  // Auto-load latest deployment logs when switching to Build Logs tab, or connect to runtime logs
-  useEffect(() => {
-    if (activeTab === 'logs') {
-      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      // If no logs yet and we're not mid-deploy, load the latest deployment's logs
-      if (logs.length === 0 && !deploying && deployments.length > 0) {
-        viewLogs(deployments[0]);
-      }
-    } else if (activeTab === 'runtime-logs') {
-      connectToRuntimeLogs();
-    } else if (activeTab === 'previews') {
-      handleLoadPreviews();
-    } else {
-      socketRef.current?.disconnect();
-    }
-  }, [activeTab, handleLoadPreviews]);
+
 
   // Poller for previews in building state
   useEffect(() => {
@@ -579,6 +564,49 @@ export default function ProjectDetail() {
       setAddingMissingVar(null);
     }
   };
+
+  // Auto-run background scans (readiness check, CVE vulnerabilities, missing env variables) as soon as project loads
+  useEffect(() => {
+    if (project) {
+      if (!readiness && !readinessLoading) {
+        handleReadinessCheck();
+      }
+      if (!vulnData && !vulnLoading) {
+        handleVulnScan();
+      }
+      if (missingVars === null && !missingVarsLoading) {
+        handleAiScanMissingVars();
+      }
+    }
+  }, [project?._id, readiness, readinessLoading, vulnData, vulnLoading, missingVars, missingVarsLoading]);
+
+  // Tab switch logic to auto-load tab details and disconnect sockets on tab cleanups
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      if (logs.length === 0 && !deploying && deployments.length > 0) {
+        viewLogs(deployments[0]);
+      }
+    } else if (activeTab === 'runtime-logs') {
+      connectToRuntimeLogs();
+    } else if (activeTab === 'previews') {
+      handleLoadPreviews();
+    } else if (activeTab === 'advisor') {
+      if (!readiness && !readinessLoading) {
+        handleReadinessCheck();
+      }
+    } else if (activeTab === 'security') {
+      if (!vulnData && !vulnLoading) {
+        handleVulnScan();
+      }
+    } else if (activeTab === 'env') {
+      if (missingVars === null && !missingVarsLoading) {
+        handleAiScanMissingVars();
+      }
+    } else {
+      socketRef.current?.disconnect();
+    }
+  }, [activeTab, handleLoadPreviews, readiness, readinessLoading, vulnData, vulnLoading, missingVars, missingVarsLoading]);
 
   if (!project) return (
     <div className="launchpad-container flex-center" style={{ minHeight: '100vh' }}>
