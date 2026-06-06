@@ -165,4 +165,4 @@ const resetAnalytics = async (projectId) => {
   }
 };
 
-module.exports = { recordVisit, getAnalytics, resetAnalytics };
+module.exports = { recordVisit, getAnalytics, resetAnalytics, getRedis };
