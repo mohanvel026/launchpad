@@ -100,6 +100,9 @@ export default function DomainManager({ project, onUpdate }) {
       setMessage(res.data.message);
       await fetchDomainInfo();
       if (onUpdate) onUpdate();
+
+      // AUTOMATIC: Immediately run verification after linking, bypassing any manual lookup clicks!
+      setTimeout(() => handleVerifyDNS(), 100);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to add domain');
     } finally { setSaving(false); }
@@ -332,7 +335,12 @@ export default function DomainManager({ project, onUpdate }) {
                         <input
                           type="checkbox"
                           checked={mockVerify}
-                          onChange={(e) => setMockVerify(e.target.checked)}
+                          onChange={(e) => {
+                            setMockVerify(e.target.checked);
+                            if (e.target.checked && domainStatus === 'pending_dns') {
+                              setTimeout(() => handleVerifyDNS(), 100);
+                            }
+                          }}
                           style={{ accentColor: 'var(--accent-primary)' }}
                         />
                         <span>Mock DNS verification (Useful for testing without live DNS records)</span>
