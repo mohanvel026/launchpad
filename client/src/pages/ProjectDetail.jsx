@@ -148,6 +148,36 @@ export default function ProjectDetail() {
     api.get(`/env/${id}`).then(r => setEnvVars(r.data.envVars || [])).catch(() => {}),
   [id]);
 
+  const handleLoadPreviews = useCallback(async () => {
+    setPreviewsLoading(true);
+    try {
+      const res = await api.get(`/previews/${id}`);
+      setPreviews(res.data.previews || []);
+    } catch (err) {
+      console.error('Failed to load previews:', err);
+    } finally {
+      setPreviewsLoading(false);
+    }
+  }, [id]);
+
+  const connectToRuntimeLogs = () => {
+    socketRef.current?.disconnect();
+    setRuntimeLogs([]);
+
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+    const socket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
+    socket.emit('join:runtime-logs', id);
+    socket.on('runtime-log', ({ line }) => {
+      setRuntimeLogs(prev => [...prev, line]);
+    });
+    socket.on('connect_error', (err) => console.warn('Runtime socket error:', err.message));
+    socketRef.current = socket;
+  };
+
   useEffect(() => {
     loadProject();
     loadDeployments();
@@ -218,23 +248,6 @@ export default function ProjectDetail() {
     socketRef.current = socket;
   };
 
-  const connectToRuntimeLogs = () => {
-    socketRef.current?.disconnect();
-    setRuntimeLogs([]);
-
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
-    const socket = io(socketUrl, {
-      transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
-    socket.emit('join:runtime-logs', id);
-    socket.on('runtime-log', ({ line }) => {
-      setRuntimeLogs(prev => [...prev, line]);
-    });
-    socket.on('connect_error', (err) => console.warn('Runtime socket error:', err.message));
-    socketRef.current = socket;
-  };
 
   const handleDeploy = async () => {
     setDeploying(true); setError(''); setActiveTab('logs'); setLogs([]);
@@ -486,18 +499,6 @@ export default function ProjectDetail() {
       setVulnFixLoading(false);
     }
   };
-
-  const handleLoadPreviews = useCallback(async () => {
-    setPreviewsLoading(true);
-    try {
-      const res = await api.get(`/previews/${id}`);
-      setPreviews(res.data.previews || []);
-    } catch (err) {
-      console.error('Failed to load previews:', err);
-    } finally {
-      setPreviewsLoading(false);
-    }
-  }, [id]);
 
   const handleCreatePreview = async (e) => {
     e.preventDefault();
