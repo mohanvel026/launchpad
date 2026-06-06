@@ -217,7 +217,7 @@ buildQueue.process(1, async (job) => {
 
   if (!deployment || !project) throw new Error('Deployment or project not found');
 
-  const domain = process.env.CLOUDFLARE_DOMAIN || '129.159.22.142.nip.io';
+  const domain = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
   const liveUrl = `http://${project.subdomain}.${domain}`;
 
   // ── Logger ────────────────────────────────────────────────────────────────
@@ -707,7 +707,7 @@ buildQueue.process(1, async (job) => {
       invalidateProjectCache(project.subdomain);
       await log(`   ✅ Internal proxy updated. Traffic routed to ${liveUrl}`);
 
-      const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || '129.159.22.142.nip.io').toLowerCase();
+      const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || 'launchlive.in').toLowerCase();
       const isNipIo = DOMAIN.includes('nip.io');
 
       if (!project.dnsRecordId && !isNipIo) {

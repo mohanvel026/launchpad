@@ -16,7 +16,7 @@ const http    = require('http');
 const Project = require('../models/Project.model');
 const { recordVisit } = require('../services/analytics.service');
 
-const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || '129.159.22.142.nip.io').toLowerCase();
+const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || 'launchlive.in').toLowerCase();
 
 // ── Simple in-memory cache so MongoDB isn't hit on every request ──────────────
 const portCache = new Map(); // subdomain → { port, projectId, ts }

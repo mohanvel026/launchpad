@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../lib/api';
 
 export default function DomainManager({ project, onUpdate }) {
-  const domain = import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io';
+  const domain = import.meta.env.VITE_DOMAIN || 'launchlive.in';
   
   const [domainPrefix, setDomainPrefix] = useState(project.subdomain || '');
   const [domainSuffix, setDomainSuffix] = useState(`.${domain}`);

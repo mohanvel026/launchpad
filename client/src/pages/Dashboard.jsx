@@ -196,7 +196,7 @@ export default function Dashboard() {
                         <span style={{ fontSize: 12, color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {(project.customDomain && (project.customDomainStatus === 'active' || project.customDomainStatus === 'dns_verified'))
                             ? project.customDomain
-                            : (project.subdomain ? `${project.subdomain}.${import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io'}` : 'No domain assigned')}
+                            : (project.subdomain ? `${project.subdomain}.${import.meta.env.VITE_DOMAIN || 'launchlive.in'}` : 'No domain assigned')}
                         </span>
                       </div>
 
@@ -268,7 +268,7 @@ export default function Dashboard() {
               <div key={p._id} className="lp-card flex-between" style={{ marginBottom: 12, padding: '16px 24px' }}>
                 <div>
                   <div style={{ fontWeight: 600, marginBottom: 4, fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--accent-primary)' }}>
-                    {p.subdomain}.{import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io'}
+                    {p.subdomain}.{import.meta.env.VITE_DOMAIN || 'launchlive.in'}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.name}</div>
                   {p.customDomain && (

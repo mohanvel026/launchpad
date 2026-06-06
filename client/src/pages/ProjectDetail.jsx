@@ -614,7 +614,7 @@ export default function ProjectDetail() {
     </div>
   );
 
-  const domain = import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io';
+  const domain = import.meta.env.VITE_DOMAIN || 'launchlive.in';
   const getDeployUrl = () => {
     if (!project.subdomain) return null;
     if (project.customDomain && (project.customDomainStatus === 'active' || project.customDomainStatus === 'dns_verified')) {

@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 
 const REPOS_DIR = path.join(__dirname, '../../repos');
-const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || '129.159.22.142.nip.io').toLowerCase();
+const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || 'launchlive.in').toLowerCase();
 
 /**
  * Creates a PR preview environment:

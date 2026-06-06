@@ -27,6 +27,7 @@ const PHASES = [
 
 export default function NewProject() {
   const navigate = useNavigate();
+  const domain = import.meta.env.VITE_DOMAIN || 'launchlive.in';
 
   // Repo list
   const [repos,        setRepos]        = useState([]);
@@ -356,7 +357,7 @@ export default function NewProject() {
                           <span>✓</span> Subdomain is available!
                         </div>
                         <div style={{ fontSize: 13, color: 'var(--accent-primary)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                          https://{projectName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.129.159.22.142.nip.io
+                          https://{projectName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.{domain}
                         </div>
                       </div>
                     ) : subdomainAvailable === false ? (

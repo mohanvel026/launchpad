@@ -784,6 +784,7 @@ const analyzeTrafficInsights = async (req, res) => {
     const avgResponseTime = trafficAnalytics.avgResponseTime || 0;
     const totalErrors = trafficAnalytics.totalErrors || 0;
     const errorRate = totalVisits > 0 ? ((totalErrors / totalVisits) * 100).toFixed(1) : '0.0';
+    const domain = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
 
     const systemPrompt = `You are LaunchLive SRE Traffic Auditor, an elite systems observability and ingress routing AI.
 Your task is to analyze edge traffic request logs, latencies, error distributions, and routing trends for a deployed application.
@@ -793,7 +794,7 @@ Your tone should be highly professional, technical, direct, and authoritative.
 ### IMPORTANT RULE FOR ZERO TRAFFIC STATE:
 If total traffic is 0 or empty, DO NOT just say "there is no traffic, we cannot audit". Instead, trigger our **Elite Ingress Diagnostic & Connectivity Protocol**:
 1. **Explain exactly why traffic shows 0** (e.g. DNS not propagated, client didn't visit subdomain URL yet, or Nginx edge configuration mismatch).
-2. **Provide concrete test commands** using \`curl\` to test connection (e.g. \`curl -I http://${project.subdomain}.129.159.22.142.nip.io\`).
+2. **Provide concrete test commands** using \`curl\` to test connection (e.g. \`curl -I http://${project.subdomain}.${domain}\`).
 3. **Draft a pre-emptive SRE protection policy** (rate limiting, Nginx caching, connection bounds) that they can apply *before* the traffic hits.
 
 Structure your markdown report exactly with the following sections (use bold titles and styled metrics):

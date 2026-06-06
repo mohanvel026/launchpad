@@ -6,7 +6,7 @@ const { execSync } = require('child_process');
 // The main nginx.conf includes this via:  include /home/ubuntu/launchpad-nginx/*.conf;
 const LP_NGINX_DIR = process.env.LP_NGINX_DIR   || '/home/ubuntu/launchpad-nginx';
 const NGINX_SITES  = process.env.NGINX_SITES_DIR || '/etc/nginx/sites-enabled';
-const DOMAIN       = process.env.CLOUDFLARE_DOMAIN || '129.159.22.142.nip.io';
+const DOMAIN       = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
 
 // Create the launchpad-nginx dir on module load (ubuntu user owns ~/launchpad-nginx)
 try {
