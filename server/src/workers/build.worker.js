@@ -14,7 +14,7 @@ const { analyzeError, predictDeploymentHealth, summarizeBuild, auditLeakedSecret
 const { createNginxConfig }                       = require('../services/nginx.service');
 const { createSubdomain }                         = require('../services/cloudflare.service');
 const { provisionSSL }                            = require('../services/ssl.service');
-const { getNextFreePort }                         = require('../services/portAllocator.service');
+const { getNextFreePort, isPortFree }              = require('../services/portAllocator.service');
 const { emitLog }                                 = require('../sockets/logs.socket');
 const { sendDeployNotification }                  = require('../services/notification.service');
 const { invalidateProjectCache }                  = require('../middleware/projectProxy.middleware');
@@ -550,7 +550,15 @@ buildQueue.process(1, async (job) => {
         }
       } catch { /* keep detected default */ }
 
-      const hostPort = project.port || await getNextFreePort();
+      let hostPort = project.port;
+      if (!hostPort || !(await isPortFree(hostPort))) {
+        const oldPort = hostPort;
+        hostPort = await getNextFreePort();
+        await Project.findByIdAndUpdate(projectId, { port: hostPort });
+        if (oldPort) {
+          await log(`   ⚠️ Port ${oldPort} was already allocated. Dynamically re-allocated free port: ${hostPort}`);
+        }
+      }
       await log(`   ↳ Container port ${finalContainerPort} → Host port ${hostPort}`);
 
       // Build docker run with all env vars and resource limits

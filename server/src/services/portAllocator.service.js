@@ -35,4 +35,4 @@ const getNextFreePort = async (basePort = 4000) => {
   throw new Error('No free ports available in range 4000-9000');
 };
 
-module.exports = { getNextFreePort };
+module.exports = { getNextFreePort, isPortFree };
