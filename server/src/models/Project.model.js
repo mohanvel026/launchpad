@@ -11,6 +11,10 @@ const projectSchema = new mongoose.Schema({
   framework:     { type: String }, // user-selected framework override
   subdomain:     { type: String, unique: true, sparse: true },
   customDomain:  { type: String },
+  customDomainStatus: { type: String, enum: ['none', 'pending_dns', 'dns_verified', 'active', 'failed'], default: 'none' },
+  sslStatus:          { type: String, enum: ['none', 'pending', 'active', 'failed'], default: 'none' },
+  sslIssuedAt:        { type: Date },
+  sslExpiresAt:       { type: Date },
   port:          { type: Number },
   containerId:   { type: String },
   installCommand: { type: String },

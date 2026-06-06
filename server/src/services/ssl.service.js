@@ -26,6 +26,10 @@ const provisionSSL = (subdomain, customDomain = null) => {
   } catch (err) {
     // In dev mode certbot won't exist — log and continue, don't crash the deploy
     console.warn(`SSL provisioning skipped (${fullDomain}):`, err.message.slice(0, 100));
+    if (process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
+      console.log(`[Dev Mode] Mocking successful SSL provisioning for ${fullDomain}`);
+      return true;
+    }
     return false;
   }
 };

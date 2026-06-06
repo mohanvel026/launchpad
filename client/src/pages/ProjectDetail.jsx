@@ -17,6 +17,7 @@ const TABS = [
   { id: 'runtime-logs',label: '🖥️ Runtime Logs' },
   { id: 'advisor',     label: '🧠 AI Advisor' },
   { id: 'security',    label: '🛡️ Security' },
+  { id: 'previews',   label: '🔍 PR Previews' },
   { id: 'env',         label: '🔐 Environment' },
   { id: 'domains',     label: '🌐 Domains' },
   { id: 'metrics',     label: '📊 Live Metrics' },
@@ -103,6 +104,18 @@ export default function ProjectDetail() {
 
   // ⏮️ Rollback
   const [rollingBack, setRollingBack] = useState(null); // deploymentId being rolled back
+
+  // 🔍 PR Preview Environments
+  const [previews, setPreviews] = useState([]);
+  const [previewsLoading, setPreviewsLoading] = useState(false);
+  const [newPreviewPR, setNewPreviewPR] = useState('');
+  const [newPreviewBranch, setNewPreviewBranch] = useState('');
+  const [creatingPreview, setCreatingPreview] = useState(false);
+
+  // 🔐 Env Vault — AI missing variable scanner
+  const [missingVars, setMissingVars] = useState(null); // null = not scanned, [] = none found
+  const [missingVarsLoading, setMissingVarsLoading] = useState(false);
+  const [addingMissingVar, setAddingMissingVar] = useState(null); // key being added
 
   const logsEndRef = useRef(null);
   const runtimeLogsEndRef = useRef(null);
@@ -1045,7 +1058,7 @@ export default function ProjectDetail() {
         {/* ── Domains ── */}
         {activeTab === 'domains' && (
           <div className="fade-in">
-            <DomainManager project={project} />
+            <DomainManager project={project} onUpdate={loadProject} />
           </div>
         )}
 
