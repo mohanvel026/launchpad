@@ -120,8 +120,14 @@ const createProject = async (req, res) => {
     const repo = repoRes.data;
 
     // Build a URL-safe unique subdomain
-    const baseSlug  = repo.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    const subdomain = `${baseSlug}-${Date.now().toString(36)}`;
+    const slugSource = name || repo.name;
+    const baseSlug = slugSource.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    let subdomain = baseSlug;
+    let attempts = 0;
+    while (await Project.findOne({ subdomain }) && attempts < 10) {
+      subdomain = `${baseSlug}-${Math.random().toString(36).substring(2, 6)}`;
+      attempts++;
+    }
 
     const project = await Project.create({
       name:         name || repo.name,
