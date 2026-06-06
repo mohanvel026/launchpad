@@ -3,7 +3,7 @@ const { protect, getUserWithToken } = require('../middleware/auth.middleware');
 const {
   getProjects, createProject, getProject,
   deleteProject, getUserRepos, analyzeRepo, registerWebhook, updateProject,
-  clearProjectStuckBuild, resizeResourceLimits, deploymentReadinessCheck
+  clearProjectStuckBuild, resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus
 } = require('../controllers/project.controller');
 
 const router = express.Router();
@@ -40,5 +40,8 @@ router.post('/:id/resize-limits', protect,      resizeResourceLimits);
 
 // POST /api/projects/:id/readiness — AI deployment readiness check
 router.post('/:id/readiness', protect, deploymentReadinessCheck);
+
+// POST /api/projects/:id/sync-status — repair project status from deployment history
+router.post('/:id/sync-status', protect, syncProjectStatus);
 
 module.exports = router;

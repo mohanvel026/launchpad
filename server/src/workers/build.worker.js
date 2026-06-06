@@ -1060,7 +1060,24 @@ buildQueue.process(1, async (job) => {
     await Deployment.findByIdAndUpdate(deploymentId, {
       status: 'failed', finishedAt: new Date(),
     });
-    await Project.findByIdAndUpdate(projectId, { status: 'failed' });
+
+    // ── Guard: only mark project as 'failed' if there is no newer successful deployment ──
+    // This prevents a retried old job from overwriting a newer successful live deployment.
+    const latestSuccessfulDeploy = await Deployment.findOne({
+      project: projectId,
+      status: 'success',
+    }).sort({ finishedAt: -1 }).select('finishedAt');
+
+    const thisDeploymentRecord = await Deployment.findById(deploymentId).select('finishedAt createdAt');
+    const thisTimestamp = thisDeploymentRecord?.finishedAt || thisDeploymentRecord?.createdAt || new Date(0);
+
+    if (!latestSuccessfulDeploy || new Date(latestSuccessfulDeploy.finishedAt) < new Date(thisTimestamp)) {
+      // No newer success exists — safe to mark as failed
+      await Project.findByIdAndUpdate(projectId, { status: 'failed' });
+    } else {
+      // A newer successful deployment already exists — keep the project as 'live'
+      await log(`ℹ️ A newer successful deployment exists. Keeping project status as 'live'.`);
+    }
 
     if (project.owner?.email) {
       sendDeployNotification(project.owner.email, {

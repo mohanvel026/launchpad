@@ -277,6 +277,17 @@ export default function ProjectDetail() {
     }
   };
 
+  const handleSyncStatus = async () => {
+    try {
+      const res = await api.post(`/projects/${id}/sync-status`);
+      setProject(res.data.project);
+      setError('');
+      alert(`✅ ${res.data.message}`);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to sync project status');
+    }
+  };
+
   const viewLogs = async (dep) => {
     setActiveTab('logs');
     setActiveDeployment(dep);
@@ -571,6 +582,22 @@ export default function ProjectDetail() {
           <span className={`lp-badge ${deploying ? 'building' : (project.status || 'idle')}`}>
             {deploying ? 'building' : (project.status || 'idle')}
           </span>
+          {/* Quick Repair: show Fix Status button when project shows failed but history has a success */}
+          {!deploying && project.status === 'failed' && (
+            <button
+              onClick={handleSyncStatus}
+              title="Repair project status from deployment history"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                background: 'rgba(52,211,153,0.1)', color: '#34d399',
+                border: '1px solid rgba(52,211,153,0.25)',
+                cursor: 'pointer',
+              }}
+            >
+              🔧 Fix Status
+            </button>
+          )}
           {/* Health Score Pill */}
           {project.lastHealthScore !== undefined && (
             <span style={{

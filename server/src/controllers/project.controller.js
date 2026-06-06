@@ -370,9 +370,49 @@ const deploymentReadinessCheck = async (req, res) => {
   }
 };
 
+// ─── POST /api/projects/:id/sync-status ─────────────────────────────────────────
+// Repairs project status by reading the latest successful deployment from history.
+// Fixes cases where a failed retry or Bull job overwrites a successful live status.
+const syncProjectStatus = async (req, res) => {
+  try {
+    const Deployment = require('../models/Deployment.model');
+
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    // Find the latest successful deployment
+    const latestSuccess = await Deployment.findOne({ project: project._id, status: 'success' })
+      .sort({ finishedAt: -1 })
+      .select('finishedAt imageTag');
+
+    if (latestSuccess) {
+      // Restore project to live
+      await Project.findByIdAndUpdate(project._id, {
+        status: 'live',
+        lastDeployedAt: latestSuccess.finishedAt,
+      });
+      const updated = await Project.findById(project._id);
+      return res.json({ message: 'Project status restored to live based on deployment history.', project: updated });
+    }
+
+    // No successful deployments found — check if we should set to failed or idle
+    const latestFailed = await Deployment.findOne({ project: project._id, status: 'failed' })
+      .sort({ finishedAt: -1 });
+    const newStatus = latestFailed ? 'failed' : 'idle';
+    await Project.findByIdAndUpdate(project._id, { status: newStatus });
+    const updated = await Project.findById(project._id);
+    res.json({ message: `Project status synced to '${newStatus}'.`, project: updated });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   getUserRepos, analyzeRepo, getProjects, createProject,
   getProject, deleteProject, registerWebhook,
   updateProject, clearProjectStuckBuild,
-  resizeResourceLimits, deploymentReadinessCheck,
+  resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus,
 };
