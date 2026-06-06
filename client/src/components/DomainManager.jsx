@@ -445,6 +445,12 @@ export default function DomainManager({ project, onUpdate }) {
                       </div>
                     )}
 
+                    {domainSuffix !== `.${domain}` && (
+                      <div style={{ padding: '8px 12px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: 11, color: '#f59e0b', lineHeight: 1.4 }}>
+                        ⚠️ Suffixes like <strong>{domainSuffix === 'custom' ? customSuffix : domainSuffix}</strong> require manual DNS CNAME record configuration. For a 100% automated instant setup, choose the <strong>.{domain}</strong> option.
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, background: 'rgba(255, 255, 255, 0.02)', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.04)' }}>
                       <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         Compiled Domain: <strong style={{ color: 'var(--accent-primary)', fontSize: 13 }}>{domainPrefix || 'myapp'}{domainSuffix === 'custom' ? (customSuffix.startsWith('.') ? customSuffix : '.' + customSuffix) : domainSuffix}</strong>
