@@ -116,7 +116,7 @@ export default function Settings() {
       <div style={section}>
         <h3 style={{ fontSize: '15px', fontWeight: '600', margin: '0 0 4px' }}>CLI Access Token</h3>
         <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 12px' }}>
-          Use this token to authenticate the LaunchPad CLI. Valid for 30 days.
+          Use this token to authenticate the LaunchLive CLI. Valid for 30 days.
         </p>
         <button onClick={handleShowToken}
           style={{ padding: '8px 16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', marginBottom: '10px' }}>

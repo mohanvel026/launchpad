@@ -1252,7 +1252,7 @@ export default function ProjectDetail() {
                 🤖 AI Auto-Healing & Self-Correction
               </h3>
               <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>
-                When enabled, LaunchPad AI automatically intercepts deployment/health check failures, analyzes the logs, patches your code files locally, and re-runs the build.
+                When enabled, LaunchLive AI automatically intercepts deployment/health check failures, analyzes the logs, patches your code files locally, and re-runs the build.
               </p>
 
               <div style={{ display: 'grid', gap: 20 }}>

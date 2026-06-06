@@ -17,7 +17,7 @@ startHealthChecker();
 server.on('upgrade', (req, socket, head) => handleWsUpgrade(req, socket, head));
 
 server.listen(PORT, () => {
-  console.log(`🚀 LaunchPad server running on port ${PORT}`);
+  console.log(`🚀 LaunchLive server running on port ${PORT}`);
   console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 

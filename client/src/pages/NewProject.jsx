@@ -219,7 +219,7 @@ export default function NewProject() {
           <div className="fade-in">
             <h2 style={{ marginBottom: 4 }}>Import Git Repository</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 28 }}>
-              Select a repository — LaunchPad will automatically detect your stack, branches, and environment variables.
+              Select a repository — LaunchLive will automatically detect your stack, branches, and environment variables.
             </p>
 
             <div className="lp-card" style={{ padding: 24 }}>
@@ -306,7 +306,7 @@ export default function NewProject() {
               <div>
                 <h2 style={{ marginBottom: 4 }}>Ready to Deploy</h2>
                 <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-                  LaunchPad has auto-configured everything. Review and deploy in one click.
+                  LaunchLive has auto-configured everything. Review and deploy in one click.
                 </p>
               </div>
               <button className="lp-btn-secondary" style={{ fontSize: 12 }} onClick={() => { setPhase('pick'); setSelected(null); setAnalysis(null); }}>

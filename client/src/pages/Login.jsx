@@ -28,7 +28,7 @@ export default function Login() {
               <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>
             </svg>
           </div>
-          <h1 className="text-gradient" style={{ fontSize: 40, marginBottom: 12, letterSpacing: '-0.04em' }}>LaunchPad</h1>
+          <h1 className="text-gradient" style={{ fontSize: 40, marginBottom: 12, letterSpacing: '-0.04em' }}>LaunchLive</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: 15, lineHeight: 1.6, maxWidth: 320, margin: '0 auto' }}>
             Deploy frontend and backend apps with one click. Built for developers.
           </p>

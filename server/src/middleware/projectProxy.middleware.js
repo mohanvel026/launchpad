@@ -51,7 +51,7 @@ const invalidateProjectCache = (subdomain) => {
 // ── Error page ─────────────────────────────────────────────────────────────────
 const errorPage = (title, body) => `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>${title} — LaunchPad</title>
+<head><meta charset="UTF-8"><title>${title} — LaunchLive</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:system-ui,sans-serif;background:#0a0a0f;color:#e2e8f0;
@@ -73,7 +73,7 @@ const selfHealingPage = (host) => `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="refresh" content="3">
-  <title>Self-Healing Recovery — LaunchPad</title>
+  <title>Self-Healing Recovery — LaunchLive</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -106,7 +106,7 @@ const selfHealingPage = (host) => `<!DOCTYPE html>
   <div class="container">
     <div class="ring"></div>
     <h1>Self-Healing Recovery</h1>
-    <p>Your app at <code style="color:#e2e8f0">${host}</code> went offline. LaunchPad is auto-restarting it. Reloading in 3s...</p>
+    <p>Your app at <code style="color:#e2e8f0">${host}</code> went offline. LaunchLive is auto-restarting it. Reloading in 3s...</p>
   </div>
 </body>
 </html>`;

@@ -193,7 +193,7 @@ export default function AnalyticsDashboard({ projectId }) {
               🧠 AI Traffic & Security Auditor
             </h3>
             <p className="text-muted" style={{ margin: '6px 0 0', fontSize: 13 }}>
-              Audit your edge proxy traffic distributions, request latencies, and scan for malicious DDoS or IP access anomalies using LaunchPad SRE AI.
+              Audit your edge proxy traffic distributions, request latencies, and scan for malicious DDoS or IP access anomalies using LaunchLive SRE AI.
             </p>
           </div>
           <button 
@@ -357,7 +357,7 @@ export default function AnalyticsDashboard({ projectId }) {
       {/* Analytics Meta Info */}
       <div className="glass" style={{ padding: 24, borderRadius: 16, borderLeft: '4px solid var(--accent-primary)' }}>
         <div style={{ fontSize: 14, lineHeight: '1.6', color: 'var(--text-main)' }}>
-          <strong>Edge Analytics Protocol:</strong> Visits are recorded in real-time as they pass through the LaunchPad edge proxy. 
+          <strong>Edge Analytics Protocol:</strong> Visits are recorded in real-time as they pass through the LaunchLive edge proxy. 
           Data integrity is maintained using Redis-backed hyperloglog counters and sliding lists for high performance.
         </div>
       </div>

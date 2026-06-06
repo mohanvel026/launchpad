@@ -686,7 +686,7 @@ export default function DomainManager({ project, onUpdate }) {
                     color: '#fff'
                   }}>✓</div>
                   <div>
-                    <h5 style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 700, color: 'var(--text-main)' }}>Step 1: Domain Connected to LaunchPad</h5>
+                    <h5 style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 700, color: 'var(--text-main)' }}>Step 1: Domain Connected to LaunchLive</h5>
                     <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>Successfully associated the domain <code style={{ color: 'var(--accent-primary)' }}>{activeDomain}</code> with your deployment configuration.</p>
                   </div>
                 </div>
