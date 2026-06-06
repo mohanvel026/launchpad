@@ -615,7 +615,17 @@ export default function ProjectDetail() {
   );
 
   const domain = import.meta.env.VITE_DOMAIN || '129.159.22.142.nip.io';
-  const deployUrl = project.subdomain ? `http://${project.subdomain}.${domain}` : null;
+  const getDeployUrl = () => {
+    if (!project.subdomain) return null;
+    if (project.customDomain && (project.customDomainStatus === 'active' || project.customDomainStatus === 'dns_verified')) {
+      const isWildcard = project.customDomain.includes('nip.io') || project.customDomain.includes('sslip.io');
+      const isSslActive = project.sslStatus === 'active';
+      const scheme = (isSslActive && !isWildcard) ? 'https' : 'http';
+      return `${scheme}://${project.customDomain}`;
+    }
+    return `http://${project.subdomain}.${domain}`;
+  };
+  const deployUrl = getDeployUrl();
 
   return (
     <div className="launchpad-container">
@@ -698,7 +708,7 @@ export default function ProjectDetail() {
           </span>
           <span>Branch: <strong style={{ color: 'var(--text-main)' }}>{project.branch}</strong></span>
           <span>Framework: <strong style={{ color: 'var(--text-main)' }}>{project.framework || 'auto'}</strong></span>
-          {deployUrl && <span>URL: <a href={deployUrl} target="_blank" rel="noreferrer" className="lp-info-bar-link">{deployUrl.replace('http://', '')}</a></span>}
+          {deployUrl && <span>URL: <a href={deployUrl} target="_blank" rel="noreferrer" className="lp-info-bar-link">{deployUrl.replace(/^https?:\/\//, '')}</a></span>}
         </div>
       </div>
 
