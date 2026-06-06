@@ -403,7 +403,36 @@ export default function DomainManager({ project, onUpdate }) {
                         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Subdomain Prefix</span>
                         <input
                           value={domainPrefix}
-                          onChange={(e) => setDomainPrefix(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                          onChange={(e) => {
+                            const val = e.target.value.toLowerCase();
+                            if (val.includes('.') && val.length > 3) {
+                              const wildcardSuffix = `.${domain}`;
+                              if (val.endsWith(wildcardSuffix)) {
+                                setDomainPrefix(val.substring(0, val.length - wildcardSuffix.length).replace(/[^a-z0-9-]/g, ''));
+                                setDomainSuffix(wildcardSuffix);
+                                setMockVerify(true);
+                              } else {
+                                const common = ['.com', '.net', '.org'];
+                                let matched = false;
+                                for (const s of common) {
+                                  if (val.endsWith(s)) {
+                                    setDomainPrefix(val.substring(0, val.length - s.length).replace(/[^a-z0-9-]/g, ''));
+                                    setDomainSuffix(s);
+                                    matched = true;
+                                    break;
+                                  }
+                                }
+                                if (!matched) {
+                                  const lastDot = val.lastIndexOf('.');
+                                  setDomainPrefix(val.substring(0, lastDot).replace(/[^a-z0-9-]/g, ''));
+                                  setDomainSuffix('custom');
+                                  setCustomSuffix(val.substring(lastDot));
+                                }
+                              }
+                            } else {
+                              setDomainPrefix(val.replace(/[^a-z0-9-]/g, ''));
+                            }
+                          }}
                           placeholder="e.g. netflixbymohan"
                           className="lp-search"
                           style={{ width: '100%', backgroundImage: 'none', paddingLeft: 14, borderRadius: 8, fontSize: 13, height: 42, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-main)' }}
@@ -557,36 +586,66 @@ export default function DomainManager({ project, onUpdate }) {
               ) : (
                 <>
                   <p className="text-muted" style={{ fontSize: 13, lineHeight: '1.5', marginBottom: 14 }}>
-                    Log in to your DNS provider (e.g. Cloudflare, Namecheap) and create a CNAME record:
+                    Configure your DNS records at your registrar (e.g., Cloudflare, Namecheap, GoDaddy):
                   </p>
                   
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {/* CNAME Name */}
-                    <div className="glass" style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Host / Name</div>
-                        <code style={{ fontSize: 13, color: 'var(--accent-primary)', fontWeight: 600 }}>@</code>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {/* CNAME Option */}
+                    <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(255, 255, 255, 0.01)', border: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-primary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }}></span>
+                        Option A: CNAME Record (For Subdomains)
                       </div>
-                      <button
-                        onClick={() => copyToClipboard('@', 'host')}
-                        style={{ background: 'transparent', border: 'none', color: copiedText === 'host' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}
-                      >
-                        {copiedText === 'host' ? 'Copied' : '📋 Copy'}
-                      </button>
+                      <p className="text-muted" style={{ fontSize: 11, marginBottom: 8, lineHeight: '1.4' }}>Ideal for subdomains like <code>www.yourdomain.com</code> or <code>app.yourdomain.com</code>.</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                          <span className="text-muted">Host / Name:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <code style={{ color: 'var(--text-main)', fontWeight: 600 }}>www</code>
+                            <button onClick={() => copyToClipboard('www', 'host-www')} style={{ background: 'transparent', border: 'none', color: copiedText === 'host-www' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}>
+                              {copiedText === 'host-www' ? 'Copied' : '📋 Copy'}
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                          <span className="text-muted">Target / Destination:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <code style={{ color: 'var(--text-main)', fontWeight: 600, fontSize: 11 }}>{targetCname}</code>
+                            <button onClick={() => copyToClipboard(targetCname, 'value-cname')} style={{ background: 'transparent', border: 'none', color: copiedText === 'value-cname' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}>
+                              {copiedText === 'value-cname' ? 'Copied' : '📋 Copy'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* CNAME Value */}
-                    <div className="glass" style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ minWidth: 0, flex: 1, marginRight: 10 }}>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Value / Destination</div>
-                        <code style={{ fontSize: 12, color: 'var(--text-main)', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{targetCname}</code>
+                    {/* A Record Option */}
+                    <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(255, 255, 255, 0.01)', border: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#10b981', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }}></span>
+                        Option B: A Record (For Apex / Root Domains)
                       </div>
-                      <button
-                        onClick={() => copyToClipboard(targetCname, 'value')}
-                        style={{ background: 'transparent', border: 'none', color: copiedText === 'value' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}
-                      >
-                        {copiedText === 'value' ? 'Copied' : '📋 Copy'}
-                      </button>
+                      <p className="text-muted" style={{ fontSize: 11, marginBottom: 8, lineHeight: '1.4' }}>Required if mapping a root domain directly (e.g. <code>yourdomain.com</code>).</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                          <span className="text-muted">Host / Name:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <code style={{ color: 'var(--text-main)', fontWeight: 600 }}>@</code>
+                            <button onClick={() => copyToClipboard('@', 'host-apex')} style={{ background: 'transparent', border: 'none', color: copiedText === 'host-apex' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}>
+                              {copiedText === 'host-apex' ? 'Copied' : '📋 Copy'}
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                          <span className="text-muted">IPv4 Address:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <code style={{ color: 'var(--text-main)', fontWeight: 600 }}>129.159.22.142</code>
+                            <button onClick={() => copyToClipboard('129.159.22.142', 'value-ip')} style={{ background: 'transparent', border: 'none', color: copiedText === 'value-ip' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}>
+                              {copiedText === 'value-ip' ? 'Copied' : '📋 Copy'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </>
@@ -638,15 +697,16 @@ export default function DomainManager({ project, onUpdate }) {
                     width: 32,
                     height: 32,
                     borderRadius: '50%',
-                    background: (domainStatus === 'dns_verified' || domainStatus === 'active') ? '#10b981' : 'rgba(255,255,255,0.05)',
-                    border: (domainStatus === 'dns_verified' || domainStatus === 'active') ? 'none' : '2px solid rgba(255,255,255,0.1)',
+                    background: (domainStatus === 'dns_verified' || domainStatus === 'active') ? '#10b981' : (pipelineStep === 'checking_dns' ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.05)'),
+                    border: (domainStatus === 'dns_verified' || domainStatus === 'active') ? 'none' : (pipelineStep === 'checking_dns' ? '2px solid var(--accent-primary)' : '2px solid rgba(255,255,255,0.1)'),
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     boxShadow: (domainStatus === 'dns_verified' || domainStatus === 'active') ? '0 0 10px rgba(16, 185, 129, 0.3)' : 'none',
                     zIndex: 2,
                     fontSize: 12,
-                    color: (domainStatus === 'dns_verified' || domainStatus === 'active') ? '#fff' : 'var(--text-muted)'
+                    color: (domainStatus === 'dns_verified' || domainStatus === 'active') ? '#fff' : (pipelineStep === 'checking_dns' ? 'var(--accent-primary)' : 'var(--text-muted)'),
+                    animation: (pipelineStep === 'checking_dns') ? 'pulse-purple 1.5s infinite' : 'none'
                   }}>
                     {(domainStatus === 'dns_verified' || domainStatus === 'active') ? '✓' : '2'}
                   </div>
