@@ -211,10 +211,30 @@ export default function DomainManager({ project, onUpdate }) {
     } finally { setSsl(false); }
   };
 
+  const handleSwitchToInstantWildcard = async () => {
+    const defaultPrefix = project.subdomain || '';
+    const targetWildcardSuffix = `.${domain}`;
+    setDomainPrefix(defaultPrefix);
+    setDomainSuffix(targetWildcardSuffix);
+    setSaving(true); setError(''); setMessage(''); setDnsStatus(null);
+    try {
+      const targetDomainName = `${defaultPrefix}${targetWildcardSuffix}`.toLowerCase();
+      const res = await api.post(`/domains/${project._id}/custom`, { customDomain: targetDomainName });
+      setMessage(res.data.message);
+      setMockVerify(true);
+      await fetchDomainInfo();
+      if (onUpdate) onUpdate();
+      setTimeout(() => handleVerifyDNS(), 100);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to switch to instant wildcard');
+    } finally { setSaving(false); }
+  };
+
   // Determine current overall state for styling
   const activeDomain = domainInfo?.customDomain;
   const domainStatus = domainInfo?.customDomainStatus || 'none'; // 'none', 'pending_dns', 'dns_verified', 'active', 'failed'
   const sslStatus = domainInfo?.sslStatus || 'none'; // 'none', 'pending', 'active', 'failed'
+  const isFullyActive = activeDomain && domainStatus === 'active' && sslStatus === 'active';
   
   // Calculate relative date for SSL expiration
   const getExpirationDays = () => {
@@ -349,8 +369,19 @@ export default function DomainManager({ project, onUpdate }) {
                   Route web traffic from your own DNS provider to this project container by attaching a custom domain.
                 </p>
 
-                {!activeDomain ? (
+                {!isFullyActive ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
+                    {activeDomain && (
+                      <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          Current: <code style={{ color: 'var(--accent-danger)', fontWeight: 600 }}>{activeDomain}</code> (Failed/Pending SSL)
+                        </span>
+                        <button onClick={handleRemoveDomain} disabled={removing} style={{ background: 'transparent', border: 'none', color: 'var(--accent-danger)', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>
+                          {removing ? 'Unlinking...' : 'Unlink'}
+                        </button>
+                      </div>
+                    )}
+                    
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                       <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Subdomain Prefix</span>
@@ -403,9 +434,17 @@ export default function DomainManager({ project, onUpdate }) {
                         Compiled Domain: <strong style={{ color: 'var(--accent-primary)', fontSize: 13 }}>{domainPrefix || 'myapp'}{domainSuffix === 'custom' ? (customSuffix.startsWith('.') ? customSuffix : '.' + customSuffix) : domainSuffix}</strong>
                       </span>
                       <button onClick={handleLinkAutomatedDomain} disabled={saving} className="lp-btn-primary" style={{ padding: '0 20px', borderRadius: 8, fontSize: 13, height: 38, fontWeight: 600 }}>
-                        {saving ? 'Linking...' : 'Link & Automate'}
+                        {saving ? 'Linking...' : activeDomain ? 'Update & Automate' : 'Link & Automate'}
                       </button>
                     </div>
+
+                    {activeDomain && activeDomain !== `${project.subdomain}.${domain}` && (
+                      <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 12, marginTop: 4 }}>
+                        <button onClick={handleSwitchToInstantWildcard} disabled={saving} className="lp-btn-primary" style={{ width: '100%', height: 38, background: 'linear-gradient(135deg, #a855f7 0%, #3b82f6 100%)', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                          {saving ? 'Switching...' : '✨ Switch to Free & Instant Wildcard Domain'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 10 }}>
