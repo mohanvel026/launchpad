@@ -419,9 +419,24 @@ const syncProjectStatus = async (req, res) => {
   }
 };
 
+// GET /api/projects/check-subdomain
+const checkSubdomainAvailability = async (req, res) => {
+  const { subdomain } = req.query;
+  if (!subdomain) return res.status(400).json({ message: 'subdomain is required' });
+
+  try {
+    const sanitized = subdomain.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const existing = await Project.findOne({ subdomain: sanitized });
+    res.json({ available: !existing, sanitized });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   getUserRepos, analyzeRepo, getProjects, createProject,
   getProject, deleteProject, registerWebhook,
   updateProject, clearProjectStuckBuild,
   resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus,
+  checkSubdomainAvailability,
 };

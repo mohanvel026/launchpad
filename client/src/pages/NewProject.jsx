@@ -44,6 +44,33 @@ export default function NewProject() {
   const [envVars,   setEnvVars]   = useState([]);   // [{key, value, fromExample}]
   const [showAll,   setShowAll]   = useState(false); // show all env fields vs just missing
 
+  // Custom project name & subdomain live validation
+  const [projectName, setProjectName] = useState('');
+  const [subdomainAvailable, setSubdomainAvailable] = useState(null);
+  const [checkingSubdomain, setCheckingSubdomain] = useState(false);
+
+  useEffect(() => {
+    if (!projectName.trim()) {
+      setSubdomainAvailable(null);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      setCheckingSubdomain(true);
+      try {
+        const slug = projectName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        const res = await api.get(`/projects/check-subdomain?subdomain=${slug}`);
+        setSubdomainAvailable(res.data.available);
+      } catch {
+        setSubdomainAvailable(null);
+      } finally {
+        setCheckingSubdomain(false);
+      }
+    }, 400); // 400ms debounce
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [projectName]);
+
   // Deploy
   const [deploying, setDeploying] = useState(false);
   const [error,     setError]     = useState('');
@@ -63,6 +90,7 @@ export default function NewProject() {
   // ── Pick repo → trigger analysis ───────────────────────────────────────────
   const handleSelectRepo = useCallback(async (repo) => {
     setSelected(repo);
+    setProjectName(repo.name || '');
     setPhase('analyze');
     setAnalyzeErr('');
     setAnalysis(null);
@@ -104,12 +132,16 @@ export default function NewProject() {
   // ── Deploy ─────────────────────────────────────────────────────────────────
   const handleDeploy = async () => {
     if (!selected) return;
+    if (subdomainAvailable === false) {
+      setError('The subdomain already exists. Please choose a different project name.');
+      return;
+    }
     setDeploying(true); setError('');
     try {
       const res = await api.post('/projects', {
         repoFullName: selected.fullName,
         branch,
-        name:         selected.name,
+        name:         projectName.trim(),
         framework:    (analysis?.stack && analysis.stack !== 'unknown') ? analysis.stack : undefined,
       });
       const projectId = res.data.project._id;
@@ -288,6 +320,48 @@ export default function NewProject() {
               </div>
             )}
 
+            {/* Project Settings Card */}
+            <div className="lp-card" style={{ padding: 24, marginBottom: 16, border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-dim)', letterSpacing: '0.08em', marginBottom: 16 }}>PROJECT SETTINGS</div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Project Name (defines your URL)</label>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <input
+                    value={projectName}
+                    onChange={e => setProjectName(e.target.value)}
+                    placeholder="e.g. my-awesome-app"
+                    className="lp-input"
+                    style={{ flex: 1, height: 42, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '0 14px', fontSize: 14 }}
+                  />
+                </div>
+                
+                {/* Subdomain availability indicator */}
+                {projectName.trim() && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginTop: 4 }}>
+                    {checkingSubdomain ? (
+                      <>
+                        <div className="loading-spinner" style={{ width: 12, height: 12, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent-primary)' }} />
+                        <span style={{ color: 'var(--text-muted)' }}>Checking URL availability...</span>
+                      </>
+                    ) : subdomainAvailable === true ? (
+                      <>
+                        <span style={{ color: '#10b981' }}>🟢</span>
+                        <span style={{ color: '#10b981', fontWeight: 600 }}>Available:</span>
+                        <code style={{ color: 'var(--accent-primary)' }}>{projectName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.129.159.22.142.nip.io</code>
+                      </>
+                    ) : subdomainAvailable === false ? (
+                      <>
+                        <span style={{ color: '#ef4444' }}>🔴</span>
+                        <span style={{ color: '#ef4444', fontWeight: 600 }}>Already Taken:</span>
+                        <code style={{ color: 'var(--text-muted)', textDecoration: 'line-through' }}>{projectName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.129.159.22.142.nip.io</code>
+                      </>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Auto-detected config card */}
             <div className="lp-card" style={{ padding: 24, marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-dim)', letterSpacing: '0.08em', marginBottom: 16 }}>AUTO-DETECTED CONFIGURATION</div>
@@ -413,7 +487,7 @@ export default function NewProject() {
               <button
                 className={`lp-btn-primary ${deploying ? 'animate-pulse-cyan' : ''}`}
                 onClick={handleDeploy}
-                disabled={deploying}
+                disabled={deploying || !selected || subdomainAvailable === false || checkingSubdomain || !projectName.trim()}
                 style={{ minWidth: 220, justifyContent: 'center', fontSize: 15, padding: '12px 28px' }}
               >
                 {deploying ? (

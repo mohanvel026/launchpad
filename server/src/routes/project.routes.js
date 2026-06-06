@@ -3,13 +3,17 @@ const { protect, getUserWithToken } = require('../middleware/auth.middleware');
 const {
   getProjects, createProject, getProject,
   deleteProject, getUserRepos, analyzeRepo, registerWebhook, updateProject,
-  clearProjectStuckBuild, resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus
+  clearProjectStuckBuild, resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus,
+  checkSubdomainAvailability
 } = require('../controllers/project.controller');
 
 const router = express.Router();
 
 // GET  /api/projects/repos        — list user's GitHub repos for the picker
 router.get('/repos',              getUserWithToken, getUserRepos);
+
+// GET  /api/projects/check-subdomain — verify if subdomain is available
+router.get('/check-subdomain',     getUserWithToken, checkSubdomainAvailability);
 
 // POST /api/projects/repos/analyze — AI-powered repo analysis for autonomous deploy
 router.post('/repos/analyze',     getUserWithToken, analyzeRepo);
