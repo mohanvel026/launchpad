@@ -249,6 +249,10 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
     const b64Nginx   = Buffer.from(nginxConf).toString('base64');
     const b64Html    = Buffer.from(fallbackHtml).toString('base64');
 
+    const configDir = includeProxy ? '/etc/nginx/http.d' : '/etc/nginx/conf.d';
+    const configFile = `${configDir}/default.conf`;
+    const deleteOldFile = includeProxy ? '/etc/nginx/conf.d/default.conf' : '/etc/nginx/http.d/default.conf';
+
     // Single RUN command — no heredocs, no xargs, works on all Alpine/BusyBox Docker versions
     return `RUN chmod -R 755 /usr/share/nginx/html; \\
     _LP_F=$(find /usr/share/nginx/html -name "index.html" 2>/dev/null | head -1); \\
@@ -258,9 +262,9 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
         printf '%s' '${b64Html}' | base64 -d > /usr/share/nginx/html/index.html; \\
         MAIN_HTML="index.html"; \\
     fi; \\
-    mkdir -p /etc/nginx/http.d; \\
-    rm -f /etc/nginx/conf.d/default.conf; \\
-    printf '%s' '${b64Nginx}' | base64 -d | sed "s|MAIN_HTML_PLACEHOLDER|$MAIN_HTML|g" > /etc/nginx/http.d/default.conf`;
+    mkdir -p ${configDir}; \\
+    rm -f ${deleteOldFile}; \\
+    printf '%s' '${b64Nginx}' | base64 -d | sed "s|MAIN_HTML_PLACEHOLDER|$MAIN_HTML|g" > ${configFile}`;
   };
 
   const healthCheck = `HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:${containerPort}/ || exit 1`;
