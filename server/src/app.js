@@ -24,7 +24,32 @@ const previewRoutes   = require('./routes/preview.routes');
 const { projectProxyMiddleware } = require('./middleware/projectProxy.middleware');
 
 const app = express();
-connectDB();
+connectDB().then(() => {
+  // 1. Resume active container monitors on server boot
+  const Project = require('./models/Project.model');
+  const { startMonitoring } = require('./services/healthMonitor.service');
+  Project.find({ status: 'live' })
+    .then(projects => {
+      console.log(`[HealthMonitor] Restoring health monitoring for ${projects.length} live projects...`);
+      projects.forEach(p => {
+        if (p.containerId) startMonitoring(p);
+      });
+    })
+    .catch(err => console.error('[HealthMonitor] Restoring failed:', err));
+
+  // 2. Clear stuck building previews on server boot
+  Project.updateMany(
+    { 'previews.status': 'building' },
+    { $set: { 'previews.$[elem].status': 'failed', 'previews.$[elem].error': 'Build interrupted by server restart' } },
+    { arrayFilters: [{ 'elem.status': 'building' }] }
+  )
+    .then(res => {
+      if (res.modifiedCount > 0) {
+        console.log(`[Preview] Cleaned up ${res.modifiedCount} stuck building previews.`);
+      }
+    })
+    .catch(err => console.error('[Preview] Stuck clean up failed:', err));
+});
 
 // ── Security / logging (these don't consume the body, so they go first) ───────
 app.use(helmet({ contentSecurityPolicy: false }));

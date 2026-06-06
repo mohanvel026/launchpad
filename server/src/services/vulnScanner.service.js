@@ -20,10 +20,21 @@ async function scanForVulnerabilities(repoPath) {
   try { pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')); } catch { return { packages: [], summary: { critical: 0, high: 0, medium: 0, low: 0 }, scannedAt: new Date() }; }
 
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-  const queries = Object.entries(deps).slice(0, 50).map(([name, version]) => ({
-    package: { name, ecosystem: 'npm' },
-    version: version.replace(/^[\^~>=<]/, '')
-  }));
+  const queries = Object.entries(deps)
+    .filter(([name, version]) => {
+      return typeof version === 'string' && 
+             !version.startsWith('git') && 
+             !version.startsWith('http') && 
+             !version.startsWith('file:') &&
+             !version.startsWith('workspace:') &&
+             version !== '*' &&
+             version !== 'latest';
+    })
+    .slice(0, 50)
+    .map(([name, version]) => ({
+      package: { name, ecosystem: 'npm' },
+      version: version.replace(/^[\^~>=<]/, '').trim()
+    }));
 
   if (queries.length === 0) return { packages: [], summary: { critical: 0, high: 0, medium: 0, low: 0 }, scannedAt: new Date() };
 
