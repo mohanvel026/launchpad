@@ -2,7 +2,8 @@ const express     = require('express');
 const { protect } = require('../middleware/auth.middleware');
 const {
   triggerDeploy, getDeployments, getDeployment,
-  rollback, githubWebhook
+  rollback, githubWebhook,
+  cancelDeploy, stopProject, startProject, restartProject,
 } = require('../controllers/deploy.controller');
 
 const router = express.Router();
@@ -21,5 +22,13 @@ router.get('/:projectId/:deploymentId',           protect, getDeployment);
 
 // Roll back to a previous successful deployment
 router.post('/:projectId/rollback/:deploymentId', protect, rollback);
+
+// Cancel a queued or in-progress deployment
+router.post('/:projectId/cancel',                 protect, cancelDeploy);
+
+// Container lifecycle controls
+router.post('/:projectId/stop',                   protect, stopProject);
+router.post('/:projectId/start',                  protect, startProject);
+router.post('/:projectId/restart',                protect, restartProject);
 
 module.exports = router;

@@ -5,13 +5,10 @@ const buildQueue = require('../workers/build.worker');
 const { stopContainer, runContainer } = require('../services/docker.service');
 
 // ─── POST /api/deploy/webhook ─────────────────────────────────────────────────
-// GitHub calls this on every push. Verifies signature, finds the project,
-// creates a Deployment record, and queues a build.
 const githubWebhook = async (req, res) => {
   const signature = req.headers['x-hub-signature-256'];
   const secret    = process.env.GITHUB_WEBHOOK_SECRET || '';
 
-  // Verify the request really came from GitHub
   if (secret && signature) {
     const hmac     = crypto.createHmac('sha256', secret);
     const digest   = 'sha256=' + hmac.update(JSON.stringify(req.body)).digest('hex');
@@ -27,10 +24,8 @@ const githubWebhook = async (req, res) => {
   const branch       = ref?.replace('refs/heads/', '') || 'main';
 
   try {
-    // Find the project that matches this repo + branch
     const project = await Project.findOne({ repoFullName, branch });
     if (!project) {
-      // Webhook fired for a repo we don't track — just acknowledge
       return res.status(200).json({ message: 'No matching project found, ignoring' });
     }
 
@@ -68,7 +63,6 @@ const triggerDeploy = async (req, res) => {
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    // Prevent concurrent builds
     const running = await Deployment.findOne({ project: project._id, status: { $in: ['queued', 'building'] } });
     if (running) return res.status(409).json({ message: 'A build is already in progress' });
 
@@ -110,7 +104,7 @@ const getDeployments = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(20)
       .populate('triggeredBy', 'username avatarUrl')
-      .select('-logs');       // omit logs in list view (too large)
+      .select('-logs');
 
     res.json({ deployments });
   } catch (err) {
@@ -145,13 +139,10 @@ const rollback = async (req, res) => {
       return res.status(404).json({ message: 'No successful deployment found to roll back to' });
     }
 
-    // Stop the currently running container
     if (project.containerId) await stopContainer(project.containerId);
 
-    // Spin up the old image on the same port with custom resource bounds
     const containerId = await runContainer(target.imageTag, project.port, {}, null, 3000, project.cpuLimit || 0.5, project.ramLimitMB || 512);
 
-    // Create a new Deployment entry representing this rollback event
     const rollbackDep = await Deployment.create({
       project: project._id,
       triggeredBy: req.user._id,
@@ -159,7 +150,7 @@ const rollback = async (req, res) => {
       commitMessage: `🔄 Rollback to ${target.commitSha.slice(0, 7)} — ${target.commitMessage || 'previous deployment'}`,
       branch: target.branch || project.branch,
       status: 'success',
-      duration: 1500, // mock duration
+      duration: 1500,
       imageTag: target.imageTag,
       rollbackFrom: target._id,
     });
@@ -172,4 +163,151 @@ const rollback = async (req, res) => {
   }
 };
 
-module.exports = { githubWebhook, triggerDeploy, getDeployments, getDeployment, rollback };
+// ─── POST /api/deploy/:projectId/cancel — cancel a queued/building deploy ────
+const cancelDeploy = async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const activeDeployment = await Deployment.findOne({
+      project: project._id,
+      status: { $in: ['queued', 'building'] },
+    }).sort({ createdAt: -1 });
+
+    if (!activeDeployment) {
+      return res.status(404).json({ message: 'No active deployment to cancel' });
+    }
+
+    // Mark as failed/cancelled in the DB
+    await Deployment.findByIdAndUpdate(activeDeployment._id, {
+      status: 'failed',
+      finishedAt: new Date(),
+      $push: { logs: `[${new Date().toLocaleTimeString()}] 🛑 Deployment cancelled by ${req.user.username}` },
+    });
+
+    // Try to remove from Bull queue (best-effort)
+    try {
+      const jobs = await buildQueue.getJobs(['waiting', 'active', 'delayed']);
+      for (const job of jobs) {
+        if (job.data?.deploymentId === activeDeployment._id.toString()) {
+          await job.remove();
+          break;
+        }
+      }
+    } catch (qErr) {
+      console.warn('[cancelDeploy] Could not remove job from queue:', qErr.message);
+    }
+
+    // Reset project status if it was building
+    if (project.status === 'building') {
+      await Project.findByIdAndUpdate(project._id, { status: 'failed' });
+    }
+
+    res.json({ message: 'Deployment cancelled', deploymentId: activeDeployment._id });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── POST /api/deploy/:projectId/stop — stop a running container ─────────────
+const stopProject = async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+    if (!project.containerId) return res.status(400).json({ message: 'No container running for this project' });
+
+    // Stop but do NOT remove the container so we can restart it
+    const Docker = require('dockerode');
+    const docker = new Docker(
+      process.platform === 'win32'
+        ? { host: '127.0.0.1', port: 2375 }
+        : { socketPath: '/var/run/docker.sock' }
+    );
+    try {
+      const container = docker.getContainer(project.containerId);
+      const info = await container.inspect();
+      if (info.State.Running) await container.stop({ t: 10 });
+    } catch (dockerErr) {
+      console.warn('[stopProject] Docker stop error:', dockerErr.message);
+    }
+
+    await Project.findByIdAndUpdate(project._id, { status: 'stopped' });
+    res.json({ message: 'Container stopped successfully', status: 'stopped' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── POST /api/deploy/:projectId/start — start a stopped container ────────────
+const startProject = async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+    if (!project.containerId) return res.status(400).json({ message: 'No container found. Please redeploy.' });
+
+    const Docker = require('dockerode');
+    const docker = new Docker(
+      process.platform === 'win32'
+        ? { host: '127.0.0.1', port: 2375 }
+        : { socketPath: '/var/run/docker.sock' }
+    );
+
+    try {
+      const container = docker.getContainer(project.containerId);
+      const info = await container.inspect();
+      if (!info.State.Running) await container.start();
+    } catch (dockerErr) {
+      return res.status(500).json({ message: `Failed to start container: ${dockerErr.message}` });
+    }
+
+    await Project.findByIdAndUpdate(project._id, { status: 'live' });
+    res.json({ message: 'Container started successfully', status: 'live' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── POST /api/deploy/:projectId/restart — restart a container ────────────────
+const restartProject = async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+    if (!project.containerId) return res.status(400).json({ message: 'No container found. Please redeploy.' });
+
+    const Docker = require('dockerode');
+    const docker = new Docker(
+      process.platform === 'win32'
+        ? { host: '127.0.0.1', port: 2375 }
+        : { socketPath: '/var/run/docker.sock' }
+    );
+
+    try {
+      const container = docker.getContainer(project.containerId);
+      await container.restart({ t: 10 });
+    } catch (dockerErr) {
+      return res.status(500).json({ message: `Failed to restart container: ${dockerErr.message}` });
+    }
+
+    await Project.findByIdAndUpdate(project._id, { status: 'live' });
+    res.json({ message: 'Container restarted successfully', status: 'live' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = {
+  githubWebhook, triggerDeploy, getDeployments, getDeployment, rollback,
+  cancelDeploy, stopProject, startProject, restartProject,
+};

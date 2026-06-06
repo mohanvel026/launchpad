@@ -18,6 +18,60 @@ router.post('/:projectId',          protect, setEnvVar);
 // DELETE /api/env/:projectId/:key  — delete an env var
 router.delete('/:projectId/:key',   protect, deleteEnvVar);
 
+// POST /api/env/:projectId/bulk — bulk import array of { key, value } pairs
+router.post('/:projectId/bulk', protect, async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const { vars } = req.body; // [{ key, value }, ...]
+    if (!Array.isArray(vars) || vars.length === 0) {
+      return res.status(400).json({ message: 'vars must be a non-empty array of { key, value }' });
+    }
+
+    const EnvVar      = require('../models/EnvVar.model');
+    const crypto      = require('crypto');
+    const ALGO        = 'aes-256-cbc';
+    const ENC_KEY     = Buffer.from(process.env.ENCRYPTION_KEY || 'x'.repeat(32)).slice(0, 32);
+
+    const encrypt = (val) => {
+      const iv = crypto.randomBytes(16);
+      const cipher = crypto.createCipheriv(ALGO, ENC_KEY, iv);
+      const encrypted = Buffer.concat([cipher.update(String(val), 'utf8'), cipher.final()]);
+      return iv.toString('hex') + ':' + encrypted.toString('hex');
+    };
+
+    let created = 0, updated = 0;
+    const results = [];
+
+    for (const { key, value } of vars) {
+      if (!key || typeof key !== 'string') continue;
+      const trimmedKey = key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+      if (!trimmedKey) continue;
+
+      const encryptedValue = encrypt(value || '');
+      const existing = await EnvVar.findOne({ project: project._id, key: trimmedKey });
+
+      if (existing) {
+        await EnvVar.findByIdAndUpdate(existing._id, { value: encryptedValue });
+        updated++;
+      } else {
+        await EnvVar.create({ project: project._id, key: trimmedKey, value: encryptedValue });
+        created++;
+      }
+      results.push(trimmedKey);
+    }
+
+    res.json({ message: `Imported ${created} new, updated ${updated} existing variables`, created, updated, keys: results });
+  } catch (err) {
+    console.error('[Env Bulk Import]', err.message);
+    res.status(500).json({ message: 'Bulk import failed', error: err.message });
+  }
+});
+
 // GET /api/env/:projectId/ai-scan  — scan repo for missing env var references
 router.get('/:projectId/ai-scan', protect, async (req, res) => {
   try {

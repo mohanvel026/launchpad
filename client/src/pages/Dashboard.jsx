@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 
-const NAV_TABS = ['Projects', 'Deployments', 'Domains', 'Settings'];
+const NAV_TABS = ['Projects', 'Deployments', 'Domains', 'Activity', 'Settings'];
 
 const STACK_ICONS = {
   next: '▲', nuxt: '💚', react: '⚛️', node: '🟢', mern: '🏗️',
@@ -16,12 +16,41 @@ export default function Dashboard() {
   const [projects, setProjects] = useState([]);
   const [activeTab, setActiveTab] = useState('Projects');
   const [search, setSearch] = useState('');
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   useEffect(() => {
     if (!loading && user) {
       api.get('/projects').then(res => setProjects(res.data.projects || [])).catch(console.error);
     }
   }, [user, loading]);
+
+  const loadActivity = async (projectList) => {
+    const list = projectList || projects;
+    if (!list.length) return;
+    setActivityLoading(true);
+    try {
+      const results = await Promise.allSettled(
+        list.map(p => api.get('/deploy/' + p._id).then(r => (r.data.deployments || []).slice(0, 3).map(d => ({ ...d, projectName: p.name, projectId: p._id }))))
+      );
+      const all = results
+        .filter(r => r.status === 'fulfilled')
+        .flatMap(r => r.value)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 15);
+      setRecentActivity(all);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'Activity' && recentActivity.length === 0 && projects.length > 0) {
+      loadActivity(projects);
+    }
+  }, [activeTab, projects]);
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -285,6 +314,158 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Activity Tab */}
+        {activeTab === 'Activity' && (
+          <div className="fade-in">
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Recent Deployments</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Activity across all your projects</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)',
+                  borderRadius: 99, padding: '5px 12px', fontSize: 12, fontWeight: 700, color: '#34d399',
+                }}>
+                  <div style={{
+                    width: 7, height: 7, borderRadius: '50%', background: '#10b981',
+                    animation: 'pulse-dot 2s infinite',
+                  }} />
+                  Live
+                </div>
+                <button
+                  className="lp-btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: 12 }}
+                  onClick={() => loadActivity(projects)}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                  </svg>
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            {/* Feed */}
+            {activityLoading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '80px 0', gap: 12, color: 'var(--text-muted)', fontSize: 14 }}>
+                <div className="loading-spinner" />
+                Loading deployments…
+              </div>
+            ) : recentActivity.length === 0 ? (
+              <div className="lp-card flex-center" style={{ padding: '80px 24px', flexDirection: 'column', gap: 16, borderStyle: 'dashed' }}>
+                <div style={{ fontSize: 40 }}>📭</div>
+                <h3 style={{ fontWeight: 700 }}>No deployments yet</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Deploy your first project to see activity here.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {recentActivity.map((dep, i) => {
+                  const statusColor = dep.status === 'success' ? '#34d399'
+                    : dep.status === 'failed' ? '#f87171'
+                    : dep.status === 'building' ? '#fbbf24'
+                    : '#94a3b8';
+                  const statusBg = dep.status === 'success' ? 'rgba(52,211,153,0.08)'
+                    : dep.status === 'failed' ? 'rgba(248,113,113,0.08)'
+                    : dep.status === 'building' ? 'rgba(251,191,36,0.08)'
+                    : 'rgba(148,163,184,0.08)';
+                  const statusBorder = dep.status === 'success' ? 'rgba(52,211,153,0.2)'
+                    : dep.status === 'failed' ? 'rgba(248,113,113,0.2)'
+                    : dep.status === 'building' ? 'rgba(251,191,36,0.2)'
+                    : 'rgba(148,163,184,0.15)';
+
+                  const now = Date.now();
+                  const created = new Date(dep.createdAt).getTime();
+                  const diffMs = now - created;
+                  const diffMin = Math.floor(diffMs / 60000);
+                  const diffHr  = Math.floor(diffMin / 60);
+                  const diffDay = Math.floor(diffHr / 24);
+                  const timeAgo = diffDay > 0 ? `${diffDay}d ago`
+                    : diffHr > 0  ? `${diffHr}h ago`
+                    : diffMin > 0 ? `${diffMin}m ago`
+                    : 'just now';
+
+                  return (
+                    <div
+                      key={dep._id || i}
+                      className="lp-card"
+                      style={{
+                        padding: '16px 20px',
+                        display: 'flex', alignItems: 'center', gap: 16,
+                        cursor: 'pointer', transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.2s',
+                        animation: `fade-in-up 0.3s ease ${i * 0.04}s both`,
+                      }}
+                      onClick={() => navigate(`/projects/${dep.projectId}`)}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(56,189,248,0.25)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'none'; }}
+                    >
+                      {/* Status dot */}
+                      <div style={{
+                        width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                        background: statusBg, border: `1px solid ${statusBorder}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {dep.status === 'success' && (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        )}
+                        {dep.status === 'failed' && (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        )}
+                        {dep.status === 'building' && (
+                          <div className="loading-spinner" style={{ width: 14, height: 14, borderWidth: 2, borderTopColor: statusColor }} />
+                        )}
+                        {dep.status === 'queued' && (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        )}
+                      </div>
+
+                      {/* Info */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                          <span style={{
+                            padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                            background: 'rgba(56,189,248,0.08)', color: '#38bdf8',
+                            border: '1px solid rgba(56,189,248,0.15)',
+                          }}>
+                            {dep.projectName}
+                          </span>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 4 }}>
+                            {dep.branch || 'main'}
+                          </span>
+                          {dep.commitSha && (
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-dim)' }}>
+                              {dep.commitSha.slice(0, 7)}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 13, color: 'var(--text-main)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {dep.commitMessage || 'No commit message'}
+                        </div>
+                      </div>
+
+                      {/* Right side */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+                        <span
+                          className={`lp-badge ${dep.status === 'success' ? 'success' : dep.status === 'failed' ? 'failed' : dep.status === 'building' ? 'building' : 'idle'}`}
+                        >
+                          {dep.status}
+                        </span>
+                        <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{timeAgo}</span>
+                        {dep.duration && dep.status === 'success' && (
+                          <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{Math.round(dep.duration / 1000)}s</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

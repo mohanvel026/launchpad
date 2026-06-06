@@ -87,6 +87,7 @@ export default function ProjectDetail() {
   const [envValue, setEnvValue] = useState('');
   const [showBulk, setShowBulk] = useState(false);
   const [bulkEnv,  setBulkEnv]  = useState('');
+  const [bulkImporting, setBulkImporting] = useState(false);
   const [showVal,  setShowVal]  = useState({});
   const [aiScanning, setAiScanning] = useState(false);
 
@@ -99,6 +100,9 @@ export default function ProjectDetail() {
   const [cpuLimit, setCpuLimit] = useState(0.5);
   const [ramLimitMB, setRamLimitMB] = useState(256);
   const [resizing, setResizing] = useState(false);
+
+  // Container controls
+  const [containerAction, setContainerAction] = useState(null); // 'stopping'|'starting'|'restarting'|'cancelling'
 
   // 🛡️ Security / Vulnerability Scanner
   const [vulnData, setVulnData] = useState(null);
@@ -337,16 +341,69 @@ export default function ProjectDetail() {
   };
 
   const handleBulkImport = async () => {
-    const lines = bulkEnv.split('\n').filter(l => l.includes('=') && !l.startsWith('#'));
+    const lines = bulkEnv.split('\n').filter(l => l.includes('=') && !l.trim().startsWith('#'));
+    if (lines.length === 0) { setError('No valid KEY=VALUE lines found.'); return; }
+    setBulkImporting(true);
+    setError('');
     try {
-      for (const line of lines) {
+      const vars = lines.map(line => {
         const eqIdx = line.indexOf('=');
-        const k = line.slice(0, eqIdx).trim();
-        const v = line.slice(eqIdx + 1).trim();
-        if (k && v) await api.post(`/env/${id}`, { key: k, value: v });
-      }
+        return { key: line.slice(0, eqIdx).trim(), value: line.slice(eqIdx + 1).trim() };
+      }).filter(v => v.key);
+      const res = await api.post(`/env/${id}/bulk`, { vars });
+      setSaveStatus(`✅ Imported ${res.data.created} new, updated ${res.data.updated} variables`);
+      setTimeout(() => setSaveStatus(''), 4000);
       setBulkEnv(''); setShowBulk(false); loadEnvVars();
-    } catch { setError('Bulk import partially failed. Check your format.'); }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Bulk import failed. Check your format.');
+    } finally {
+      setBulkImporting(false);
+    }
+  };
+
+  // ── Container lifecycle controls ──────────────────────────────────────────────
+  const handleContainerAction = async (action) => {
+    setContainerAction(action + 'ing');
+    setError('');
+    try {
+      await api.post(`/deploy/${id}/${action}`);
+      setSaveStatus(`✅ Container ${action}ped successfully`);
+      setTimeout(() => setSaveStatus(''), 3000);
+      loadProject();
+    } catch (err) {
+      setError(err.response?.data?.message || `Failed to ${action} container`);
+    } finally {
+      setContainerAction(null);
+    }
+  };
+
+  const handleCancelDeploy = async () => {
+    if (!window.confirm('Cancel the current deployment?')) return;
+    setContainerAction('cancelling');
+    setError('');
+    try {
+      await api.post(`/deploy/${id}/cancel`);
+      setSaveStatus('🛑 Deployment cancelled');
+      setTimeout(() => setSaveStatus(''), 3000);
+      loadDeployments();
+      loadProject();
+      clearInterval(pollRef.current);
+      setDeploying(false);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to cancel deployment');
+    } finally {
+      setContainerAction(null);
+    }
+  };
+
+  // ── Format milliseconds into "1m 23s" ─────────────────────────────────────────
+  const formatDuration = (ms) => {
+    if (!ms || ms < 0) return null;
+    const totalSeconds = Math.floor(ms / 1000);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    if (mins === 0) return `${secs}s`;
+    return `${mins}m ${secs}s`;
   };
 
   const handleAiAutoDetect = async () => {
@@ -777,15 +834,72 @@ export default function ProjectDetail() {
 
         {/* ── Deployments ── */}
         {activeTab === 'deployments' && (
-          <div className="fade-in">
+          <div className="fade-in" style={{ display: 'grid', gap: 16 }}>
+            {/* Container Quick Actions */}
+            <div className="lp-card" style={{ padding: '16px 20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: project.status === 'live' ? '#10b981' : project.status === 'building' ? '#38bdf8' : '#64748b',
+                    boxShadow: project.status === 'live' ? '0 0 8px rgba(16,185,129,0.6)' : project.status === 'building' ? '0 0 8px rgba(56,189,248,0.6)' : 'none',
+                    animation: project.status === 'building' ? 'pulse 1.2s ease-in-out infinite' : 'none',
+                  }} />
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>Container: <span style={{ color: project.status === 'live' ? '#10b981' : project.status === 'building' ? '#38bdf8' : 'var(--text-muted)', textTransform: 'capitalize' }}>{project.status || 'idle'}</span></span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {(project.status === 'building' || deploying) && (
+                    <button
+                      className="lp-btn-secondary"
+                      style={{ padding: '6px 14px', fontSize: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444' }}
+                      onClick={handleCancelDeploy}
+                      disabled={containerAction === 'cancelling'}
+                    >
+                      {containerAction === 'cancelling' ? '⏳ Cancelling...' : '🛑 Cancel Build'}
+                    </button>
+                  )}
+                  {project.status === 'live' && (
+                    <>
+                      <button
+                        className="lp-btn-secondary"
+                        style={{ padding: '6px 14px', fontSize: 12 }}
+                        onClick={() => handleContainerAction('restart')}
+                        disabled={!!containerAction}
+                      >
+                        {containerAction === 'restarting' ? '⏳ Restarting...' : '🔄 Restart'}
+                      </button>
+                      <button
+                        className="lp-btn-secondary"
+                        style={{ padding: '6px 14px', fontSize: 12, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444' }}
+                        onClick={() => handleContainerAction('stop')}
+                        disabled={!!containerAction}
+                      >
+                        {containerAction === 'stopping' ? '⏳ Stopping...' : '⏹ Stop'}
+                      </button>
+                    </>
+                  )}
+                  {(project.status === 'stopped' || project.status === 'failed') && project.containerId && (
+                    <button
+                      className="lp-btn-primary"
+                      style={{ padding: '6px 14px', fontSize: 12 }}
+                      onClick={() => handleContainerAction('start')}
+                      disabled={!!containerAction}
+                    >
+                      {containerAction === 'starting' ? '⏳ Starting...' : '▶ Start Container'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="lp-card" style={{ padding: 0 }}>
               <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h3 style={{ fontSize: 16 }}>Deployment Timeline</h3>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 2 }}>Click any past deployment to rollback. Production is always the top entry.</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 2 }}>Production is always the top entry. Click Rollback to revert to a past version.</p>
                 </div>
                 <button className="lp-btn-secondary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => { handleLoadTrends(); setActiveTab('analytics'); }}>
-                  📈 View Build Trends
+                  📈 Build Trends
                 </button>
               </div>
               {deployments.length === 0 ? (
@@ -798,12 +912,14 @@ export default function ProjectDetail() {
                   {deployments.map((dep, i) => {
                     const isProduction = i === 0 && dep.status === 'success';
                     const isRollingBackThis = rollingBack === dep._id;
+                    const isActive = dep.status === 'queued' || dep.status === 'building';
+                    const dur = formatDuration(dep.duration);
                     return (
                       <div key={dep._id} style={{
                         display: 'flex', alignItems: 'stretch', gap: 0,
                         padding: '0 24px',
                         borderBottom: i < deployments.length - 1 ? '1px solid var(--border)' : 'none',
-                        background: isProduction ? 'rgba(52,211,153,0.03)' : 'transparent',
+                        background: isProduction ? 'rgba(52,211,153,0.03)' : isActive ? 'rgba(56,189,248,0.02)' : 'transparent',
                         transition: 'background 0.2s',
                       }}>
                         {/* Timeline dot + line */}
@@ -811,7 +927,8 @@ export default function ProjectDetail() {
                           <div style={{
                             width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
                             background: dep.status === 'success' ? '#34d399' : dep.status === 'failed' ? '#f87171' : dep.status === 'building' ? '#38bdf8' : '#64748b',
-                            boxShadow: dep.status === 'success' ? '0 0 8px rgba(52,211,153,0.5)' : dep.status === 'failed' ? '0 0 8px rgba(248,113,113,0.4)' : 'none',
+                            boxShadow: dep.status === 'success' ? '0 0 8px rgba(52,211,153,0.5)' : dep.status === 'failed' ? '0 0 8px rgba(248,113,113,0.4)' : dep.status === 'building' ? '0 0 8px rgba(56,189,248,0.5)' : 'none',
+                            animation: dep.status === 'building' ? 'pulse 1.2s ease-in-out infinite' : 'none',
                             marginTop: 20,
                             zIndex: 2,
                           }} />
@@ -837,11 +954,12 @@ export default function ProjectDetail() {
                             {dep.isAutoHeal && <span className="lp-badge" style={{ fontSize: 10, background: 'rgba(56,189,248,0.1)', color: 'var(--accent-info)', border: '1px solid rgba(56,189,248,0.2)' }} title={dep.autoHealFixDescription}>🤖 AI Healed</span>}
                             {dep.rollbackFrom && <span className="lp-badge" style={{ fontSize: 10, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)' }}>🔄 Rollback</span>}
                           </div>
-                          <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', flexWrap: 'wrap' }}>
-                            {dep.commitSha && <span>{dep.commitSha.slice(0, 7)}</span>}
+                          <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {dep.commitSha && <span style={{ background: 'var(--bg-hover)', padding: '1px 6px', borderRadius: 4 }}>{dep.commitSha.slice(0, 7)}</span>}
                             {dep.branch && <span>↳ {dep.branch}</span>}
-                            {dep.duration && <span>⏱ {(dep.duration / 1000).toFixed(1)}s</span>}
+                            {dur && <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>⏱ {dur}</span>}
                             <span>{new Date(dep.createdAt).toLocaleString()}</span>
+                            {dep.triggeredBy?.username && <span style={{ color: 'var(--text-muted)' }}>by @{dep.triggeredBy.username}</span>}
                           </div>
                         </div>
 
@@ -851,7 +969,7 @@ export default function ProjectDetail() {
                           {!isProduction && dep.status === 'success' && (
                             <button
                               className="lp-btn-secondary"
-                              style={{ padding: '5px 12px', fontSize: 12, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24' }}
+                              style={{ padding: '5px 12px', fontSize: 12, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', color: '#fbbf24' }}
                               onClick={() => handleRollback(dep)}
                               disabled={isRollingBackThis || !!rollingBack}
                             >
