@@ -13,6 +13,10 @@ const deploymentSchema = new mongoose.Schema({
   startedAt:      { type: Date },
   finishedAt:     { type: Date },
   duration:       { type: Number },  // milliseconds
+  isAutoHeal:     { type: Boolean, default: false },
+  parentDeployment: { type: mongoose.Schema.Types.ObjectId, ref: 'Deployment' },
+  autoHealFixDescription: { type: String },
+  autoHealDiff:    { type: String },
 }, { timestamps: true });
 
 deploymentSchema.index({ project: 1, createdAt: -1 });

@@ -54,4 +54,20 @@ const deleteWebhook = async (accessToken, repoFullName, webhookId) => {
   }
 };
 
-module.exports = { listUserRepos, createWebhook, deleteWebhook };
+const createPullRequest = async (accessToken, repoFullName, title, head, base, body) => {
+  const api = githubApi(accessToken);
+  try {
+    const res = await api.post(`/repos/${repoFullName}/pulls`, {
+      title,
+      head,
+      base,
+      body,
+    });
+    return res.data;
+  } catch (err) {
+    console.error('Failed to create Pull Request:', err.response?.data || err.message);
+    throw err;
+  }
+};
+
+module.exports = { listUserRepos, createWebhook, deleteWebhook, createPullRequest };

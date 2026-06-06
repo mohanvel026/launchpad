@@ -22,6 +22,8 @@ const projectSchema = new mongoose.Schema({
   buildCount:    { type: Number, default: 0 },
   cpuLimit:      { type: Number, default: 0.5 },
   ramLimitMB:    { type: Number, default: 512 },
+  autoHeal:      { type: Boolean, default: false },
+  autoHealStrategy: { type: String, enum: ['push-on-success', 'pr', 'local-only'], default: 'push-on-success' },
 }, { timestamps: true });
 
 projectSchema.index({ owner: 1 });

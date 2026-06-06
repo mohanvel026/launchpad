@@ -1,0 +1,244 @@
+const fs = require('fs');
+const path = require('path');
+const util = require('util');
+const execAsync = util.promisify(require('child_process').exec);
+const { callAI } = require('./ai.service');
+
+// Helper to list all code files in the repository recursively
+function listFiles(dir, baseDir = dir, fileList = []) {
+  if (!fs.existsSync(dir)) return fileList;
+  const files = fs.readdirSync(dir);
+  for (const file of files) {
+    const filePath = path.join(dir, file);
+    const relPath = path.relative(baseDir, filePath).replace(/\\/g, '/');
+
+    // Skip heavy or irrelevant directories
+    if (['node_modules', '.git', 'dist', '.next', 'build', 'out', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml'].includes(file)) {
+      continue;
+    }
+
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      listFiles(filePath, baseDir, fileList);
+    } else {
+      // Focus on code/config files to avoid context bloat
+      if (/\.(js|jsx|ts|tsx|json|html|css|yml|yaml|conf|config)$/i.test(file)) {
+        fileList.push(relPath);
+      }
+    }
+  }
+  return fileList;
+}
+
+// Inspect logs to suggest which files are relevant to the crash
+function findRelevantFilesFromLogs(logs, filesInRepo) {
+  const relevant = new Set();
+  for (const relPath of filesInRepo) {
+    const fileName = path.basename(relPath);
+    // If log contains filename (e.g. App.jsx) or relative path, it's relevant
+    if (logs.includes(fileName) || logs.includes(relPath)) {
+      relevant.add(relPath);
+    }
+  }
+  // Always include key configs if present
+  ['package.json', 'vite.config.js', 'vite.config.ts', 'next.config.js', 'nuxt.config.js', 'tailwind.config.js'].forEach(f => {
+    if (filesInRepo.includes(f)) relevant.add(f);
+  });
+  return Array.from(relevant);
+}
+
+// Normalize CRLF to LF for consistent matching
+function normalizeNewlines(str) {
+  return str.replace(/\r\n/g, '\n').trim();
+}
+
+/**
+ * Generate code patches using Gemini/Groq
+ */
+async function generateFixPatch(repoPath, logs, stack) {
+  try {
+    const filesInRepo = listFiles(repoPath);
+    const relevantFiles = findRelevantFilesFromLogs(logs, filesInRepo);
+
+    const filesContent = {};
+    for (const relPath of relevantFiles) {
+      try {
+        const fullPath = path.join(repoPath, relPath);
+        // Limit to first 12KB of content per file to prevent hitting context limits
+        const content = fs.readFileSync(fullPath, 'utf8').slice(0, 12000);
+        filesContent[relPath] = content;
+      } catch {}
+    }
+
+    const systemPrompt = `You are LaunchPad Auto-Healer, an expert SRE and DevOps AI.
+Your job is to generate a precise code patch to resolve build, dependency, packaging, config, or runtime startup errors.
+
+You must respond ONLY with a valid JSON object matching this schema:
+{
+  "patches": [
+    {
+      "filePath": "src/App.jsx",
+      "originalContent": "exact original block of lines to replace",
+      "replacementContent": "exact new block of lines to write"
+    }
+  ],
+  "description": "Explanation of the auto-healing fix applied."
+}
+
+Rules:
+1. In "originalContent", specify the EXACT block of lines of code to modify. It MUST match the target file content character-for-character, including whitespace and indentation.
+2. In "replacementContent", provide the modified replacement code.
+3. If you need to create a new file, set "originalContent" to an empty string "".
+4. If you don't know how to fix the error, return an empty array for "patches".
+5. Respond with ONLY the raw JSON object. Do not wrap it in markdown blocks or backticks.`;
+
+    const userPrompt = `Stack: ${stack}
+Files in repository:
+${filesInRepo.map(f => `- ${f}`).join('\n')}
+
+Content of relevant files:
+${Object.entries(filesContent).map(([f, c]) => `=== FILE: ${f} ===\n${c}\n=== END ===`).join('\n\n')}
+
+Build/Runtime error logs:
+${logs}`;
+
+    const raw = await callAI(systemPrompt, userPrompt, 1500, true);
+    if (!raw) return null;
+
+    // Clean up potential markdown formatting wrapping JSON
+    let cleanRaw = raw.trim();
+    if (cleanRaw.startsWith('```json')) {
+      cleanRaw = cleanRaw.replace(/^```json/, '').replace(/```$/, '').trim();
+    } else if (cleanRaw.startsWith('```')) {
+      cleanRaw = cleanRaw.replace(/^```/, '').replace(/```$/, '').trim();
+    }
+
+    const parsed = JSON.parse(cleanRaw);
+    return {
+      patches: parsed.patches || [],
+      description: parsed.description || 'Auto-healing patch applied.'
+    };
+  } catch (err) {
+    console.error('[Auto-Heal] Patch generation error:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Apply patches locally to the repository files
+ */
+function applyPatchLocally(repoPath, patches) {
+  const applied = [];
+  let diffOutput = '';
+
+  for (const patch of patches) {
+    const fullPath = path.join(repoPath, patch.filePath);
+
+    // Create new file
+    if (patch.originalContent === '') {
+      try {
+        fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+        fs.writeFileSync(fullPath, patch.replacementContent, 'utf8');
+        applied.push(patch.filePath);
+        diffOutput += `\n[NEW FILE] ${patch.filePath}:\n+ ${patch.replacementContent.split('\n').join('\n+ ')}\n`;
+      } catch (err) {
+        console.error(`[Auto-Heal] Failed to create new file ${patch.filePath}:`, err.message);
+      }
+      continue;
+    }
+
+    if (!fs.existsSync(fullPath)) {
+      console.warn(`[Auto-Heal] File does not exist for patching: ${patch.filePath}`);
+      continue;
+    }
+
+    try {
+      const fileContent = fs.readFileSync(fullPath, 'utf8');
+      const normalizedContent = normalizeNewlines(fileContent);
+      const normalizedOriginal = normalizeNewlines(patch.originalContent);
+      const normalizedReplacement = normalizeNewlines(patch.replacementContent);
+
+      if (!normalizedContent.includes(normalizedOriginal)) {
+        console.warn(`[Auto-Heal] Match failed in ${patch.filePath}. Trying lines match.`);
+        // Try loose matching (ignoring CRLF differences)
+        const cleanContent = fileContent.replace(/\r\n/g, '\n');
+        const cleanOriginal = patch.originalContent.replace(/\r\n/g, '\n');
+        const cleanReplacement = patch.replacementContent.replace(/\r\n/g, '\n');
+
+        if (cleanContent.includes(cleanOriginal)) {
+          const newContent = cleanContent.replace(cleanOriginal, cleanReplacement);
+          fs.writeFileSync(fullPath, newContent, 'utf8');
+          applied.push(patch.filePath);
+          diffOutput += `\n[MODIFY] ${patch.filePath}:\n- ${cleanOriginal.split('\n').join('\n- ')}\n+ ${cleanReplacement.split('\n').join('\n+ ')}\n`;
+        } else {
+          console.warn(`[Auto-Heal] Skipping patch for ${patch.filePath} due to content mismatch.`);
+        }
+        continue;
+      }
+
+      const newContent = normalizedContent.replace(normalizedOriginal, normalizedReplacement);
+      fs.writeFileSync(fullPath, newContent, 'utf8');
+      applied.push(patch.filePath);
+      diffOutput += `\n[MODIFY] ${patch.filePath}:\n- ${normalizedOriginal.split('\n').join('\n- ')}\n+ ${normalizedReplacement.split('\n').join('\n+ ')}\n`;
+    } catch (err) {
+      console.error(`[Auto-Heal] Failed to patch file ${patch.filePath}:`, err.message);
+    }
+  }
+
+  return { applied, diffOutput };
+}
+
+/**
+ * Commit and push code updates back to GitHub
+ */
+async function commitAndPushFix(project, repoPath, strategy, parentDeploymentId) {
+  const branchName = project.branch || 'main';
+  const token = project.owner?.githubAccessToken;
+
+  if (!token) {
+    return 'GitHub updates skipped (owner access token not available).';
+  }
+
+  let cloneUrl = project.repoUrl;
+  cloneUrl = cloneUrl.replace('https://', `https://${token}@`);
+
+  try {
+    // Configure Git author credentials locally inside the repo clone
+    await execAsync(`git -C "${repoPath}" config user.name "LaunchPad AI"`);
+    await execAsync(`git -C "${repoPath}" config user.email "ai-healer@launchpad.internal"`);
+
+    if (strategy === 'push-on-success') {
+      await execAsync(`git -C "${repoPath}" add -A`);
+      await execAsync(`git -C "${repoPath}" commit -m "chore(launchpad): auto-heal deployment failure for build ${parentDeploymentId}"`);
+      await execAsync(`git -C "${repoPath}" push origin HEAD:${branchName}`);
+      return `Pushed commit directly to branch ${branchName}.`;
+    } else if (strategy === 'pr') {
+      const fixBranch = `launchpad-fix-${parentDeploymentId}`;
+      await execAsync(`git -C "${repoPath}" checkout -b ${fixBranch}`);
+      await execAsync(`git -C "${repoPath}" add -A`);
+      await execAsync(`git -C "${repoPath}" commit -m "chore(launchpad): auto-heal deployment failure for build ${parentDeploymentId}"`);
+      await execAsync(`git -C "${repoPath}" push origin ${fixBranch}`);
+
+      const { createPullRequest } = require('./github.service');
+      const prTitle = `chore(launchpad): AI Auto-Healing fix for build ${parentDeploymentId}`;
+      const prBody = `LaunchPad AI Auto-Healing detected a deployment failure and successfully generated/verified a patch.
+      
+### Applied Patches:
+The container was built and verified successfully using this patch. Feel free to merge this PR.`;
+
+      const pr = await createPullRequest(token, project.repoFullName, prTitle, fixBranch, branchName, prBody);
+      return `Created GitHub Pull Request: ${pr.html_url}`;
+    }
+
+    return 'GitHub updates skipped (local-only strategy).';
+  } catch (err) {
+    console.error('[Auto-Heal] Git operation failed:', err.message);
+    return `Failed to update GitHub: ${err.message}`;
+  }
+}
+
+module.exports = {
+  generateFixPatch,
+  applyPatchLocally,
+  commitAndPushFix
+};

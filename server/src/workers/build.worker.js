@@ -862,6 +862,17 @@ buildQueue.process(1, async (job) => {
     // Flush proxy cache so the new port is used immediately
     invalidateProjectCache(project.subdomain);
 
+    if (deployment.isAutoHeal) {
+      try {
+        await log(`🤖 LaunchPad AI Auto-Healing is executing Git updates (${project.autoHealStrategy || 'push-on-success'})...`);
+        const { commitAndPushFix } = require('../services/autoHeal.service');
+        const gitMessage = await commitAndPushFix(project, repoDir, project.autoHealStrategy || 'push-on-success', deployment.parentDeployment);
+        await log(`🤖 Git Action: ${gitMessage}`);
+      } catch (gitErr) {
+        await log(`⚠️ Git push failed: ${gitErr.message}`);
+      }
+    }
+
     if (project.owner?.email) {
       sendDeployNotification(project.owner.email, {
         projectName: project.name, status: 'success',
@@ -872,9 +883,10 @@ buildQueue.process(1, async (job) => {
   } catch (err) {
     await log(`\n🛑 DEPLOYMENT ABORTED: ${err.message}`);
 
+    let logsText = '';
     try {
       const fresh   = await Deployment.findById(deploymentId);
-      const logsText = fresh.logs.join('\n');
+      logsText = fresh.logs.join('\n');
       let diagnosis;
       try {
         diagnosis = await analyzeError(logsText, project.stack);
@@ -891,6 +903,68 @@ buildQueue.process(1, async (job) => {
       await log(`🤖 Diagnosis:\n${formattedSummary}`);
     } catch (diagErr) {
       console.error('[Build Worker] Failed to run build error diagnosis:', diagErr.message);
+    }
+
+    // AI Auto-Healing Section
+    if (project.autoHeal && !deployment.isAutoHeal) {
+      try {
+        await log(`\n🤖 LaunchPad AI Auto-Healing is analyzing repository for a fix...`);
+        const { generateFixPatch, applyPatchLocally } = require('../services/autoHeal.service');
+        const fixPatch = await generateFixPatch(repoDir, logsText, project.stack);
+        
+        if (fixPatch && fixPatch.patches && fixPatch.patches.length > 0) {
+          await log(`🤖 Auto-Healing patch generated: ${fixPatch.description}`);
+          const { applied, diffOutput } = applyPatchLocally(repoDir, fixPatch.patches);
+          
+          if (applied.length > 0) {
+            await log(`🤖 Applied fixes to files: ${applied.join(', ')}`);
+            
+            // Queue follow-up auto-heal deployment
+            const autoHealDep = await Deployment.create({
+              project:       project._id,
+              triggeredBy:   deployment.triggeredBy || project.owner?._id,
+              commitSha:     deployment.commitSha,
+              commitMessage: `🤖 Auto-healed: ${fixPatch.description}`,
+              branch:        project.branch,
+              status:        'queued',
+              isAutoHeal:    true,
+              parentDeployment: deployment._id,
+              autoHealFixDescription: fixPatch.description,
+              autoHealDiff: diffOutput,
+            });
+
+            await buildQueue.add(
+              { deploymentId: autoHealDep._id.toString(), projectId: project._id.toString() },
+              { attempts: 1, removeOnComplete: 50, removeOnFail: 50 }
+            );
+
+            await log(`🤖 Successfully queued auto-healed deployment: ${autoHealDep._id}`);
+
+            // Mark current deployment as failed
+            await Deployment.findByIdAndUpdate(deploymentId, {
+              status: 'failed', finishedAt: new Date(),
+            });
+            // Update project status to building
+            await Project.findByIdAndUpdate(projectId, { status: 'building' });
+            return; // Exit early: follow-up auto-heal job will handle live/failed state
+          } else {
+            await log(`⚠️ Auto-Healing generated patches but none could be matched/applied to the files.`);
+          }
+        } else {
+          await log(`⚠️ Auto-Healing did not find a reliable code patch for this error.`);
+        }
+      } catch (autoHealErr) {
+        await log(`⚠️ Auto-Healing encountered an error: ${autoHealErr.message}`);
+      }
+    }
+
+    if (deployment.isAutoHeal) {
+      try {
+        await execAsync(`git -C "${repoDir}" reset --hard HEAD`);
+        await log(`❌ Auto-healing attempt failed. Reverted local file changes.`);
+      } catch (revertErr) {
+        console.error('[Auto-Heal] Failed to revert repository:', revertErr.message);
+      }
     }
 
     await Deployment.findByIdAndUpdate(deploymentId, {

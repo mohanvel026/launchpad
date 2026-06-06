@@ -68,7 +68,9 @@ export default function ProjectDetail() {
   const [aiScanning, setAiScanning] = useState(false);
 
   // Settings
-  const [settings, setSettings] = useState({ installCommand: '', buildCommand: '', outputDir: '', branch: '' });
+  const [settings, setSettings] = useState({ installCommand: '', buildCommand: '', outputDir: '', branch: '', autoHeal: false, autoHealStrategy: 'push-on-success' });
+  const [activeDeployment, setActiveDeployment] = useState(null);
+  const [showDiff, setShowDiff] = useState(false);
 
   // SRE Container Limits
   const [cpuLimit, setCpuLimit] = useState(0.5);
@@ -92,6 +94,8 @@ export default function ProjectDetail() {
         buildCommand:   p.buildCommand   || '',
         outputDir:      p.outputDir      || '',
         branch:         p.branch         || 'main',
+        autoHeal:       !!p.autoHeal,
+        autoHealStrategy: p.autoHealStrategy || 'push-on-success',
       });
     } catch { navigate('/dashboard'); }
   }, [id, navigate]);
@@ -181,13 +185,22 @@ export default function ProjectDetail() {
 
   const handleDeploy = async () => {
     setDeploying(true); setError(''); setActiveTab('logs'); setLogs([]);
+    setActiveDeployment(null);
+    setShowDiff(false);
     try {
       const res = await api.post(`/deploy/${id}`);
+      setActiveDeployment(res.data.deployment);
       connectToLogs(res.data.deployment._id);
       pollRef.current = setInterval(async () => {
         const r = await api.get(`/deploy/${id}`);
         setDeployments(r.data.deployments || []);
         const latest = r.data.deployments?.[0];
+        if (latest) {
+          try {
+            const detailRes = await api.get(`/deploy/${id}/${latest._id}`);
+            setActiveDeployment(detailRes.data.deployment);
+          } catch {}
+        }
         if (latest?.status === 'success' || latest?.status === 'failed') {
           clearInterval(pollRef.current);
           setDeploying(false);
@@ -213,9 +226,13 @@ export default function ProjectDetail() {
 
   const viewLogs = async (dep) => {
     setActiveTab('logs');
+    setActiveDeployment(dep);
+    setShowDiff(false);
     try {
       const res = await api.get(`/deploy/${id}/${dep._id}`);
-      setLogs(res.data.deployment?.logs || []);
+      const fetched = res.data.deployment;
+      setLogs(fetched?.logs || []);
+      setActiveDeployment(fetched);
     } catch { setLogs(['Failed to load logs.']); }
   };
 
@@ -415,6 +432,21 @@ export default function ProjectDetail() {
                           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
                             {dep.commitSha?.slice(0,7)} · {dep.branch}
                             {i === 0 && <span className="lp-badge live" style={{ marginLeft: 8, fontSize: 10 }}>Production</span>}
+                            {dep.isAutoHeal && (
+                              <span 
+                                className="lp-badge" 
+                                style={{ 
+                                  marginLeft: 8, 
+                                  fontSize: 10, 
+                                  background: 'rgba(56, 189, 248, 0.1)', 
+                                  color: 'var(--accent-info)',
+                                  border: '1px solid rgba(56, 189, 248, 0.2)'
+                                }}
+                                title={dep.autoHealFixDescription}
+                              >
+                                🤖 AI HEALED
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td><span className={`lp-badge ${dep.status}`}>{dep.status}</span></td>
@@ -435,24 +467,68 @@ export default function ProjectDetail() {
 
         {/* ── Build Logs ── */}
         {activeTab === 'logs' && (
-          <div className="lp-terminal fade-in">
-            <div className="lp-terminal-header">
-              <div className="lp-terminal-dots">
-                <div className="lp-terminal-dot" style={{ background: '#ff5f57' }} />
-                <div className="lp-terminal-dot" style={{ background: '#ffbd2e' }} />
-                <div className="lp-terminal-dot" style={{ background: '#28c840' }} />
+          <div className="fade-in" style={{ display: 'grid', gap: 20 }}>
+            {activeDeployment && activeDeployment.isAutoHeal && activeDeployment.autoHealDiff && (
+              <div className="lp-card glass" style={{ 
+                padding: '20px 24px', 
+                borderLeft: '4px solid var(--accent-info)',
+                background: 'rgba(56, 189, 248, 0.04)',
+                borderRadius: 16
+              }}>
+                <div className="flex-between">
+                  <div>
+                    <h4 style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      🤖 AI Auto-Healing Active Fix
+                    </h4>
+                    <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>
+                      {activeDeployment.autoHealFixDescription}
+                    </p>
+                  </div>
+                  <button 
+                    className="lp-btn-secondary" 
+                    style={{ padding: '6px 14px', fontSize: 11 }}
+                    onClick={() => setShowDiff(d => !d)}
+                  >
+                    {showDiff ? 'Hide Patch Diff' : 'View Code Patch Diff'}
+                  </button>
+                </div>
+                {showDiff && (
+                  <pre style={{ 
+                    marginTop: 16, 
+                    padding: 16, 
+                    background: '#090d16', 
+                    borderRadius: 12, 
+                    border: '1px solid var(--border)',
+                    fontFamily: 'var(--font-mono)', 
+                    fontSize: 11, 
+                    color: '#cbd5e1',
+                    overflowX: 'auto',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {activeDeployment.autoHealDiff}
+                  </pre>
+                )}
               </div>
-              <span>Build Output — {project.name}</span>
-              {deploying && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-primary)' }}>
-                <div className="loading-spinner" style={{ width: 12, height: 12, border: '2px solid rgba(56,189,248,0.2)', borderTopColor: 'var(--accent-primary)' }} />
-                Live Stream
-              </div>}
-            </div>
-            <div className="lp-terminal-body">
-              {logs.length === 0 ? (
-                <span style={{ opacity: 0.4 }}>Waiting for build output...</span>
-              ) : logs.map((line, i) => <LogLine key={i} line={line} />)}
-              <div ref={logsEndRef} />
+            )}
+            <div className="lp-terminal">
+              <div className="lp-terminal-header">
+                <div className="lp-terminal-dots">
+                  <div className="lp-terminal-dot" style={{ background: '#ff5f57' }} />
+                  <div className="lp-terminal-dot" style={{ background: '#ffbd2e' }} />
+                  <div className="lp-terminal-dot" style={{ background: '#28c840' }} />
+                </div>
+                <span>Build Output — {project.name}</span>
+                {deploying && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-primary)' }}>
+                  <div className="loading-spinner" style={{ width: 12, height: 12, border: '2px solid rgba(56,189,248,0.2)', borderTopColor: 'var(--accent-primary)' }} />
+                  Live Stream
+                </div>}
+              </div>
+              <div className="lp-terminal-body">
+                {logs.length === 0 ? (
+                  <span style={{ opacity: 0.4 }}>Waiting for build output...</span>
+                ) : logs.map((line, i) => <LogLine key={i} line={line} />)}
+                <div ref={logsEndRef} />
+              </div>
             </div>
           </div>
         )}
@@ -668,6 +744,60 @@ export default function ProjectDetail() {
                     ) : (
                       <>⚡ Apply SRE Resize Limits</>
                     )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="lp-card glass" style={{ 
+              padding: 28,
+              borderLeft: '4px solid var(--accent-info)',
+              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, rgba(129, 140, 248, 0.02) 100%)'
+            }}>
+              <h3 style={{ fontSize: 16, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🤖 AI Auto-Healing & Self-Correction
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>
+                When enabled, LaunchPad AI automatically intercepts deployment/health check failures, analyzes the logs, patches your code files locally, and re-runs the build.
+              </p>
+
+              <div style={{ display: 'grid', gap: 20 }}>
+                <div className="flex-between">
+                  <div className="lp-section-label" style={{ margin: 0 }}>ENABLE AI AUTO-HEALING</div>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={settings.autoHeal} 
+                      onChange={e => setSettings(s => ({ ...s, autoHeal: e.target.checked }))}
+                      style={{ width: 40, height: 20, accentColor: 'var(--accent-info)', cursor: 'pointer' }}
+                    />
+                  </label>
+                </div>
+
+                {settings.autoHeal && (
+                  <div className="fade-in" style={{ display: 'grid', gap: 8 }}>
+                    <div className="lp-section-label" style={{ margin: 0 }}>COMMIT & PUSH STRATEGY</div>
+                    <select
+                      value={settings.autoHealStrategy}
+                      onChange={e => setSettings(s => ({ ...s, autoHealStrategy: e.target.value }))}
+                      className="lp-input"
+                      style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                    >
+                      <option value="push-on-success">Push on Success (Recommended)</option>
+                      <option value="pr">Create Pull Request (PR)</option>
+                      <option value="local-only">Local Patch Only (Do not push to GitHub)</option>
+                    </select>
+                    <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 4 }}>
+                      {settings.autoHealStrategy === 'push-on-success' && 'AI will verify the fix first, and only push back to GitHub once the build is 100% healthy.'}
+                      {settings.autoHealStrategy === 'pr' && 'AI will verify the fix, push to a new branch, and open a GitHub Pull Request.'}
+                      {settings.autoHealStrategy === 'local-only' && 'AI patches the local container to make it live, but leaves GitHub untouched.'}
+                    </p>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 8 }}>
+                  <button className="lp-btn-primary" onClick={handleSaveSettings} disabled={saveStatus === 'saving'}>
+                    {saveStatus === 'saving' ? 'Saving Auto-Heal Settings...' : 'Save Auto-Heal Configuration'}
                   </button>
                 </div>
               </div>
