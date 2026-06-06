@@ -670,7 +670,7 @@ export default function ProjectDetail() {
           </span>
           <span>Branch: <strong style={{ color: 'var(--text-main)' }}>{project.branch}</strong></span>
           <span>Framework: <strong style={{ color: 'var(--text-main)' }}>{project.framework || 'auto'}</strong></span>
-          {deployUrl && <span>URL: <a href={deployUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{deployUrl.replace('http://', '')}</a></span>}
+          {deployUrl && <span>URL: <a href={deployUrl} target="_blank" rel="noreferrer" className="lp-info-bar-link">{deployUrl.replace('http://', '')}</a></span>}
         </div>
       </div>
 

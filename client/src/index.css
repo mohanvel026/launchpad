@@ -502,20 +502,29 @@ textarea.lp-input {
   min-height: calc(100vh - 105px);
 }
 .lp-sidebar-container {
-  width: 260px;
+  width: 250px;
   flex-shrink: 0;
   background: rgba(15, 23, 42, 0.45);
   border-right: 1px solid var(--border);
-  padding: 32px 24px;
+  padding: 24px 16px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
+  position: sticky;
+  top: 105px;
+  height: calc(100vh - 105px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.lp-sidebar-container::-webkit-scrollbar {
+  display: none;
 }
 .lp-sidebar-link {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 9px 12px;
+  gap: 10px;
+  padding: 8px 12px;
   border-radius: 8px;
   font-size: 13.5px;
   font-weight: 500;
@@ -524,7 +533,7 @@ textarea.lp-input {
   border-left: 3px solid transparent;
   cursor: pointer;
   transition: all 0.15s ease-in-out;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .lp-sidebar-link:hover {
   color: var(--text-main);
@@ -544,20 +553,35 @@ textarea.lp-input {
   padding: 40px;
 }
 
+.lp-info-bar-link {
+  color: var(--accent-primary) !important;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  transition: color 0.15s, text-decoration 0.15s;
+}
+.lp-info-bar-link:hover {
+  color: var(--text-main) !important;
+  text-decoration: underline !important;
+}
+
 @media (max-width: 768px) {
   .lp-detail-layout {
     flex-direction: column;
   }
   .lp-sidebar-container {
     width: 100%;
+    height: auto;
+    position: static;
     border-right: none;
     border-bottom: 1px solid var(--border);
     padding: 24px;
+    overflow-y: visible;
   }
   .lp-content-container {
     padding: 24px;
   }
 }
+
 
 
 
