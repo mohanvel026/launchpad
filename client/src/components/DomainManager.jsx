@@ -224,6 +224,13 @@ export default function DomainManager({ project, onUpdate }) {
     } finally { setVerifying(false); }
   };
 
+  // Trigger automatic DNS verification check on mount if pending
+  useEffect(() => {
+    if (domainInfo && domainInfo.customDomainStatus === 'pending_dns' && !verifying && !dnsStatus) {
+      handleVerifyDNS();
+    }
+  }, [domainInfo?.customDomainStatus, project._id]);
+
   const handleProvisionSSL = async () => {
     setSsl(true); setError(''); setMessage('');
     try {
@@ -566,6 +573,28 @@ export default function DomainManager({ project, onUpdate }) {
               </div>
             </div>
 
+            {/* DNS Resolution Mismatch Alert Panel */}
+            {dnsStatus && !dnsStatus.verified && (
+              <div className="lp-card glass animate-fade-in" style={{ padding: '20px 24px', border: '1px solid rgba(239, 68, 68, 0.25)', background: 'rgba(239, 68, 68, 0.02)', gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
+                  <span>⚠️</span> DNS Resolution Mismatch Detected
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+                  <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                    <div style={{ color: 'var(--text-muted)', marginBottom: 6, fontSize: 10, textTransform: 'uppercase', fontWeight: 600 }}>Expected Value (CNAME / IP)</div>
+                    <code style={{ color: '#10b981', wordBreak: 'break-all', fontWeight: 700, fontSize: 12 }}>{dnsStatus.targetCname}</code>
+                  </div>
+                  <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                    <div style={{ color: 'var(--text-muted)', marginBottom: 6, fontSize: 10, textTransform: 'uppercase', fontWeight: 600 }}>Current DNS Resolution</div>
+                    <code style={{ color: '#ef4444', wordBreak: 'break-all', fontWeight: 700, fontSize: 12 }}>{dnsStatus.resolvedTo || 'Unresolved'}</code>
+                  </div>
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  The DNS check resolved your domain to the current mismatch values. Verify that your DNS host has resolved the old values and set the new ones correctly.
+                </p>
+              </div>
+            )}
+
             {/* 2. DNS Target Instructions Card */}
             <div className="lp-card glass" style={{ padding: 26, border: '1px solid rgba(255, 255, 255, 0.08)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
@@ -586,66 +615,46 @@ export default function DomainManager({ project, onUpdate }) {
               ) : (
                 <>
                   <p className="text-muted" style={{ fontSize: 13, lineHeight: '1.5', marginBottom: 14 }}>
-                    Configure your DNS records at your registrar (e.g., Cloudflare, Namecheap, GoDaddy):
+                    Configure one of the following DNS records at your registrar (e.g., GoDaddy, Cloudflare, Namecheap):
                   </p>
                   
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {/* CNAME Option */}
-                    <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(255, 255, 255, 0.01)', border: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-primary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }}></span>
-                        Option A: CNAME Record (For Subdomains)
-                      </div>
-                      <p className="text-muted" style={{ fontSize: 11, marginBottom: 8, lineHeight: '1.4' }}>Ideal for subdomains like <code>www.yourdomain.com</code> or <code>app.yourdomain.com</code>.</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
-                          <span className="text-muted">Host / Name:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <code style={{ color: 'var(--text-main)', fontWeight: 600 }}>www</code>
-                            <button onClick={() => copyToClipboard('www', 'host-www')} style={{ background: 'transparent', border: 'none', color: copiedText === 'host-www' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}>
-                              {copiedText === 'host-www' ? 'Copied' : '📋 Copy'}
-                            </button>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
-                          <span className="text-muted">Target / Destination:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <code style={{ color: 'var(--text-main)', fontWeight: 600, fontSize: 11 }}>{targetCname}</code>
-                            <button onClick={() => copyToClipboard(targetCname, 'value-cname')} style={{ background: 'transparent', border: 'none', color: copiedText === 'value-cname' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}>
-                              {copiedText === 'value-cname' ? 'Copied' : '📋 Copy'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* A Record Option */}
-                    <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(255, 255, 255, 0.01)', border: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#10b981', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }}></span>
-                        Option B: A Record (For Apex / Root Domains)
-                      </div>
-                      <p className="text-muted" style={{ fontSize: 11, marginBottom: 8, lineHeight: '1.4' }}>Required if mapping a root domain directly (e.g. <code>yourdomain.com</code>).</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
-                          <span className="text-muted">Host / Name:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <code style={{ color: 'var(--text-main)', fontWeight: 600 }}>@</code>
-                            <button onClick={() => copyToClipboard('@', 'host-apex')} style={{ background: 'transparent', border: 'none', color: copiedText === 'host-apex' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}>
-                              {copiedText === 'host-apex' ? 'Copied' : '📋 Copy'}
-                            </button>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
-                          <span className="text-muted">IPv4 Address:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <code style={{ color: 'var(--text-main)', fontWeight: 600 }}>129.159.22.142</code>
-                            <button onClick={() => copyToClipboard('129.159.22.142', 'value-ip')} style={{ background: 'transparent', border: 'none', color: copiedText === 'value-ip' ? '#10b981' : 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}>
-                              {copiedText === 'value-ip' ? 'Copied' : '📋 Copy'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 8, overflow: 'hidden', fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ background: 'rgba(255, 255, 255, 0.03)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                            <th style={{ padding: '10px 12px', fontWeight: 600 }}>Type</th>
+                            <th style={{ padding: '10px 12px', fontWeight: 600 }}>Name</th>
+                            <th style={{ padding: '10px 12px', fontWeight: 600 }}>Value</th>
+                            <th style={{ padding: '10px 12px', fontWeight: 600 }}>TTL</th>
+                            <th style={{ padding: '10px 12px', fontWeight: 600, textAlign: 'center' }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                            <td style={{ padding: '12px', fontWeight: 700, color: 'var(--accent-primary)' }}>CNAME</td>
+                            <td style={{ padding: '12px' }}><code>www</code> (or subdomain)</td>
+                            <td style={{ padding: '12px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-main)', wordBreak: 'break-all' }}>{targetCname}</td>
+                            <td style={{ padding: '12px', color: 'var(--text-dim)' }}>1 Hour</td>
+                            <td style={{ padding: '12px', textAlign: 'center' }}>
+                              <button onClick={() => copyToClipboard(targetCname, 'value-cname')} style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)', color: copiedText === 'value-cname' ? '#10b981' : 'var(--accent-primary)', cursor: 'pointer', padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 600, transition: 'all 0.2s' }}>
+                                {copiedText === 'value-cname' ? 'Copied' : 'Copy'}
+                              </button>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style={{ padding: '12px', fontWeight: 700, color: '#10b981' }}>A</td>
+                            <td style={{ padding: '12px' }}><code>@</code> (Apex / Root)</td>
+                            <td style={{ padding: '12px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-main)' }}>129.159.22.142</td>
+                            <td style={{ padding: '12px', color: 'var(--text-dim)' }}>1 Hour</td>
+                            <td style={{ padding: '12px', textAlign: 'center' }}>
+                              <button onClick={() => copyToClipboard('129.159.22.142', 'value-ip')} style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', color: copiedText === 'value-ip' ? '#10b981' : '#10b981', cursor: 'pointer', padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 600, transition: 'all 0.2s' }}>
+                                {copiedText === 'value-ip' ? 'Copied' : 'Copy'}
+                              </button>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </>
