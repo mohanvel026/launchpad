@@ -11,6 +11,7 @@ export default function DomainManager({ project, onUpdate }) {
   const [removing,     setRemoving]     = useState(false);
   const [verifying,    setVerifying]    = useState(false);
   const [ssl,          setSsl]          = useState(false);
+  const [pipelineStep, setPipelineStep] = useState(''); // '', 'linking', 'checking_dns', 'securing_ssl', 'done'
   
   // Detailed domain status fetched from backend
   const [domainInfo,   setDomainInfo]   = useState(null);
@@ -114,7 +115,45 @@ export default function DomainManager({ project, onUpdate }) {
     setTimeout(() => setCopiedText(''), 2000);
   };
 
-  const handleLinkAutomatedDomain = async () => {
+  const runAutomatedPipeline = async (targetDomainToLink, forceMock) => {
+    setSaving(true); setError(''); setMessage(''); setDnsStatus(null);
+    setPipelineStep('linking');
+    try {
+      // Step 1: Link Custom Domain config
+      await api.post(`/domains/${project._id}/custom`, { customDomain: targetDomainToLink });
+      await fetchDomainInfo();
+      if (onUpdate) onUpdate();
+      
+      // Step 2: CNAME / DNS propagation checks
+      setPipelineStep('checking_dns');
+      const url = `/domains/${project._id}/verify${forceMock ? '?mock=true' : ''}`;
+      const res = await api.get(url);
+      setDnsStatus(res.data);
+      
+      if (!res.data.verified) {
+        throw new Error(`DNS Check failed: Your domain resolves to "${res.data.resolvedTo}" instead of "${res.data.targetCname}".`);
+      }
+      await fetchDomainInfo();
+      if (onUpdate) onUpdate();
+      
+      // Step 3: Secure with SSL (Let's Encrypt)
+      setPipelineStep('securing_ssl');
+      await api.post(`/domains/${project._id}/ssl`);
+      
+      // Complete!
+      setPipelineStep('done');
+      setMessage('✨ DNS verification & SSL provisioning successful! Your domain is secure and active.');
+      await fetchDomainInfo();
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Domain setup automation failed');
+      setPipelineStep('');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLinkAutomatedDomain = () => {
     const prefix = domainPrefix.trim();
     if (!prefix) {
       setError('Please enter a domain prefix.');
@@ -134,24 +173,10 @@ export default function DomainManager({ project, onUpdate }) {
     }
 
     const domainToLink = `${prefix}${suffix}`.toLowerCase();
+    const isWildcard = suffix === `.${domain}`;
+    const forceMock = mockVerify || isWildcard;
 
-    setSaving(true); setError(''); setMessage(''); setDnsStatus(null);
-    try {
-      const res = await api.post(`/domains/${project._id}/custom`, { customDomain: domainToLink });
-      setMessage(res.data.message);
-      await fetchDomainInfo();
-      if (onUpdate) onUpdate();
-
-      // If instant wildcard is chosen, force mockVerify to true
-      if (suffix === `.${domain}`) {
-        setMockVerify(true);
-      }
-
-      // AUTOMATIC: Immediately run verification after linking, bypassing any manual lookup clicks!
-      setTimeout(() => handleVerifyDNS(), 100);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to add domain');
-    } finally { setSaving(false); }
+    runAutomatedPipeline(domainToLink, forceMock);
   };
 
   const handleRemoveDomain = async () => {
@@ -211,23 +236,14 @@ export default function DomainManager({ project, onUpdate }) {
     } finally { setSsl(false); }
   };
 
-  const handleSwitchToInstantWildcard = async () => {
+  const handleSwitchToInstantWildcard = () => {
     const defaultPrefix = project.subdomain || '';
     const targetWildcardSuffix = `.${domain}`;
     setDomainPrefix(defaultPrefix);
     setDomainSuffix(targetWildcardSuffix);
-    setSaving(true); setError(''); setMessage(''); setDnsStatus(null);
-    try {
-      const targetDomainName = `${defaultPrefix}${targetWildcardSuffix}`.toLowerCase();
-      const res = await api.post(`/domains/${project._id}/custom`, { customDomain: targetDomainName });
-      setMessage(res.data.message);
-      setMockVerify(true);
-      await fetchDomainInfo();
-      if (onUpdate) onUpdate();
-      setTimeout(() => handleVerifyDNS(), 100);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to switch to instant wildcard');
-    } finally { setSaving(false); }
+    setMockVerify(true);
+
+    runAutomatedPipeline(`${defaultPrefix}${targetWildcardSuffix}`, true);
   };
 
   // Determine current overall state for styling
@@ -445,6 +461,34 @@ export default function DomainManager({ project, onUpdate }) {
                         </button>
                       </div>
                     )}
+
+                    {pipelineStep && (
+                      <div className="glass fade-in" style={{ padding: '14px 20px', borderRadius: 10, border: '1px solid rgba(168, 85, 247, 0.2)', background: 'rgba(168, 85, 247, 0.02)', display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-main)' }}>
+                            {pipelineStep === 'linking' && '🔗 Connecting Domain...'}
+                            {pipelineStep === 'checking_dns' && '🔍 Checking DNS records...'}
+                            {pipelineStep === 'securing_ssl' && '🔒 Securing SSL Certificate...'}
+                            {pipelineStep === 'done' && '✨ Fully Configured & Automated!'}
+                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-primary)', background: 'rgba(56, 189, 248, 0.1)', padding: '2px 8px', borderRadius: 4 }}>
+                            {pipelineStep === 'linking' && '33%'}
+                            {pipelineStep === 'checking_dns' && '66%'}
+                            {pipelineStep === 'securing_ssl' && '90%'}
+                            {pipelineStep === 'done' && '100%'}
+                          </span>
+                        </div>
+                        <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{
+                            width: pipelineStep === 'linking' ? '33%' : pipelineStep === 'checking_dns' ? '66%' : pipelineStep === 'securing_ssl' ? '90%' : '100%',
+                            height: '100%',
+                            background: 'linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-success) 100%)',
+                            transition: 'width 0.4s ease-in-out',
+                            boxShadow: '0 0 8px var(--accent-primary)'
+                          }} />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 10 }}>
@@ -632,24 +676,39 @@ export default function DomainManager({ project, onUpdate }) {
 
                 {/* Step 4: SSL Active */}
                 <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', position: 'relative' }}>
+                  <style>{`
+                    @keyframes pulse-purple {
+                      0% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.5); }
+                      70% { box-shadow: 0 0 0 10px rgba(168, 85, 247, 0); }
+                      100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); }
+                    }
+                  `}</style>
                   <div style={{
                     width: 32,
                     height: 32,
                     borderRadius: '50%',
-                    background: sslStatus === 'active' ? '#10b981' : 'rgba(255,255,255,0.05)',
-                    border: sslStatus === 'active' ? 'none' : '2px solid rgba(255,255,255,0.1)',
+                    background: sslStatus === 'active' ? '#10b981' : (domainStatus === 'dns_verified' ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.05)'),
+                    border: sslStatus === 'active' ? 'none' : (domainStatus === 'dns_verified' ? '2px solid var(--accent-primary)' : '2px solid rgba(255,255,255,0.1)'),
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     boxShadow: sslStatus === 'active' ? '0 0 10px rgba(16, 185, 129, 0.3)' : 'none',
                     zIndex: 2,
                     fontSize: 12,
-                    color: sslStatus === 'active' ? '#fff' : 'var(--text-muted)'
+                    color: sslStatus === 'active' ? '#fff' : (domainStatus === 'dns_verified' ? 'var(--accent-primary)' : 'var(--text-muted)'),
+                    animation: (domainStatus === 'dns_verified' && sslStatus !== 'active') ? 'pulse-purple 1.5s infinite' : 'none'
                   }}>
                     {sslStatus === 'active' ? '✓' : '4'}
                   </div>
                   <div>
-                    <h5 style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 700, color: sslStatus === 'active' ? 'var(--text-main)' : 'var(--text-muted)' }}>Step 4: SSL Certificate Routing Activation</h5>
+                    <h5 style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 700, color: sslStatus === 'active' ? 'var(--text-main)' : 'var(--text-muted)' }}>
+                      Step 4: SSL Certificate Routing Activation
+                      {domainStatus === 'dns_verified' && sslStatus !== 'active' && (
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-primary)', marginLeft: 8, fontStyle: 'italic' }}>
+                          (Securing...)
+                        </span>
+                      )}
+                    </h5>
                     <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>Generate and bind Let's Encrypt TLS credentials for end-to-end HTTPS encryption.</p>
                   </div>
                 </div>
