@@ -140,6 +140,19 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
   const installCmd = options.installCommand || pm.install;
   const buildCmd = options.buildCommand || `${pm.run} build`;
 
+  let installRunInstruction = `RUN ${installCmd}`;
+  if (!options.installCommand) {
+    if (pm.name === 'npm') {
+      installRunInstruction = `RUN --mount=type=cache,target=/root/.npm ${pm.install}`;
+    } else if (pm.name === 'pnpm') {
+      installRunInstruction = `RUN --mount=type=cache,target=/root/.local/share/pnpm/store ${pm.install}`;
+    } else if (pm.name === 'yarn') {
+      installRunInstruction = `RUN --mount=type=cache,target=/root/.yarn YARN_CACHE_FOLDER=/root/.yarn ${pm.install}`;
+    } else if (pm.name === 'bun') {
+      installRunInstruction = `RUN --mount=type=cache,target=/root/.bun ${pm.install}`;
+    }
+  }
+
   // PM Setup logic for non-NPM managers
   let pmSetup = '';
   if (pm.name === 'yarn') pmSetup = 'RUN corepack enable && corepack prepare yarn@stable --activate';
@@ -264,7 +277,7 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
-RUN ${installCmd}
+${installRunInstruction}
 COPY . .
 ${envArgs}
 RUN ${buildCmd}
@@ -285,7 +298,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
-RUN ${installCmd}
+${installRunInstruction}
 COPY . .
 ${envArgs}
 RUN ${buildCmd}
@@ -336,7 +349,7 @@ FROM node:20-alpine AS fe-builder
 WORKDIR /app/frontend
 ${pmSetup}
 COPY ${feDir}/package*.json${feLockStr} ./
-RUN ${installCmd}
+${installRunInstruction}
 COPY ${feDir}/ .
 ${envArgs}
 RUN ${buildCmd} 2>/dev/null || npx vite build || true
@@ -372,7 +385,7 @@ CMD ["/app/start.sh"]`;
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
-RUN ${installCmd}
+${installRunInstruction}
 COPY . .
 ${envArgs}
 RUN ${buildCmd} 2>/dev/null || npx nuxt build || true
@@ -402,7 +415,7 @@ RUN apk add --no-cache curl tini
 WORKDIR /app
 COPY package*.json ./
 ${lockFileCopy}
-RUN ${installCmd}
+${installRunInstruction}
 COPY . .
 ENV PORT=${containerPort}
 ENV NODE_ENV=production

@@ -430,7 +430,10 @@ buildQueue.process(1, async (job) => {
         const buildProc = spawn(
           'docker',
           ['build', '--progress=plain', ...buildArgParts, '-t', imageTag, repoDir],
-          { stdio: ['ignore', 'pipe', 'pipe'] }
+          {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: { ...process.env, DOCKER_BUILDKIT: '1' }
+          }
         );
 
         const handleLine = async (line) => {
