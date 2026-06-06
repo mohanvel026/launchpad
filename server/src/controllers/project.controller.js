@@ -128,7 +128,7 @@ const createProject = async (req, res) => {
     const existing = await Project.findOne({ subdomain });
     if (existing) {
       return res.status(400).json({ 
-        message: `The subdomain "${subdomain}" is already in use by project "${existing.name}". Please choose a different project name.` 
+        message: 'The subdomain already exists. Please choose a different project name.' 
       });
     }
 
