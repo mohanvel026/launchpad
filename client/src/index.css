@@ -334,6 +334,7 @@ textarea.lp-input {
   max-height: 500px;
   overflow-y: auto;
   color: #64748b;
+  white-space: pre-wrap;
 }
 .lp-terminal-body div { transition: color 0.1s; }
 .lp-log-success { color: #34d399 !important; }
