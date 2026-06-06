@@ -44,7 +44,9 @@ const lookupPort = async (identifier, isCustomDomain = false) => {
 };
 
 /** Call this after a successful deploy so the next request picks up the new port */
-const invalidateProjectCache = (subdomain) => portCache.delete(subdomain);
+const invalidateProjectCache = (subdomain) => {
+  portCache.clear();
+};
 
 // ── Error page ─────────────────────────────────────────────────────────────────
 const errorPage = (title, body) => `<!DOCTYPE html>
@@ -154,7 +156,12 @@ const projectProxyMiddleware = async (req, res, next) => {
   if (!subdomain && !isCustomDomain) return next();
 
   try {
-    const projectData = await lookupPort(subdomain, isCustomDomain);
+    let projectData = await lookupPort(subdomain, isCustomDomain);
+
+    // Fallback: If no project found and this is a custom domain mapped under our base suffix
+    if (!projectData && !isCustomDomain && host) {
+      projectData = await lookupPort(host, true);
+    }
 
     if (!projectData) {
       if (isCustomDomain) return next();
@@ -320,7 +327,10 @@ const handleWsUpgrade = async (req, socket, head) => {
   if (isRoot || !subdomain) return;
 
   try {
-    const projectData = await lookupPort(subdomain, isCustomDomain);
+    let projectData = await lookupPort(subdomain, isCustomDomain);
+    if (!projectData && !isCustomDomain && host) {
+      projectData = await lookupPort(host, true);
+    }
     if (!projectData) { socket.destroy(); return; }
 
     const proxySocket = require('net').createConnection(projectData.port, '127.0.0.1', () => {
