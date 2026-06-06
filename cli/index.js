@@ -10,7 +10,7 @@ const path        = require('path');
 const fs          = require('fs');
 
 const config  = new Conf({ projectName: 'launchpad-cli' });
-const API_URL = process.env.LAUNCHPAD_API || 'http://129.159.22.142.nip.io/api';
+const API_URL = process.env.LAUNCHPAD_API || 'https://launchlive.in/api';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -122,7 +122,7 @@ program
       projects.forEach((p) => {
         console.log(`  ${formatStatus(p.status)}  ${chalk.bold(p.name)}  ${chalk.gray(p.repoFullName)}`);
         if (p.subdomain) {
-          console.log(`            ${chalk.cyan(`https://${p.subdomain}.launchpad.dev`)}`);
+          console.log(`            ${chalk.cyan(`https://${p.subdomain}.launchlive.in`)}`);
         }
         console.log();
       });
@@ -193,7 +193,7 @@ program
 
       spinner.succeed(chalk.green('Deployment started!'));
       console.log(`\n  ${chalk.bold('Project:')} ${project.data.project.name}`);
-      console.log(`  ${chalk.bold('URL:')}     ${chalk.cyan(`https://${project.data.project.subdomain}.launchpad.dev`)}`);
+      console.log(`  ${chalk.bold('URL:')}     ${chalk.cyan(`https://${project.data.project.subdomain}.launchlive.in`)}`);
       console.log(`  ${chalk.bold('ID:')}      ${project.data.project._id}`);
       console.log(`\n  Run ${chalk.cyan(`launchpad logs ${project.data.project._id}`)} to follow live logs\n`);
     } catch (err) {
@@ -253,7 +253,7 @@ program
       console.log(`  Repo:    ${project.repoFullName} (${project.branch})`);
       console.log(`  Deploys: ${project.buildCount}`);
       if (project.subdomain) {
-        console.log(`  URL:     ${chalk.cyan(`https://${project.subdomain}.launchpad.dev`)}`);
+        console.log(`  URL:     ${chalk.cyan(`https://${project.subdomain}.launchlive.in`)}`);
       }
       console.log();
     } catch (err) {
