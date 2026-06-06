@@ -198,15 +198,7 @@ const callAI = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false)
   try {
     return await callGemini(systemPrompt, userPrompt, maxTokens, isJson);
   } catch (geminiErr) {
-    const status = geminiErr.response?.status;
     console.warn(formatApiError('Gemini', geminiErr));
-
-    // 400-499 errors (except 429) are client faults — failover won't help
-    if (status >= 400 && status < 500 && status !== 429) {
-      console.error('[AI] Unrecoverable Gemini client error, skipping failover.');
-      return null;
-    }
-
     console.info('[AI] Failing over to Groq...');
     try {
       return await callGroq(systemPrompt, userPrompt, maxTokens, isJson);
