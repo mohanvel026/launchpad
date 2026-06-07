@@ -718,7 +718,13 @@ Use bold headers, bullet lists, and code blocks.`;
         autoHeal:       !!p.autoHeal,
         autoHealStrategy: p.autoHealStrategy || 'push-on-success',
       });
-    } catch { navigate('/dashboard'); }
+    } catch (err) {
+      if (err.response && (err.response.status === 404 || err.response.status === 403)) {
+        navigate('/dashboard');
+      } else {
+        console.warn('Failed to load project:', err.message);
+      }
+    }
   }, [id, navigate, fetchBranches]);
 
   const loadDeployments = useCallback(() =>

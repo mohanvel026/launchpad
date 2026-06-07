@@ -57,6 +57,38 @@ connectDB().then(() => {
     })
     .catch(err => console.error('[Preview] Stuck clean up failed:', err));
 
+  // 2b. Clear stuck building/queued deployments on server boot
+  const Deployment = require('./models/Deployment.model');
+  Deployment.updateMany(
+    { status: { $in: ['queued', 'building'] } },
+    { 
+      $set: { 
+        status: 'failed', 
+        finishedAt: new Date() 
+      },
+      $push: { 
+        logs: `[${new Date().toLocaleTimeString()}] 🛑 Build aborted due to server restart.` 
+      } 
+    }
+  )
+    .then(res => {
+      if (res.modifiedCount > 0) {
+        console.log(`[Deployment] Cleaned up ${res.modifiedCount} stuck building/queued deployments.`);
+      }
+    })
+    .catch(err => console.error('[Deployment] Stuck clean up failed:', err));
+
+  Project.updateMany(
+    { status: 'building' },
+    { $set: { status: 'failed' } }
+  )
+    .then(res => {
+      if (res.modifiedCount > 0) {
+        console.log(`[Project] Reset ${res.modifiedCount} building projects to failed.`);
+      }
+    })
+    .catch(err => console.error('[Project] Reset status failed:', err));
+
   // 3. Hourly PR preview auto-cleanup: destroy previews older than 24 hours
   const cleanupStalePreviewsJob = async () => {
     try {
