@@ -68,6 +68,82 @@ function LogLine({ line }) {
   return <div className={cls}>{line}</div>;
 }
 
+function formatMessageContent(content) {
+  if (typeof content !== 'string') return content;
+  const parts = content.split(/(```[\s\S]*?```)/g);
+
+  return parts.map((part, index) => {
+    if (part.startsWith('```')) {
+      const match = part.match(/```(\w*)\n([\s\S]*?)```/);
+      const language = match ? match[1] : '';
+      const code = match ? match[2].trim() : part.slice(3, -3).trim();
+
+      return (
+        <div key={index} style={{
+          background: '#09090e',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+          borderRadius: '8px',
+          margin: '12px 0',
+          fontFamily: 'var(--font-mono, monospace)',
+          fontSize: '13px',
+          overflow: 'hidden',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)'
+        }}>
+          {language && (
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.02)',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+              padding: '6px 12px',
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              fontWeight: 700
+            }}>
+              {language}
+            </div>
+          )}
+          <pre style={{ margin: 0, padding: '12px', overflowX: 'auto', color: '#e2e8f0', lineHeight: 1.5 }}>
+            <code>{code}</code>
+          </pre>
+        </div>
+      );
+    }
+
+    const lines = part.split('\n');
+    return lines.map((partLine, lineIndex) => {
+      const tokens = partLine.split(/(\*\*.*?\*\*|`.*?`)/g);
+      const parsedLine = tokens.map((token, tokenIndex) => {
+        if (token.startsWith('**') && token.endsWith('**')) {
+          return <strong key={tokenIndex} style={{ color: 'var(--text-main)', fontWeight: 700 }}>{token.slice(2, -2)}</strong>;
+        }
+        if (token.startsWith('`') && token.endsWith('`')) {
+          return (
+            <code key={tokenIndex} style={{
+              fontFamily: 'var(--font-mono, monospace)',
+              background: 'rgba(255, 255, 255, 0.08)',
+              color: '#38bdf8',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: '12px',
+              border: '1px solid rgba(255, 255, 255, 0.04)'
+            }}>
+              {token.slice(1, -1)}
+            </code>
+          );
+        }
+        return token;
+      });
+
+      return (
+        <div key={`${index}-${lineIndex}`} style={{ minHeight: '1.2em', marginBottom: lineIndex < lines.length - 1 ? '8px' : 0 }}>
+          {parsedLine}
+        </div>
+      );
+    });
+  });
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -138,6 +214,19 @@ export default function ProjectDetail() {
   const [creatingPreview, setCreatingPreview] = useState(false);
   const [branches, setBranches] = useState([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
+  const [customQuestion, setCustomQuestion] = useState('');
+  const [architectMessages, setArchitectMessages] = useState([]);
+  const [architectLoading, setArchitectLoading] = useState(false);
+  const [guideSubTab, setGuideSubTab] = useState('systems');
+  const [activeSimulation, setActiveSimulation] = useState(null);
+  const [simulationSteps, setSimulationSteps] = useState([]);
+  const [simulationResponse, setSimulationResponse] = useState('');
+  const [simulationLoading, setSimulationLoading] = useState(false);
+  const [archDiagram, setArchDiagram] = useState('');
+  const [archDiagramLoading, setArchDiagramLoading] = useState(false);
+  const [deepDiveSystem, setDeepDiveSystem] = useState(null);
+  const [deepDiveResponse, setDeepDiveResponse] = useState('');
+  const [deepDiveLoading, setDeepDiveLoading] = useState(false);
 
   // 🔐 Env Vault — AI missing variable scanner
   const [missingVars, setMissingVars] = useState(null); // null = not scanned, [] = none found
@@ -148,6 +237,7 @@ export default function ProjectDetail() {
   const runtimeLogsEndRef = useRef(null);
   const socketRef  = useRef(null);
   const pollRef    = useRef(null);
+  const chatEndRef = useRef(null);
 
   const fetchBranches = useCallback(async (repoFullName) => {
     if (!repoFullName) return;
@@ -163,6 +253,163 @@ export default function ProjectDetail() {
       setLoadingBranches(false);
     }
   }, []);
+
+  const handleAskArchitect = async (questionText) => {
+    if (!questionText.trim() || architectLoading) return;
+    setArchitectLoading(true);
+    const userMsg = { role: 'user', content: questionText };
+    const updatedMessages = [...architectMessages, userMsg];
+    setArchitectMessages(updatedMessages);
+    setCustomQuestion('');
+    try {
+      const SreSystemPrompt = `You are the LaunchLive SRE AI Architect.
+The developer is asking a question about how LaunchLive behaves, manages resources, or automates this specific project.
+Please provide a detailed, technical explanation of how LaunchLive operates, focusing on our Docker container orchestration, Nginx reverse proxy routing, Let's Encrypt SSL provision/renew crons, OSV vulnerability scanning, scale-to-zero sleeping timeouts, and AI auto-healing systems. Keep the response developer-focused, encouraging, and clear.
+Use bold headers, lists, code blocks, or tables to format your response.`;
+
+      const apiHistory = updatedMessages.slice(-6).map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+
+      const res = await api.post(`/ai/${id}/chat`, {
+        message: `${SreSystemPrompt}\nQuestion: "${questionText}"`,
+        history: apiHistory.slice(0, -1)
+      });
+      const answer = res.data.reply || res.data.response || res.data.message || 'No response returned from the SRE AI Architect.';
+      setArchitectMessages(prev => [...prev, { role: 'assistant', content: answer }]);
+    } catch (err) {
+      const errMsg = err.response?.data?.message || 'Failed to connect to the AI SRE Architect.';
+      setArchitectMessages(prev => [...prev, { role: 'assistant', content: `❌ **Error:** ${errMsg}` }]);
+    } finally {
+      setArchitectLoading(false);
+    }
+  };
+
+  const handleRunSimulation = async (scenarioKey) => {
+    if (simulationLoading) return;
+    setActiveSimulation(scenarioKey);
+    setSimulationResponse('');
+    setSimulationSteps([]);
+    setSimulationLoading(true);
+
+    const stepsMap = {
+      'app-crash': [
+        '🩺 [00:00] Telemetry worker detected HTTP 502 Bad Gateway / Connection Refused.',
+        '🚨 [00:02] Docker container exited with code 137 (OOMKilled).',
+        '🧠 [00:03] AI Healing System initiated: Analyzing the last 50 lines of crash logs...',
+        '🔍 [00:05] Diagnostic: JavaScript heap out of memory. Detected active leaks during heavy loads.',
+        '🛠️ [00:06] AI Fix Applied: Generating custom Dockerfile optimized with --max-old-space-size=450 flag, scaling container memory limit.',
+        '🚀 [00:08] Deploying hot-swap container container-v3-healed...',
+        '🌐 [00:09] Health checks passed! Swapping Nginx reverse proxy routes. Old container terminated.',
+        '✅ [00:10] System fully restored. Zero-downtime recovery completed in 10 seconds.'
+      ],
+      'ssl-expired': [
+        '⏰ [00:00] Let\'s Encrypt cron job scheduled run (Weekly Monday 3:00 AM).',
+        `🔒 [00:02] Checking certificate validity for domain ${project?.subdomain || 'app'}.launchlive.in...`,
+        '⚠️ [00:03] Alert: SSL certificate expires in 6 days. Renewing via DNS challenge.',
+        '🌐 [00:05] DNS verification check passed against Cloudflare API.',
+        '🔑 [00:06] Certbot requested new certificate pair from Let\'s Encrypt CA.',
+        `💾 [00:08] Saving new certs to /etc/letsencrypt/live/${project?.subdomain || 'app'}.launchlive.in/`,
+        '⚙️ [00:09] Executing: nginx -s reload',
+        '✅ [00:10] SSL cert successfully renewed for 90 days. Zero-downtime cert reload complete.'
+      ],
+      'build-fail': [
+        '🐙 [00:00] Webhook received: Push on \'main\' branch of github.com/user/project',
+        '🛠️ [00:02] Starting compilation pipeline for application.',
+        '❌ [00:04] Error: Build failed with exit code 1. Missing module or compilation error detected.',
+        '🚨 [00:05] Build stage failed. Activating AI build repair worker...',
+        '🔍 [00:07] AI analysis: Discovered missing runtime modules and syntax error in configuration.',
+        '🛠️ [00:08] AI repair: Injecting package dependency and repairing configs.',
+        '📦 [00:09] Retrying build with repaired files... Success!',
+        '🔀 [00:10] Generating GitHub Pull Request with verification patch...',
+        '✅ [00:11] Build completed successfully. App deployed to production staging.'
+      ]
+    };
+
+    const steps = stepsMap[scenarioKey] || [];
+    for (let i = 0; i < steps.length; i++) {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setSimulationSteps(prev => [...prev, steps[i]]);
+    }
+
+    try {
+      const prompt = `You are the LaunchLive SRE AI Architect.
+The user just simulated a DevOps/SRE incident: "${scenarioKey === 'app-crash' ? 'Application container crash / Out of Memory' : scenarioKey === 'ssl-expired' ? 'SSL certificate expiry & Certbot renew' : 'Git webhook build failure & code healing'}" on this project: "${project.name}" (Stack: "${project.stack}").
+Provide a clear, detailed 3-paragraph explanation of:
+1. Exactly what LaunchLive did in the simulation logs above.
+2. How LaunchLive prevents this problem or heals it in the real production environment for their specific stack ("${project.stack}").
+3. Give recommendations on how the developer can configure their settings (like auto-heal, memory bounds, webhooks) to optimize this.
+Use bold headers, bullet lists, and code blocks for code snippets. Keep it highly technical, SRE-expert-toned, and encouraging.`;
+
+      const res = await api.post(`/ai/${id}/chat`, { message: prompt });
+      const reply = res.data.reply || res.data.response || res.data.message || 'Simulation completed.';
+      setSimulationResponse(reply);
+    } catch (err) {
+      setSimulationResponse(`❌ **Simulation Error:** ${err.response?.data?.message || err.message}`);
+    } finally {
+      setSimulationLoading(false);
+    }
+  };
+
+  const handleGenerateArchitecture = async () => {
+    if (archDiagramLoading) return;
+    setArchDiagramLoading(true);
+    setArchDiagram('');
+    try {
+      const prompt = `You are the LaunchLive SRE AI Architect.
+Generate a custom, production-ready system architecture map for this project: "${project.name}" (Stack: "${project.stack}", Domain: "${project?.subdomain ? `${project.subdomain}.launchlive.in` : 'no domain'}").
+Please construct a visual diagram using text-based styling (ASCII art, boxes, or block symbols like ┌─┐, ├─┤, ▼, ➔, ──) showing:
+1. Public client HTTPS request path.
+2. Cloudflare Edge DNS & Nginx Reverse Proxy routing to internal Docker ports (e.g. port ${project?.port || 'dynamic'}).
+3. Docker container sandboxing with custom limits (CPU: ${project?.cpuLimit || 0.5} OCPU, RAM: ${project?.ramLimitMB || 256} MB).
+4. Redis / MongoDB database link if any.
+5. Ingress log pipeline flowing to Redis real-time telemetry.
+
+Under the diagram, provide a detailed bulleted key explaining each component. Make it look professional, clean, and impressive.`;
+
+      const res = await api.post(`/ai/${id}/chat`, { message: prompt });
+      const reply = res.data.reply || res.data.response || res.data.message || 'No diagram returned.';
+      setArchDiagram(reply);
+    } catch (err) {
+      setArchDiagram(`❌ **Failed to generate architecture diagram:** ${err.response?.data?.message || err.message}`);
+    } finally {
+      setArchDiagramLoading(false);
+    }
+  };
+
+  const handleDeepDive = async (systemTitle, systemDesc) => {
+    setDeepDiveSystem({ title: systemTitle, desc: systemDesc });
+    setDeepDiveLoading(true);
+    setDeepDiveResponse('');
+    try {
+      const prompt = `You are the LaunchLive SRE AI Architect.
+The user wants an in-depth, stack-specific technical explanation of the following platform automation feature:
+Feature: "${systemTitle}"
+General description: "${systemDesc}"
+
+Project Context:
+- Project: "${project.name}"
+- Stack/Framework: "${project.stack}"
+- Subdomain: "${project?.subdomain || 'app'}.launchlive.in"
+- Settings: CPU Limit ${project?.cpuLimit || 0.5} OCPU, RAM ${project?.ramLimitMB || 256}MB, Auto-Heal: ${project?.autoHeal ? 'Enabled' : 'Disabled'}.
+
+Please provide a detailed, technical explanation of how this feature applies directly to their "${project.stack}" application.
+Include:
+1. Specific Nginx or Dockerfile configs we generate for their stack.
+2. The exact commands or API workflows executed during this process.
+3. Best practices for maintaining zero-downtime and high security for "${project.stack}".
+Use bold headers, bullet lists, and code blocks.`;
+
+      const res = await api.post(`/ai/${id}/chat`, { message: prompt });
+      const reply = res.data.reply || res.data.response || res.data.message || 'No deep-dive data returned.';
+      setDeepDiveResponse(reply);
+    } catch (err) {
+      setDeepDiveResponse(`❌ **Failed to load deep-dive:** ${err.response?.data?.message || err.message}`);
+    } finally {
+      setDeepDiveLoading(false);
+    }
+  };
 
   const loadProject = useCallback(async () => {
     try {
@@ -251,6 +498,23 @@ export default function ProjectDetail() {
   useEffect(() => {
     if (activeTab === 'runtime-logs') runtimeLogsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [runtimeLogs]);
+
+  useEffect(() => {
+    if (project && architectMessages.length === 0) {
+      setArchitectMessages([
+        {
+          role: 'assistant',
+          content: `🤖 Greetings! I am the SRE AI Architect for **${project.name}**. I oversee the container scaling, Nginx reverse proxies, SSL certificate crons, and the telemetry auto-healing monitor for this application.\n\nAsk me anything about how the infrastructure runs, click on a quick suggestion, or run a **DevOps Simulation** below!`
+        }
+      ]);
+    }
+  }, [project]);
+
+  useEffect(() => {
+    if (guideSubTab === 'chat') {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [architectMessages, guideSubTab]);
 
   const connectToLogs = async (deploymentId) => {
     socketRef.current?.disconnect();
@@ -1543,67 +1807,635 @@ export default function ProjectDetail() {
         )}
 
         {/* ── Automation Guide ── */}
-        {activeTab === 'guide' && (
-          <div className="fade-in" style={{ display: 'grid', gap: 20, maxWidth: 900 }}>
-            <div className="lp-card glass" style={{
-              padding: 32,
-              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, rgba(129, 140, 248, 0.03) 100%)',
-              borderLeft: '4px solid var(--accent-primary)',
-            }}>
-              <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8, letterSpacing: '-0.02em', margin: 0 }}>How LaunchLive Automates Your DevOps & SRE</h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.6, maxWidth: 680, margin: '8px 0 0 0' }}>
-                LaunchLive runs SRE monitoring, zero-downtime server scaling, and automated code healing in the background. Here is a breakdown of the core systems and how they handle automation.
-              </p>
-            </div>
+        {/* ── Automation Guide ── */}
+        {activeTab === 'guide' && (() => {
+          const getNodeState = (nodeName) => {
+            if (!activeSimulation) return 'idle';
+            const stepCount = simulationSteps.length;
+            if (stepCount === 0) return 'idle';
+            
+            const currentStepIndex = stepCount - 1;
+            
+            if (activeSimulation === 'app-crash') {
+              if (nodeName === 'Monitor') {
+                if (currentStepIndex === 0) return 'warning';
+                if (currentStepIndex >= 1 && currentStepIndex <= 4) return 'failed';
+                if (currentStepIndex >= 5) return 'success';
+              }
+              if (nodeName === 'App') {
+                if (currentStepIndex >= 0 && currentStepIndex <= 4) return 'failed';
+                if (currentStepIndex === 5) return 'active';
+                if (currentStepIndex >= 6) return 'success';
+              }
+              if (nodeName === 'AI') {
+                if (currentStepIndex >= 2 && currentStepIndex <= 4) return 'active';
+                if (currentStepIndex === 5) return 'success';
+              }
+              if (nodeName === 'Build') {
+                if (currentStepIndex === 4) return 'active';
+                if (currentStepIndex >= 5) return 'success';
+              }
+              if (nodeName === 'Proxy') {
+                if (currentStepIndex === 5) return 'active';
+                if (currentStepIndex >= 6) return 'success';
+              }
+            }
+            
+            if (activeSimulation === 'ssl-expired') {
+              if (nodeName === 'Monitor') {
+                if (currentStepIndex >= 0 && currentStepIndex <= 1) return 'active';
+                if (currentStepIndex >= 2 && currentStepIndex <= 6) return 'warning';
+                if (currentStepIndex === 7) return 'success';
+              }
+              if (nodeName === 'Proxy') {
+                if (currentStepIndex === 1 || currentStepIndex === 2) return 'warning';
+                if (currentStepIndex >= 3 && currentStepIndex <= 5) return 'active';
+                if (currentStepIndex >= 6) return 'success';
+              }
+              if (nodeName === 'AI') {
+                if (currentStepIndex >= 2 && currentStepIndex <= 5) return 'active';
+                if (currentStepIndex >= 6) return 'success';
+              }
+            }
+            
+            if (activeSimulation === 'build-fail') {
+              if (nodeName === 'Dev') {
+                if (currentStepIndex === 0) return 'active';
+                if (currentStepIndex >= 7) return 'success';
+              }
+              if (nodeName === 'Webhook') {
+                if (currentStepIndex === 0) return 'active';
+                if (currentStepIndex >= 1) return 'success';
+              }
+              if (nodeName === 'Build') {
+                if (currentStepIndex === 1) return 'active';
+                if (currentStepIndex >= 2 && currentStepIndex <= 4) return 'failed';
+                if (currentStepIndex === 5) return 'active';
+                if (currentStepIndex >= 6) return 'success';
+              }
+              if (nodeName === 'AI') {
+                if (currentStepIndex >= 3 && currentStepIndex <= 5) return 'active';
+                if (currentStepIndex >= 6) return 'success';
+              }
+              if (nodeName === 'Proxy' || nodeName === 'App') {
+                if (currentStepIndex >= 8) return 'success';
+              }
+            }
+            
+            return 'idle';
+          };
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-              {[
-                {
-                  title: '🤖 AI Auto-Healing & Self-Correction',
-                  desc: 'If your application crashes or fails during build, the LaunchLive health monitor triggers the AI agent. The AI inspects the build/runtime logs, writes a code fix patch, verifies it locally inside a test container, and applies it directly. Based on your settings, it can also automatically open a GitHub Pull Request.',
-                  trigger: 'Triggered by: Docker container exit / Webhook build failures'
-                },
-                {
-                  title: '🔍 Ephemeral PR Preview Environments',
-                  desc: 'When you open a Pull Request on GitHub, LaunchLive receives a webhook event. It automatically clones the PR branch, isolates its database variables, builds a preview Docker container, and comments the unique live URL directly on your GitHub PR. When the PR is merged or closed, it automatically destroys the container to save resources.',
-                  trigger: 'Triggered by: GitHub webhook pull_request events'
-                },
-                {
-                  title: '⚡ Zero-Downtime Container Scaling',
-                  desc: 'When you resize resource limits (CPU/RAM bounds), LaunchLive performs an SRE hot-swap. It boots a new container running the active image with the new resource constraints, verifies the internal port is ready, updates the Nginx reverse proxy routing, and finally shuts down the old container. Your app stays 100% online.',
-                  trigger: 'Triggered by: Saving resource limits in settings'
-                },
-                {
-                  title: '🛡️ Dependency & Security Scanning',
-                  desc: 'LaunchLive automatically audits your package-lock.json/yarn.lock files on every deployment. If it detects vulnerabilities (CVEs), it assesses the threat level. The SRE agent then generates verified upgrade patches using AI, letting you secure your codebase with a single click.',
-                  trigger: 'Triggered by: Code checkouts / Deployment builds'
-                },
-                {
-                  title: '🌐 Zero-Downtime SSL & DNS Routing',
-                  desc: 'When you create a project, LaunchLive registers the DNS record on Cloudflare and uses Certbot to provision Let\'s Encrypt SSL. A background cron job runs every Monday at 3:00 AM to automatically renew certificates, ensuring your applications never lose HTTPS.',
-                  trigger: 'Triggered by: Project creation / Weekly cron schedule'
-                },
-                {
-                  title: '📈 Observability & Live Analytics',
-                  desc: 'A Redis-backed sliding window tracks response times, error rates, and route access logs in real-time. This telemetry data is piped directly into your dashboard, enabling the health worker to detect anomalies and trigger restarts before users experience downtime.',
-                  trigger: 'Triggered by: Node.js proxy middleware interceptor'
-                }
-              ].map((g, i) => (
-                <div key={i} className="lp-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <h4 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>{g.title}</h4>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6, flex: 1, margin: 0 }}>{g.desc}</p>
+          const getNodeStyle = (state) => {
+            const base = {
+              padding: '10px 16px',
+              borderRadius: '12px',
+              fontSize: '13px',
+              fontWeight: '600',
+              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              border: '1px solid var(--border)',
+              background: 'rgba(30, 41, 59, 0.4)',
+              color: 'var(--text-muted)'
+            };
+            
+            if (state === 'active') {
+              return {
+                ...base,
+                borderColor: 'var(--accent-primary)',
+                background: 'rgba(56, 189, 248, 0.15)',
+                color: '#fff',
+                boxShadow: '0 0 15px rgba(56, 189, 248, 0.4)',
+                transform: 'scale(1.05)'
+              };
+            }
+            if (state === 'success') {
+              return {
+                ...base,
+                borderColor: 'var(--accent-success)',
+                background: 'rgba(16, 185, 129, 0.15)',
+                color: '#fff',
+                boxShadow: '0 0 15px rgba(16, 185, 129, 0.3)'
+              };
+            }
+            if (state === 'warning') {
+              return {
+                ...base,
+                borderColor: 'var(--accent-warning)',
+                background: 'rgba(245, 158, 11, 0.15)',
+                color: '#fff',
+                boxShadow: '0 0 15px rgba(245, 158, 11, 0.3)'
+              };
+            }
+            if (state === 'failed') {
+              return {
+                ...base,
+                borderColor: 'var(--accent-danger)',
+                background: 'rgba(239, 68, 68, 0.15)',
+                color: '#fff',
+                boxShadow: '0 0 15px rgba(239, 68, 68, 0.4)',
+                transform: 'scale(1.05)'
+              };
+            }
+            return base;
+          };
+
+          return (
+            <div className="fade-in" style={{ display: 'grid', gap: 24, maxWidth: 1000 }}>
+              {/* Header Card */}
+              <div className="lp-card glass" style={{
+                padding: 32,
+                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, rgba(129, 140, 248, 0.03) 100%)',
+                borderLeft: '4px solid var(--accent-primary)',
+              }}>
+                <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8, letterSpacing: '-0.02em', margin: 0 }}>How LaunchLive Automates Your DevOps & SRE</h2>
+                <p style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.6, maxWidth: 680, margin: '8px 0 0 0' }}>
+                  LaunchLive runs automated SRE monitoring, zero-downtime server scaling, and self-healing infrastructure in the background. Explore the tabs below to learn, simulate, and chat about how we keep your application fast, secure, and always online.
+                </p>
+              </div>
+
+              {/* Guide Sub-Navigation */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+                {[
+                  { id: 'systems', label: 'SRE Systems', icon: '📖' },
+                  { id: 'chat', label: 'SRE AI Chat', icon: '💬' },
+                  { id: 'sandbox', label: 'DevOps Sandbox', icon: '🎮' },
+                  { id: 'topology', label: 'Architecture Map', icon: '🗺️' }
+                ].map(sub => (
+                  <button
+                    key={sub.id}
+                    onClick={() => setGuideSubTab(sub.id)}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '20px',
+                      border: '1px solid ' + (guideSubTab === sub.id ? 'var(--accent-primary)' : 'var(--border)'),
+                      background: guideSubTab === sub.id ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                      color: guideSubTab === sub.id ? '#fff' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                  >
+                    <span>{sub.icon}</span> {sub.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sub-tab 1: Systems Guide */}
+              {guideSubTab === 'systems' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+                  {[
+                    {
+                      title: '🤖 AI Auto-Healing & Self-Correction',
+                      why: 'If your application crashes in production, it normally stays down until a developer manually reads logs and fixes the code.',
+                      works: 'When a container crashes or a build fails, LaunchLive\'s monitoring system captures the logs, passes them to the AI agent to write a targeted patch, validates it in a isolated test container, and automatically deploys the fix (creating a PR optionally).',
+                      benefits: 'Minimizes downtime by automatically resolving common runtime/build bugs.',
+                      how: 'Go to the Settings tab and enable "Auto Heal". You can also choose between Auto-Commit or PR options.',
+                    },
+                    {
+                      title: '🔍 Ephemeral PR Preview Environments',
+                      why: 'Testing pull requests in isolation without affecting the main staging/production environments is difficult to configure and costly to host.',
+                      works: 'When a PR is opened, LaunchLive spins up an isolated, temporary replica of your app with a dedicated database and environment variables, providing a unique shareable URL.',
+                      benefits: 'Enables safe, isolated, and instant testing of new features before merging them into production.',
+                      how: 'Simply open a Pull Request in your connected GitHub repository. LaunchLive will automatically comment the preview link.',
+                    },
+                    {
+                      title: '⚡ Zero-Downtime Container Scaling',
+                      why: 'Standard server restarts or scaling resources usually disconnect active users, causing downtime.',
+                      works: 'LaunchLive spins up the new container version, performs health checks to ensure it is healthy, and dynamically re-routes traffic using Nginx before shutting down the old container.',
+                      benefits: 'Seamless scaling under high load with zero dropped connections.',
+                      how: 'Change the CPU or RAM limits in the "Live Metrics" or "Settings" tab. The system handles the rolling update.',
+                    },
+                    {
+                      title: '🛡️ Automated Security Patching',
+                      why: 'Keeping dependencies secure against newly discovered CVEs requires constant monitoring and manual upgrades.',
+                      works: 'LaunchLive regularly scans your dependency tree. If a vulnerability is found, the AI calculates the safest upgrade path, tests it, and prepares a pull request with the fix.',
+                      benefits: 'Protects against exploits automatically, keeping your dependencies up-to-date with minimal effort.',
+                      how: 'Check the "Security" tab. If vulnerabilities are found, click "Apply Auto-Fix" to generate a secure Pull Request.',
+                    },
+                    {
+                      title: '🌐 Automated SSL & DNS Routing',
+                      why: 'Setting up DNS records and securing them with SSL certificates can be a tedious process of DNS configuration and web server tuning.',
+                      works: 'LaunchLive integrates with Cloudflare to set up subdomains and custom domains instantly. It configures Let\'s Encrypt certificates and automatically renews them via a weekly cron job.',
+                      benefits: 'Provides instant, secure access (HTTPS) to your deployments without manually managing domain records or SSL.',
+                      how: 'Add a custom domain in the "Domains" tab and configure your CNAME. SSL is provisioned automatically.',
+                    },
+                    {
+                      title: '📈 Real-time Observability & Telemetry',
+                      why: 'Identifying slow API endpoints, traffic spikes, or memory leaks requires complex monitoring setups.',
+                      works: 'An Nginx/Express middleware interceptor streams live performance metrics directly to a Redis-backed sliding window, providing instant access to latency, traffic, and error rates.',
+                      benefits: 'Gives you real-time performance insights and instant anomaly detection.',
+                      how: 'Monitor real-time application health under the "Live Metrics" and "Analytics" tabs.',
+                    }
+                  ].map((g, i) => (
+                    <div key={i} className="lp-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <div>
+                        <h4 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-main)', marginBottom: 12 }}>{g.title}</h4>
+                        <div style={{ fontSize: 13, marginBottom: 8 }}>
+                          <strong style={{ color: 'var(--accent-danger)' }}>Why it's used:</strong> <span style={{ color: 'var(--text-muted)' }}>{g.why}</span>
+                        </div>
+                        <div style={{ fontSize: 13, marginBottom: 8 }}>
+                          <strong style={{ color: 'var(--accent-primary)' }}>How it works:</strong> <span style={{ color: 'var(--text-muted)' }}>{g.works}</span>
+                        </div>
+                        <div style={{ fontSize: 13, marginBottom: 8 }}>
+                          <strong style={{ color: 'var(--accent-success)' }}>How useful:</strong> <span style={{ color: 'var(--text-muted)' }}>{g.benefits}</span>
+                        </div>
+                        <div style={{ fontSize: 13 }}>
+                          <strong style={{ color: 'var(--accent-secondary)' }}>How to use:</strong> <span style={{ color: 'var(--text-muted)' }}>{g.how}</span>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 'auto', paddingTop: 10 }}>
+                        <button
+                          onClick={() => handleDeepDive(g.title, g.works)}
+                          className="lp-btn-secondary"
+                          style={{ width: '100%', fontSize: 12, padding: '8px 12px' }}
+                        >
+                          💡 AI Stack Deep-Dive
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Sub-tab 2: SRE AI Chatbot */}
+              {guideSubTab === 'chat' && (
+                <div className="lp-card glass" style={{ padding: 24, display: 'flex', flexDirection: 'column', height: '550px', justifyContent: 'space-between' }}>
+                  <div>
+                    <h3 style={{ fontSize: 16, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      💬 Ask the SRE AI Architect
+                    </h3>
+                    <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
+                      Have questions about how LaunchLive manages, builds, or automates this specific project? Ask our AI Architect below.
+                    </p>
+                  </div>
+
+                  {/* Chat Message Window */}
                   <div style={{
-                    fontSize: 11, fontWeight: 600, color: 'var(--accent-primary)',
-                    background: 'rgba(56, 189, 248, 0.08)', padding: '6px 12px', borderRadius: 8,
-                    border: '1px solid rgba(56, 189, 248, 0.15)', marginTop: 8
+                    flex: 1,
+                    overflowY: 'auto',
+                    background: 'rgba(0,0,0,0.2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 12,
+                    padding: 16,
+                    marginBottom: 16,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12
                   }}>
-                    {g.trigger}
+                    {architectMessages.map((msg, index) => (
+                      <div key={index} style={{
+                        display: 'flex',
+                        justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
+                      }}>
+                        <div style={{
+                          maxWidth: '85%',
+                          padding: '10px 14px',
+                          borderRadius: 12,
+                          background: msg.role === 'user' ? 'var(--accent-primary)' : 'rgba(255,255,255,0.03)',
+                          color: msg.role === 'user' ? '#fff' : 'var(--text-main)',
+                          fontSize: '13px',
+                          lineHeight: '1.6',
+                          border: msg.role === 'user' ? 'none' : '1px solid var(--border)'
+                        }}>
+                          {msg.role === 'assistant' && (
+                            <div style={{ fontWeight: 700, color: 'var(--accent-secondary)', marginBottom: 4 }}>
+                              🤖 AI SRE Architect
+                            </div>
+                          )}
+                          <div style={{ whiteSpace: 'pre-wrap' }}>
+                            {formatMessageContent(msg.content)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={chatEndRef} />
+                    {architectLoading && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                        <div style={{
+                          padding: '10px 14px',
+                          borderRadius: 12,
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--text-muted)',
+                          fontSize: '13px'
+                        }}>
+                          <div className="loading-spinner" style={{ width: 12, height: 12, display: 'inline-block', marginRight: 8 }}></div>
+                          Thinking...
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Suggestions */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                    {[
+                      `How does LaunchLive handle auto-healing for this ${project?.stack || 'current'} stack?`,
+                      'How are my environment variables secured?',
+                      'Explain the zero-downtime container swap mechanics.',
+                      'How does the weekly SSL renewal work?'
+                    ].map((q, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleAskArchitect(q)}
+                        className="lp-btn-secondary"
+                        style={{ fontSize: 11, padding: '4px 10px', cursor: 'pointer' }}
+                        disabled={architectLoading}
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Ask Input Form */}
+                  <form onSubmit={(e) => { e.preventDefault(); handleAskArchitect(customQuestion); }} style={{ display: 'flex', gap: 10 }}>
+                    <input
+                      type="text"
+                      value={customQuestion}
+                      onChange={(e) => setCustomQuestion(e.target.value)}
+                      placeholder="Ask a question about LaunchLive's automation..."
+                      className="lp-input"
+                      style={{ flex: 1, background: 'rgba(0,0,0,0.1)' }}
+                      disabled={architectLoading}
+                    />
+                    <button
+                      type="submit"
+                      className="lp-btn-primary"
+                      style={{ background: 'var(--accent-secondary)', padding: '0 20px', cursor: 'pointer' }}
+                      disabled={architectLoading || !customQuestion.trim()}
+                    >
+                      Send
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* Sub-tab 3: DevOps Sandbox (Visual Simulation) */}
+              {guideSubTab === 'sandbox' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
+                  <div className="lp-card glass" style={{ padding: 24 }}>
+                    <h3 style={{ fontSize: 16, marginBottom: 6 }}>🎮 DevOps & SRE Incident Simulator</h3>
+                    <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
+                      Select a simulated production scenario to watch how LaunchLive automatically reacts, diagnoses, and resolves incidents in real time.
+                    </p>
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
+                      <button
+                        onClick={() => handleRunSimulation('app-crash')}
+                        className="lp-btn-secondary"
+                        style={{ flex: '1 1 200px', padding: '10px', fontSize: 13, border: activeSimulation === 'app-crash' ? '1px solid var(--accent-danger)' : '1px solid var(--border)' }}
+                        disabled={simulationLoading}
+                      >
+                        💥 Simulate App Crash (OOM)
+                      </button>
+                      <button
+                        onClick={() => handleRunSimulation('build-fail')}
+                        className="lp-btn-secondary"
+                        style={{ flex: '1 1 200px', padding: '10px', fontSize: 13, border: activeSimulation === 'build-fail' ? '1px solid var(--accent-warning)' : '1px solid var(--border)' }}
+                        disabled={simulationLoading}
+                      >
+                        🛑 Simulate Build Failure
+                      </button>
+                      <button
+                        onClick={() => handleRunSimulation('ssl-expired')}
+                        className="lp-btn-secondary"
+                        style={{ flex: '1 1 200px', padding: '10px', fontSize: 13, border: activeSimulation === 'ssl-expired' ? '1px solid var(--accent-primary)' : '1px solid var(--border)' }}
+                        disabled={simulationLoading}
+                      >
+                        🔒 Simulate SSL Expiry
+                      </button>
+                    </div>
+
+                    {/* SRE Infrastructure Flow Diagram */}
+                    {activeSimulation && (
+                      <div style={{
+                        background: 'rgba(0,0,0,0.15)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 12,
+                        padding: 20,
+                        marginBottom: 20
+                      }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 16, textAlign: 'center' }}>
+                          Live SRE Infrastructure Flow Diagram
+                        </div>
+                        <div style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          gap: 12
+                        }}>
+                          {/* Node: Developer */}
+                          <div style={getNodeStyle(getNodeState('Dev'))}>
+                            💻 Developer
+                          </div>
+                          <div style={{ color: 'var(--text-dim)', transform: 'rotate(0deg)' }}>➔</div>
+
+                          {/* Node: Webhook */}
+                          <div style={getNodeStyle(getNodeState('Webhook'))}>
+                            🔗 Webhook Ingress
+                          </div>
+                          <div style={{ color: 'var(--text-dim)' }}>➔</div>
+
+                          {/* Node: Build Engine */}
+                          <div style={getNodeStyle(getNodeState('Build'))}>
+                            ⚙️ Build Engine
+                          </div>
+                          <div style={{ color: 'var(--text-dim)' }}>➔</div>
+
+                          {/* Node: Nginx Proxy */}
+                          <div style={getNodeStyle(getNodeState('Proxy'))}>
+                            🌐 Nginx Gateway
+                          </div>
+                          <div style={{ color: 'var(--text-dim)' }}>➔</div>
+
+                          {/* Node: App Container */}
+                          <div style={getNodeStyle(getNodeState('App'))}>
+                            📦 App Container
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 12 }}>
+                          {/* Node: Telemetry */}
+                          <div style={getNodeStyle(getNodeState('Monitor'))}>
+                            📈 Telemetry Monitor
+                          </div>
+
+                          <div style={{ color: 'var(--text-dim)', display: 'flex', alignItems: 'center' }}>⇄</div>
+
+                          {/* Node: AI Healer */}
+                          <div style={getNodeStyle(getNodeState('AI'))}>
+                            🧠 AI SRE Agent
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Simulator Screen */}
+                    <div style={{
+                      background: '#09090e',
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      padding: 20,
+                      fontFamily: 'var(--font-mono, monospace)',
+                      fontSize: 13,
+                      minHeight: 180,
+                      color: '#e2e8f0',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between'
+                    }}>
+                      <div>
+                        {simulationSteps.length === 0 && <span style={{ color: 'var(--text-dim)' }}>Select a scenario above to run the live simulator...</span>}
+                        {simulationSteps.map((step, idx) => (
+                          <div key={idx} style={{
+                            marginBottom: 8,
+                            color: step.includes('❌') ? '#ef4444' : step.includes('⚠️') ? '#f59e0b' : step.includes('✅') ? '#10b981' : '#e2e8f0',
+                            animation: 'fade-in 0.2s ease-out forwards'
+                          }}>
+                            {step}
+                          </div>
+                        ))}
+                      </div>
+                      {simulationLoading && (
+                        <div style={{ marginTop: 10, color: 'var(--accent-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div className="loading-spinner" style={{ width: 12, height: 12 }}></div> Running automated recovery workflows...
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Post-Simulation Report */}
+                    {simulationResponse && (
+                      <div className="fade-in" style={{
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 12,
+                        padding: 24,
+                        marginTop: 20
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                          <span style={{ fontSize: 20 }}>🧠</span>
+                          <h4 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>SRE Incident Playbook: Analysis & Remediation</h4>
+                        </div>
+                        <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)' }}>
+                          {formatMessageContent(simulationResponse)}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+
+              {/* Sub-tab 4: Architecture Map */}
+              {guideSubTab === 'topology' && (
+                <div className="lp-card glass" style={{ padding: 24 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <div>
+                      <h3 style={{ fontSize: 16, marginBottom: 4 }}>🗺️ Custom Infrastructure Topology Map</h3>
+                      <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                        Request a dynamically generated architectural map representing your current project's configuration, ports, and domains.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleGenerateArchitecture}
+                      className="lp-btn-primary"
+                      style={{ background: 'var(--accent-primary)', minWidth: 150 }}
+                      disabled={archDiagramLoading}
+                    >
+                      {archDiagramLoading ? 'Mapping...' : 'Generate Map'}
+                    </button>
+                  </div>
+
+                  {archDiagramLoading && (
+                    <div style={{
+                      minHeight: 200,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 12,
+                      background: 'rgba(0,0,0,0.15)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                    }}>
+                      <div className="loading-spinner" style={{ width: 24, height: 24 }}></div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Scanning active network, container bindings, and DNS configurations...</span>
+                    </div>
+                  )}
+
+                  {archDiagram && (
+                    <div className="fade-in" style={{
+                      background: '#09090e',
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      padding: 20,
+                      fontFamily: 'var(--font-mono, monospace)',
+                      fontSize: 13,
+                      color: '#e2e8f0',
+                      lineHeight: 1.6,
+                      whiteSpace: 'pre-wrap'
+                    }}>
+                      {formatMessageContent(archDiagram)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Deep Dive Modal Overlay */}
+              {deepDiveSystem && (
+                <div style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: 'rgba(2, 6, 23, 0.85)',
+                  backdropFilter: 'blur(8px)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 9999,
+                  padding: 20
+                }}>
+                  <div className="lp-card glass" style={{
+                    maxWidth: 750,
+                    width: '100%',
+                    maxHeight: '85vh',
+                    overflowY: 'auto',
+                    padding: 28,
+                    border: '1px solid var(--border-strong)',
+                    boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 20 }}>
+                      <h3 style={{ fontSize: 18, color: '#fff' }}>🔍 AI Deep-Dive: {deepDiveSystem.title}</h3>
+                      <button
+                        onClick={() => setDeepDiveSystem(null)}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer' }}
+                      >
+                        &times;
+                      </button>
+                    </div>
+
+                    {deepDiveLoading ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 250, gap: 12 }}>
+                        <div className="loading-spinner" style={{ width: 24, height: 24 }}></div>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Analyzing repository structure and generating custom configuration walk-throughs...</span>
+                      </div>
+                  ) : (
+                    <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)' }}>
+                      {formatMessageContent(deepDiveResponse)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        )})}
 
         {/* ── Domains ── */}
         {activeTab === 'domains' && (
