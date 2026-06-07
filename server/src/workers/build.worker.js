@@ -376,6 +376,7 @@ const estimateBuildTime = (repoDir, stack, hasCache, skipBuild) => {
 // ─── Build Process ────────────────────────────────────────────────────────────
 buildQueue.process(1, async (job) => {
   const { deploymentId, projectId } = job.data;
+  let forceRebuild = job.data.forceRebuild === true;
 
   const deployment = await Deployment.findById(deploymentId);
   const project    = await Project.findById(projectId)
@@ -451,7 +452,29 @@ buildQueue.process(1, async (job) => {
       currentCommitSha = shaOut.trim();
     } catch {}
 
+    // Compare env/settings hashes with the last successful deployment to auto-force rebuild if they changed
+    try {
+      const lastSuccessDep = await Deployment.findOne({
+        project: project._id,
+        status: 'success',
+        _id: { $ne: deployment._id }
+      }).sort({ createdAt: -1 });
+
+      if (lastSuccessDep) {
+        const lastEnvHash = lastSuccessDep.envVarsHash;
+        const lastSettingsHash = lastSuccessDep.settingsHash;
+        
+        if (lastEnvHash !== deployment.envVarsHash || lastSettingsHash !== deployment.settingsHash) {
+          await log('⚠️  Project settings or Environment Variables have changed. Automatic clean rebuild triggered.');
+          forceRebuild = true;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to compare deployment hashes:', err.message);
+    }
+
     if (
+      !forceRebuild &&
       currentCommitSha &&
       project.lastCommitSha === currentCommitSha &&
       project.lastImageTag
@@ -674,7 +697,7 @@ buildQueue.process(1, async (job) => {
 
       // ── SPEED OPT: Reuse previous image layers via --cache-from ─────────────
       const cacheFromArgs = [];
-      if (!skipDockerBuild && project.lastImageTag) {
+      if (!forceRebuild && !skipDockerBuild && project.lastImageTag) {
         try {
           execSync(`docker image inspect ${project.lastImageTag}`, { stdio: 'pipe' });
           cacheFromArgs.push('--cache-from', project.lastImageTag);
@@ -689,11 +712,25 @@ buildQueue.process(1, async (job) => {
         await log('   ✅ Image ready (reused from cache — skipped full rebuild).');
       }
 
+      if (!skipDockerBuild) {
+        if (forceRebuild) {
+          await log('   ⚡ Bypassing Docker layer cache (--no-cache) for clean rebuild.');
+        }
+      }
+
       if (!skipDockerBuild) await new Promise((resolve, reject) => {
         const { spawn } = require('child_process');
+        const dockerBuildArgs = ['build', '--progress=plain'];
+        if (forceRebuild) {
+          dockerBuildArgs.push('--no-cache');
+        } else {
+          dockerBuildArgs.push(...cacheFromArgs);
+        }
+        dockerBuildArgs.push(...buildArgParts, '-t', imageTag, repoDir);
+
         const buildProc = spawn(
           'docker',
-          ['build', '--progress=plain', ...cacheFromArgs, ...buildArgParts, '-t', imageTag, repoDir],
+          dockerBuildArgs,
           {
             stdio: ['ignore', 'pipe', 'pipe'],
             env: { ...process.env, DOCKER_BUILDKIT: '1' }

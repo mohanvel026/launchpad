@@ -38,16 +38,30 @@ const githubWebhook = async (req, res) => {
       return res.status(200).json({ message: 'A build is already queued or in progress for this project, ignoring webhook trigger' });
     }
 
+    const EnvVar = require('../models/EnvVar.model');
+    const envVars = await EnvVar.find({ project: project._id }).sort({ key: 1 });
+    const envStr = envVars.map(ev => `${ev.key}=${ev.value}`).join('\n');
+    const envVarsHash = crypto.createHash('md5').update(envStr).digest('hex');
+
+    const settingsStr = `${project.installCommand || ''}|${project.buildCommand || ''}|${project.outputDir || ''}|${project.branch || ''}|${project.cpuLimit || ''}|${project.ramLimitMB || ''}`;
+    const settingsHash = crypto.createHash('md5').update(settingsStr).digest('hex');
+
     const deployment = await Deployment.create({
       project:       project._id,
       commitSha:     commitSha?.slice(0, 7),
       commitMessage: head_commit?.message || 'Push triggered deploy',
       branch,
       status:        'queued',
+      envVarsHash,
+      settingsHash,
     });
 
     await buildQueue.add(
-      { deploymentId: deployment._id.toString(), projectId: project._id.toString() },
+      { 
+        deploymentId: deployment._id.toString(), 
+        projectId: project._id.toString(),
+        forceRebuild: false
+      },
       {
         attempts: 2,
         backoff: { type: 'exponential', delay: 5000 },
@@ -75,17 +89,33 @@ const triggerDeploy = async (req, res) => {
     const running = await Deployment.findOne({ project: project._id, status: { $in: ['queued', 'building'] } });
     if (running) return res.status(409).json({ message: 'A build is already in progress' });
 
+    const EnvVar = require('../models/EnvVar.model');
+    const envVars = await EnvVar.find({ project: project._id }).sort({ key: 1 });
+    const envStr = envVars.map(ev => `${ev.key}=${ev.value}`).join('\n');
+    const envVarsHash = crypto.createHash('md5').update(envStr).digest('hex');
+
+    const settingsStr = `${project.installCommand || ''}|${project.buildCommand || ''}|${project.outputDir || ''}|${project.branch || ''}|${project.cpuLimit || ''}|${project.ramLimitMB || ''}`;
+    const settingsHash = crypto.createHash('md5').update(settingsStr).digest('hex');
+
+    const forceRebuild = req.body.forceRebuild === true;
+
     const deployment = await Deployment.create({
       project:       project._id,
       triggeredBy:   req.user._id,
       commitSha:     'manual',
-      commitMessage: 'Manual deploy',
+      commitMessage: forceRebuild ? 'Manual deploy (clean rebuild)' : 'Manual deploy',
       branch:        project.branch,
       status:        'queued',
+      envVarsHash,
+      settingsHash,
     });
 
     await buildQueue.add(
-      { deploymentId: deployment._id.toString(), projectId: project._id.toString() },
+      { 
+        deploymentId: deployment._id.toString(), 
+        projectId: project._id.toString(),
+        forceRebuild
+      },
       {
         attempts: 2,
         backoff: { type: 'exponential', delay: 5000 },

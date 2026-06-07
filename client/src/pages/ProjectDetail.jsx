@@ -337,6 +337,7 @@ export default function ProjectDetail() {
   const [runtimeLogs, setRuntimeLogs] = useState([]);
   const [deploying,   setDeploying]   = useState(false);
   const [activeTab,   setActiveTab]   = useState('deployments');
+  const [showDeployDropdown, setShowDeployDropdown] = useState(false);
   const [error,       setError]       = useState('');
   const [saveStatus,  setSaveStatus]  = useState('');
 
@@ -768,6 +769,15 @@ Use bold headers, bullet lists, and code blocks.`;
   };
 
   useEffect(() => {
+    if (!showDeployDropdown) return;
+    const handleWindowClick = () => {
+      setShowDeployDropdown(false);
+    };
+    window.addEventListener('click', handleWindowClick);
+    return () => window.removeEventListener('click', handleWindowClick);
+  }, [showDeployDropdown]);
+
+  useEffect(() => {
     loadProject();
     loadDeployments();
     loadEnvVars();
@@ -902,12 +912,13 @@ Use bold headers, bullet lists, and code blocks.`;
   };
 
 
-  const handleDeploy = async () => {
+  const handleDeploy = async (forceRebuild = false) => {
     setDeploying(true); setError(''); setActiveTab('logs'); setLogs([]);
     setActiveDeployment(null);
     setShowDiff(false);
+    setShowDeployDropdown(false);
     try {
-      const res = await api.post(`/deploy/${id}`);
+      const res = await api.post(`/deploy/${id}`, { forceRebuild });
       setActiveDeployment(res.data.deployment);
       connectToLogs(res.data.deployment._id);
       pollRef.current = setInterval(async () => {
@@ -1428,9 +1439,104 @@ Use bold headers, bullet lists, and code blocks.`;
                 Visit
               </a>
             )}
-            <button onClick={handleDeploy} disabled={deploying} className={`lp-btn-primary ${deploying ? 'animate-pulse-cyan' : ''}`}>
-              {deploying ? 'Deploying...' : '🚀 Redeploy'}
-            </button>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'stretch', borderRadius: 8, overflow: 'visible' }}>
+              <button 
+                onClick={() => handleDeploy(false)} 
+                disabled={deploying} 
+                className={`lp-btn-primary ${deploying ? 'animate-pulse-cyan' : ''}`}
+                style={{ 
+                  borderTopRightRadius: 0, 
+                  borderBottomRightRadius: 0, 
+                  padding: '6px 14px', 
+                  fontSize: 13,
+                  borderRight: '1px solid rgba(255,255,255,0.15)' 
+                }}
+              >
+                {deploying ? 'Deploying...' : '🚀 Redeploy'}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowDeployDropdown(prev => !prev); }}
+                disabled={deploying}
+                className="lp-btn-primary"
+                style={{ 
+                  borderTopLeftRadius: 0, 
+                  borderBottomLeftRadius: 0, 
+                  padding: '6px 8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'var(--accent-primary)',
+                  cursor: 'pointer'
+                }}
+              >
+                <span style={{ 
+                  transform: showDeployDropdown ? 'rotate(180deg)' : 'rotate(0deg)', 
+                  transition: 'transform 0.2s',
+                  fontSize: 10
+                }}>▼</span>
+              </button>
+
+              {showDeployDropdown && (
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  background: '#1e293b',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 8,
+                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
+                  zIndex: 9999,
+                  minWidth: 200,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: 4
+                }}>
+                  <button
+                    onClick={() => handleDeploy(false)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#cbd5e1',
+                      padding: '8px 12px',
+                      fontSize: 12,
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      transition: 'background 0.2s, color 0.2s'
+                    }}
+                    onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = '#fff'; }}
+                    onMouseLeave={(e) => { e.target.style.background = 'transparent'; e.target.style.color = '#cbd5e1'; }}
+                  >
+                    <span>🚀</span> Quick Deploy (Cached)
+                  </button>
+                  <button
+                    onClick={() => handleDeploy(true)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#cbd5e1',
+                      padding: '8px 12px',
+                      fontSize: 12,
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      transition: 'background 0.2s, color 0.2s'
+                    }}
+                    onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = '#fff'; }}
+                    onMouseLeave={(e) => { e.target.style.background = 'transparent'; e.target.style.color = '#cbd5e1'; }}
+                  >
+                    <span>⚡</span> Clear Cache & Rebuild
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
