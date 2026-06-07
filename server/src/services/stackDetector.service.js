@@ -343,6 +343,10 @@ CMD ["nginx", "-g", "daemon off;"]`;
       const feLockStr = feLock ? ` ${feLock}` : '';
       const beLockStr = beLock ? ` ${beLock}` : '';
 
+      const bePkg = readPkg(path.join(repoPath, beDir));
+      const hasPrisma = hasDep(bePkg, 'prisma') || hasDep(bePkg, '@prisma/client');
+      const prismaGen = hasPrisma ? `\nRUN npx prisma generate || true` : '';
+
       const start = getStartCommand(path.join(repoPath, beDir), pm.name);
       const backendCmd = start.isScript
         ? `pm2 start ${pm.name} --name backend -- start`
@@ -366,7 +370,7 @@ RUN npm install -g pm2 --silent
 WORKDIR /app
 COPY ${beDir}/package*.json${beLockStr} ./
 RUN npm install --only=production --legacy-peer-deps 2>/dev/null || npm install --only=production || ${installCmd}
-COPY ${beDir}/ .
+COPY ${beDir}/ .${prismaGen}
 # Copy built frontend to Nginx default html directory
 COPY --from=fe-builder /app/frontend/${feOut} /usr/share/nginx/html
 
@@ -410,6 +414,10 @@ CMD ["node", ".output/server/index.mjs"]`;
 
     case 'node':
     default: {
+      const rootPkg = readPkg(repoPath);
+      const hasPrisma = hasDep(rootPkg, 'prisma') || hasDep(rootPkg, '@prisma/client');
+      const prismaGen = hasPrisma ? `\nRUN npx prisma generate || true` : '';
+
       const start = getStartCommand(repoPath, pm.name);
       const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
       const lockFileCopy = lockFile ? `COPY ${lockFile} ./` : '';
@@ -420,7 +428,7 @@ WORKDIR /app
 COPY package*.json ./
 ${lockFileCopy}
 ${installRunInstruction}
-COPY . .
+COPY . .${prismaGen}
 ENV PORT=${containerPort}
 ENV NODE_ENV=production
 EXPOSE ${containerPort}
