@@ -421,7 +421,7 @@ const inspectLogs = async (req, res) => {
     const { execSync } = require('child_process');
     let runtimeLogs = '';
     try {
-      runtimeLogs = execSync(`docker logs --tail 100 ${containerName} 2>&1`, { timeout: 4000 }).toString();
+      runtimeLogs = execSync(`docker logs --tail 100 ${containerName} 2>&1`, { timeout: 15000 }).toString();
     } catch (e) {
       runtimeLogs = 'No active container is running or logs are unavailable.';
     }

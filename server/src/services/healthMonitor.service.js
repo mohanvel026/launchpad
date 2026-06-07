@@ -23,9 +23,10 @@ function startMonitoring(project) {
       // 1. Verify container exists and get its running state
       let containerState = ''; // 'running' | 'stopped' | 'missing'
       try {
-        const inspectOut = execSync(`docker inspect -f "{{.State.Status}}" ${containerId}`, { stdio: 'pipe', timeout: 3000 }).toString().trim();
+        const inspectOut = execSync(`docker inspect -f "{{.State.Status}}" ${containerId}`, { stdio: 'pipe', timeout: 15000 }).toString().trim();
         containerState = inspectOut; // e.g., 'running', 'exited', 'paused'
       } catch (e) {
+        console.error(`[HealthMonitor] docker inspect failed for container ${containerId}:`, e.message);
         containerState = 'missing';
       }
 
@@ -57,8 +58,9 @@ function startMonitoring(project) {
       // 2. Container is running, fetch logs
       let logs = '';
       try {
-        logs = execSync(`docker logs --tail 200 --since 90s ${containerId} 2>&1`, { timeout: 8000 }).toString();
+        logs = execSync(`docker logs --tail 200 --since 90s ${containerId} 2>&1`, { timeout: 20000 }).toString();
       } catch (e) {
+        console.error(`[HealthMonitor] docker logs failed for container ${containerId}:`, e.message);
         logs = e.stdout?.toString() || e.stderr?.toString() || '';
       }
 
