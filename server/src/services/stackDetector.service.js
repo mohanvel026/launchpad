@@ -128,71 +128,141 @@ const detectStack = (repoPath) => {
 };
 
 // ─── Universal Code Generation Step Detector ─────────────────────────────────
-// Scans a package.json for ALL tools that require a pre-run generation step.
-// Returns a string of RUN commands to inject into the Dockerfile.
-const detectCodeGenSteps = (pkgDir, prismaSchemaPrefix = '') => {
+// Scans package.json for ALL tools requiring a pre-build generation step.
+// side: 'frontend' | 'backend' | 'both'
+// Returns a newline-separated string of RUN commands to inject into Dockerfile.
+const detectCodeGenSteps = (pkgDir, prismaSchemaPrefix = '', side = 'both') => {
   const pkg = readPkg(pkgDir);
   if (!pkg) return '';
 
   const steps = [];
+  const isBE = side === 'backend' || side === 'both';
+  const isFE = side === 'frontend' || side === 'both';
 
-  // 1. Prisma ORM — requires generate to build the typed DB client
-  if (hasDep(pkg, 'prisma') || hasDep(pkg, '@prisma/client')) {
-    if (prismaSchemaPrefix) steps.push(`COPY ${prismaSchemaPrefix}prisma* ./prisma/`);
-    steps.push('RUN npx prisma generate || true');
-  }
+  // ─── BACKEND TOOLS ─────────────────────────────────────────────────────────
 
-  // 2. Drizzle ORM — requires drizzle-kit generate for schema types
-  if (hasDep(pkg, 'drizzle-kit') || hasDep(pkg, 'drizzle-orm')) {
-    steps.push('RUN npx drizzle-kit generate || true');
-  }
+  if (isBE) {
+    // 1. Prisma ORM — must generate typed DB client before server starts
+    if (hasDep(pkg, 'prisma') || hasDep(pkg, '@prisma/client')) {
+      if (prismaSchemaPrefix) steps.push(`COPY ${prismaSchemaPrefix}prisma* ./prisma/`);
+      steps.push('RUN npx prisma generate || true');
+    }
 
-  // 3. GraphQL Code Generator — generates typed resolvers/hooks from schema
-  if (hasDep(pkg, '@graphql-codegen/cli') || hasDep(pkg, 'graphql-codegen')) {
-    steps.push('RUN npx graphql-codegen --config codegen.yml || npx graphql-codegen --config codegen.ts || true');
-  }
+    // 2. Drizzle ORM — generates schema types
+    if (hasDep(pkg, 'drizzle-kit') || hasDep(pkg, 'drizzle-orm')) {
+      steps.push('RUN npx drizzle-kit generate || true');
+    }
 
-  // 4. TypeORM — runs migrations so DB schema is up to date
-  if (hasDep(pkg, 'typeorm')) {
-    steps.push('RUN npx typeorm migration:run || true');
-  }
+    // 3. TypeORM — runs pending migrations
+    if (hasDep(pkg, 'typeorm')) {
+      steps.push('RUN npx typeorm migration:run || true');
+    }
 
-  // 5. Sequelize CLI — runs pending migrations
-  if (hasDep(pkg, 'sequelize-cli') || hasDep(pkg, 'sequelize')) {
-    steps.push('RUN npx sequelize-cli db:migrate || true');
-  }
+    // 4. Sequelize CLI — runs pending migrations
+    if (hasDep(pkg, 'sequelize-cli') || hasDep(pkg, 'sequelize')) {
+      steps.push('RUN npx sequelize-cli db:migrate || true');
+    }
 
-  // 6. Mongoose Auto-populate indexes / plugins (no codegen needed — skip)
+    // 5. NestJS — compiles TypeScript source
+    if (hasDep(pkg, '@nestjs/core') || hasDep(pkg, '@nestjs/cli')) {
+      const scripts = pkg.scripts || {};
+      if (!scripts.build) steps.push('RUN npx nest build || true');
+    }
 
-  // 7. gRPC / Protobuf — generates typed stubs from .proto files
-  if (hasDep(pkg, '@grpc/grpc-js') || hasDep(pkg, 'grpc-tools') || hasDep(pkg, '@grpc/proto-loader')) {
-    steps.push('RUN find . -name "*.proto" | head -1 | xargs -I{} sh -c "npx grpc_tools_node_protoc_ts --js_out=import_style=commonjs,binary:. --grpc_out=grpc_mode=grpc-js:. {} || true" || true');
-  }
+    // 6. gRPC / Protobuf — generates typed stubs from .proto files
+    if (hasDep(pkg, '@grpc/grpc-js') || hasDep(pkg, 'grpc-tools') || hasDep(pkg, '@grpc/proto-loader')) {
+      steps.push('RUN find . -name "*.proto" | head -1 | xargs -I{} sh -c "npx grpc_tools_node_protoc_ts --js_out=import_style=commonjs,binary:. --grpc_out=grpc_mode=grpc-js:. {} || true" || true');
+    }
 
-  // 8. tRPC — no codegen required, types are inferred at build time — skip
-
-  // 9. TypeScript standalone compile (only for pure node backends without a build script)
-  if (hasDep(pkg, 'typescript') || hasDep(pkg, 'ts-node')) {
-    const scripts = pkg.scripts || {};
-    const hasBuildScript = scripts.build && (
-      scripts.build.includes('tsc') ||
-      scripts.build.includes('ts-node') ||
-      scripts.build.includes('nest build')
-    );
-    // Only add explicit tsc if there's no npm run build script already handling it
-    if (!hasBuildScript) {
-      steps.push('RUN npx tsc --skipLibCheck || true');
+    // 7. TypeScript (backend — only if no build script handles it)
+    if ((hasDep(pkg, 'typescript') || hasDep(pkg, 'ts-node')) && !hasDep(pkg, '@nestjs/core')) {
+      const scripts = pkg.scripts || {};
+      const hasBuildScript = scripts.build && (
+        scripts.build.includes('tsc') || scripts.build.includes('ts-node') || scripts.build.includes('nest build')
+      );
+      if (!hasBuildScript) steps.push('RUN npx tsc --skipLibCheck || true');
     }
   }
 
-  // 10. NestJS — compiles TypeScript source
-  if (hasDep(pkg, '@nestjs/core') || hasDep(pkg, '@nestjs/cli')) {
-    const scripts = pkg.scripts || {};
-    if (!scripts.build) steps.push('RUN npx nest build || true');
+  // ─── FRONTEND TOOLS ────────────────────────────────────────────────────────
+
+  if (isFE) {
+    // 8. GraphQL Code Generator — typed hooks/resolvers from schema (used on both FE & BE)
+    if (hasDep(pkg, '@graphql-codegen/cli') || hasDep(pkg, 'graphql-codegen')) {
+      steps.push('RUN npx graphql-codegen --config codegen.yml || npx graphql-codegen --config codegen.ts || true');
+    }
+
+    // 9. Apollo Client Codegen — generates typed queries from GraphQL schema
+    if (hasDep(pkg, '@apollo/codegen') || hasDep(pkg, 'apollo')) {
+      steps.push('RUN npx apollo client:codegen --target typescript || true');
+    }
+
+    // 10. Orval — generates typed API client from OpenAPI/Swagger spec
+    if (hasDep(pkg, 'orval')) {
+      steps.push('RUN npx orval || true');
+    }
+
+    // 11. swagger-typescript-api — generates typed client from Swagger/OpenAPI
+    if (hasDep(pkg, 'swagger-typescript-api')) {
+      steps.push('RUN npx swagger-typescript-api || true');
+    }
+
+    // 12. OpenAPI Generator CLI — generates full typed API client
+    if (hasDep(pkg, '@openapitools/openapi-generator-cli')) {
+      steps.push('RUN npx openapi-generator-cli generate || true');
+    }
+
+    // 13. Lingui (i18n) — extracts & compiles translation strings
+    if (hasDep(pkg, '@lingui/cli') || hasDep(pkg, '@lingui/core')) {
+      steps.push('RUN npx lingui extract || true && npx lingui compile || true');
+    }
+
+    // 14. i18next-scanner — scans code and extracts translation keys
+    if (hasDep(pkg, 'i18next-scanner')) {
+      steps.push('RUN npx i18next-scanner || true');
+    }
+
+    // 15. next-intl / react-i18next — message extraction (if script exists)
+    if (hasDep(pkg, 'next-intl') || hasDep(pkg, 'react-i18next')) {
+      const scripts = pkg.scripts || {};
+      if (scripts['extract'] || scripts['i18n:extract']) {
+        steps.push('RUN npm run extract || npm run i18n:extract || true');
+      }
+    }
+
+    // 16. Tailwind CSS standalone (only if no build script handles it via PostCSS)
+    if (hasDep(pkg, 'tailwindcss')) {
+      const scripts = pkg.scripts || {};
+      const buildHandlesTW = scripts.build && (
+        scripts.build.includes('tailwind') || scripts.build.includes('vite') ||
+        scripts.build.includes('next') || scripts.build.includes('react-scripts')
+      );
+      if (!buildHandlesTW && scripts['build:css']) {
+        steps.push('RUN npm run build:css || true');
+      }
+    }
+
+    // 17. Storybook — pre-build story index if storybook build script exists
+    if (hasDep(pkg, 'storybook') || hasDep(pkg, '@storybook/react') || hasDep(pkg, '@storybook/vue3')) {
+      const scripts = pkg.scripts || {};
+      // Only build storybook if it's explicitly the build target, not as a side effect
+      if (scripts['build-storybook']) {
+        // Skip — storybook is a dev tool, not a production build requirement
+      }
+    }
+
+    // 18. TypeScript on frontend (only if vite/webpack won't handle it via build)
+    if (hasDep(pkg, 'typescript') && !hasDep(pkg, 'vite') && !hasDep(pkg, 'react-scripts') &&
+        !hasDep(pkg, 'next') && !hasDep(pkg, '@angular/core')) {
+      const scripts = pkg.scripts || {};
+      const hasBuildScript = scripts.build && scripts.build.includes('tsc');
+      if (!hasBuildScript) steps.push('RUN npx tsc --skipLibCheck || true');
+    }
   }
 
   return steps.length > 0 ? '\n' + steps.join('\n') : '';
 };
+
 
 // ─── Dockerfile Generation ────────────────────────────────────────────────────
 const generateDockerfile = (stack, repoPath = '', options = {}) => {
@@ -344,13 +414,14 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
     case 'angular': {
       const outDir = options.outputDir || (repoPath ? getBuildOutput(repoPath) : 'dist');
       const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
+      const feCodeGenSteps = detectCodeGenSteps(repoPath, '', 'frontend');
       return `FROM node:20-alpine AS builder
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}
 COPY . .
-${envArgs}
+${envArgs}${feCodeGenSteps}
 RUN ${buildCmd}
 
 FROM nginx:alpine
@@ -365,13 +436,14 @@ CMD ["nginx", "-g", "daemon off;"]`;
 
     case 'next': {
       const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
+      const feCodeGenSteps = detectCodeGenSteps(repoPath, '', 'frontend');
       return `FROM node:20-alpine AS builder
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}
 COPY . .
-${envArgs}
+${envArgs}${feCodeGenSteps}
 RUN ${buildCmd}
 
 FROM node:20-alpine
@@ -411,7 +483,8 @@ CMD ["nginx", "-g", "daemon off;"]`;
       const beLockStr = beLock ? ` ${beLock}` : '';
 
       const bePkg = readPkg(path.join(repoPath, beDir));
-      const codeGenSteps = detectCodeGenSteps(path.join(repoPath, beDir), `${beDir}/`);
+      const codeGenSteps = detectCodeGenSteps(path.join(repoPath, beDir), `${beDir}/`, 'backend');
+      const feCodeGenSteps = detectCodeGenSteps(path.join(repoPath, feDir), '', 'frontend');
 
       const start = getStartCommand(path.join(repoPath, beDir), pm.name);
       const backendCmd = start.isScript
@@ -431,7 +504,7 @@ ${pmSetup}
 COPY ${feDir}/package*.json${feLockStr} ./
 ${installRunInstruction}
 COPY ${feDir}/ .
-${envArgs}
+${envArgs}${feCodeGenSteps}
 RUN ${buildCmd} 2>/dev/null || npx vite build || true
 
 # ── Stage 2: Install Backend Dependencies (runs in PARALLEL with Stage 1) ──
@@ -468,13 +541,14 @@ CMD ["/app/start.sh"]`;
 
     case 'nuxt': {
       const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
+      const feCodeGenSteps = detectCodeGenSteps(repoPath, '', 'frontend');
       return `FROM node:20-alpine AS builder
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}
 COPY . .
-${envArgs}
+${envArgs}${feCodeGenSteps}
 RUN ${buildCmd} 2>/dev/null || npx nuxt build || true
 
 FROM node:20-alpine

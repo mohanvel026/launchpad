@@ -258,7 +258,7 @@ const estimateBuildTime = (repoDir, stack, hasCache, skipBuild) => {
     breakdown.push(`${totalDeps} dependencies (+${Math.round(depAdd)}s)`);
   }
 
-  // 3. Detect ALL code-generation tools (each adds build time)
+  // 3. Detect ALL code-generation tools — backend AND frontend (each adds build time)
   const codeGenTools = [];
   const subDirs = ['', 'server', 'backend', 'client', 'frontend'];
   const readPkgEta = (sub) => {
@@ -272,14 +272,12 @@ const estimateBuildTime = (repoDir, stack, hasCache, skipBuild) => {
   const hasDepEta = (pkg, dep) => pkg && (dep in (pkg.dependencies || {}) || dep in (pkg.devDependencies || {}));
   const allPkgs = subDirs.map(readPkgEta).filter(Boolean);
 
+  // ── Backend codegen ──
   if (allPkgs.some(p => hasDepEta(p, 'prisma') || hasDepEta(p, '@prisma/client'))) {
     low += 25; high += 40; codeGenTools.push('Prisma');
   }
   if (allPkgs.some(p => hasDepEta(p, 'drizzle-kit') || hasDepEta(p, 'drizzle-orm'))) {
     low += 15; high += 25; codeGenTools.push('Drizzle');
-  }
-  if (allPkgs.some(p => hasDepEta(p, '@graphql-codegen/cli') || hasDepEta(p, 'graphql-codegen'))) {
-    low += 20; high += 35; codeGenTools.push('GraphQL Codegen');
   }
   if (allPkgs.some(p => hasDepEta(p, 'typeorm'))) {
     low += 15; high += 30; codeGenTools.push('TypeORM');
@@ -287,20 +285,43 @@ const estimateBuildTime = (repoDir, stack, hasCache, skipBuild) => {
   if (allPkgs.some(p => hasDepEta(p, 'sequelize') || hasDepEta(p, 'sequelize-cli'))) {
     low += 10; high += 20; codeGenTools.push('Sequelize');
   }
-  if (allPkgs.some(p => hasDepEta(p, '@grpc/grpc-js') || hasDepEta(p, 'grpc-tools'))) {
-    low += 20; high += 35; codeGenTools.push('gRPC/Protobuf');
-  }
   if (allPkgs.some(p => hasDepEta(p, '@nestjs/core') || hasDepEta(p, '@nestjs/cli'))) {
     low += 20; high += 40; codeGenTools.push('NestJS');
   }
+  if (allPkgs.some(p => hasDepEta(p, '@grpc/grpc-js') || hasDepEta(p, 'grpc-tools'))) {
+    low += 20; high += 35; codeGenTools.push('gRPC/Protobuf');
+  }
   if (allPkgs.some(p => hasDepEta(p, 'typescript') || hasDepEta(p, 'ts-node'))) {
-    // Only count TS compile time if no build script already handles it
     const hasBuildScript = allPkgs.some(p => {
       const build = (p.scripts || {}).build || '';
       return build.includes('tsc') || build.includes('nest build');
     });
     if (!hasBuildScript) { low += 15; high += 30; codeGenTools.push('TypeScript'); }
   }
+
+  // ── Frontend codegen ──
+  if (allPkgs.some(p => hasDepEta(p, '@graphql-codegen/cli') || hasDepEta(p, 'graphql-codegen'))) {
+    low += 20; high += 35; codeGenTools.push('GraphQL Codegen');
+  }
+  if (allPkgs.some(p => hasDepEta(p, '@apollo/codegen') || hasDepEta(p, 'apollo'))) {
+    low += 15; high += 25; codeGenTools.push('Apollo Codegen');
+  }
+  if (allPkgs.some(p => hasDepEta(p, 'orval'))) {
+    low += 10; high += 20; codeGenTools.push('Orval (OpenAPI)');
+  }
+  if (allPkgs.some(p => hasDepEta(p, 'swagger-typescript-api'))) {
+    low += 10; high += 20; codeGenTools.push('Swagger TS API');
+  }
+  if (allPkgs.some(p => hasDepEta(p, '@openapitools/openapi-generator-cli'))) {
+    low += 15; high += 30; codeGenTools.push('OpenAPI Generator');
+  }
+  if (allPkgs.some(p => hasDepEta(p, '@lingui/cli') || hasDepEta(p, '@lingui/core'))) {
+    low += 10; high += 20; codeGenTools.push('Lingui i18n');
+  }
+  if (allPkgs.some(p => hasDepEta(p, 'i18next-scanner'))) {
+    low += 8; high += 15; codeGenTools.push('i18next-scanner');
+  }
+
   if (codeGenTools.length > 0) {
     breakdown.push(`Code generation: ${codeGenTools.join(', ')}`);
   }
