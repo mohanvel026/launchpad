@@ -727,6 +727,40 @@ Reply in strict JSON format:
         await log(`   ❌ docker run failed: ${runErr.message}`);
         throw new Error('Runtime execution failure');
       }
+      // ── Visual AI Quarantine Sandbox ──
+      await log(`🛡️  PHASE 6.5: Quarantine Visual AI Sandbox Validation…`);
+      try {
+        const { takeScreenshot } = require('../services/sandbox.service');
+        const { analyzeVisualPhishing } = require('../services/ai.service');
+
+        await log(`   📸 Taking headless screenshot of local container (http://127.0.0.1:${hostPort})`);
+        const screenshotBuffer = await takeScreenshot(`http://127.0.0.1:${hostPort}`);
+
+        if (screenshotBuffer) {
+          await log(`   🤖 Analyzing screenshot with Gemini Vision AI...`);
+          const visionResult = await analyzeVisualPhishing(screenshotBuffer);
+
+          if (visionResult.isPhishing && visionResult.confidence >= 70) {
+            await log(`🛑 [VISUAL ABUSE DETECTED] AI Vision Phishing Scanner triggered!`);
+            await log(`   ↳ Reason: ${visionResult.reasoning}`);
+            
+            // Destroy the container
+            try { await execAsync(`docker rm -f ${containerId}`); } catch(e) {}
+            await Project.findByIdAndUpdate(projectId, { status: 'suspended' });
+            
+            throw new Error('Deployment blocked: Visual Phishing/Abuse detected in Quarantine by Gemini Vision.');
+          } else {
+            await log(`   ✅ [VISUAL SECURITY] Clean. No visual phishing patterns detected. Releasing to public.`);
+          }
+        } else {
+          await log(`   ⚠️ Screenshot failed. Skipping Visual AI validation.`);
+        }
+      } catch (quarantineErr) {
+        if (quarantineErr.message.includes('Deployment blocked')) {
+          throw quarantineErr;
+        }
+        await log(`   ⚠️ Quarantine Sandbox Error: ${quarantineErr.message}`);
+      }
 
       await log('🌐 PHASE 7: Updating routing engine…');
       // Write nginx config for this subdomain and custom domain if present

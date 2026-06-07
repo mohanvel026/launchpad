@@ -1228,6 +1228,64 @@ const analyzeBuildTrends = async (deployments = []) => {
   return { avgBuildTimeMs, successRate, trend, tips, totalBuilds: deployments.length, successCount: successful.length };
 };
 
+// ─── Feature 16: Visual AI Phishing Scanner ───────────────────────────────
+/**
+ * Analyzes a screenshot of a deployed site using Gemini Vision.
+ * Returns: { isPhishing: bool, confidence: number, reasoning: string }
+ */
+const analyzeVisualPhishing = async (screenshotBuffer) => {
+  const keyPool = getGeminiKeyPool();
+  if (keyPool.length === 0) throw new Error('No GEMINI_API_KEY configured for Vision.');
+
+  const base64Image = screenshotBuffer.toString('base64');
+  const systemPrompt = `You are an elite cybersecurity analyst. 
+Examine the following screenshot of a website. Does this visually resemble a login page, password reset page, or account verification page for a well-known brand (like PayPal, Microsoft, Netflix, Apple, or a bank) or does it look like a scam/phishing site?
+
+Respond ONLY with a valid JSON object matching this schema:
+{
+  "isPhishing": true | false,
+  "confidence": <0-100>,
+  "reasoning": "Explanation of what visual elements were found."
+}`;
+
+  try {
+    for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
+      const key = keyPool[geminiKeyIndex % keyPool.length];
+      geminiKeyIndex = (geminiKeyIndex + 1) % keyPool.length;
+
+      try {
+        const res = await httpClient.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.GEMINI_MODEL}:generateContent?key=${key}`,
+          {
+            contents: [{
+              parts: [
+                { text: systemPrompt },
+                { inlineData: { mimeType: 'image/jpeg', data: base64Image } }
+              ]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              responseMimeType: 'application/json'
+            },
+          },
+          { timeout: 15000 }
+        );
+        const raw = res.data.candidates[0].content.parts[0].text;
+        return JSON.parse(raw);
+      } catch (err) {
+        const status = err.response?.status;
+        if (status === 429 && rotateAttempt < keyPool.length - 1) {
+          continue;
+        }
+        throw err;
+      }
+    }
+  } catch (err) {
+    console.error('[AI Vision] Analysis failed:', err.message);
+    return { isPhishing: false, confidence: 0, reasoning: 'Vision API failed' };
+  }
+};
+
 // ─── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
   callAI,
@@ -1251,4 +1309,5 @@ module.exports = {
   analyzeRuntimeHealth,
   estimateMonthlyCost,
   analyzeBuildTrends,
+  analyzeVisualPhishing,
 };
