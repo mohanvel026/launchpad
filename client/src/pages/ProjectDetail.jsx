@@ -1464,17 +1464,36 @@ Use bold headers, bullet lists, and code blocks.`;
                 Visit
               </a>
             )}
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'stretch', borderRadius: 8, overflow: 'visible' }}>
+            <div className={`lp-btn-primary ${deploying ? 'animate-pulse-cyan' : ''}`} style={{ 
+              position: 'relative', 
+              display: 'flex', 
+              alignItems: 'stretch', 
+              borderRadius: 6, 
+              overflow: 'visible',
+              padding: 0,
+              border: 'none',
+              boxShadow: '0 4px 14px rgba(56,189,248,0.25)' 
+            }}>
               <button 
                 onClick={() => handleDeploy(false)} 
                 disabled={deploying} 
-                className={`lp-btn-primary ${deploying ? 'animate-pulse-cyan' : ''}`}
                 style={{ 
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'white',
+                  borderTopLeftRadius: 6, 
+                  borderBottomLeftRadius: 6,
                   borderTopRightRadius: 0, 
                   borderBottomRightRadius: 0, 
                   padding: '6px 14px', 
                   fontSize: 13,
-                  borderRight: '1px solid rgba(255,255,255,0.15)' 
+                  borderRight: '1px solid rgba(255,255,255,0.15)',
+                  cursor: deploying ? 'not-allowed' : 'pointer',
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
                 }}
               >
                 {deploying ? 'Deploying...' : '🚀 Redeploy'}
@@ -1482,16 +1501,19 @@ Use bold headers, bullet lists, and code blocks.`;
               <button
                 onClick={(e) => { e.stopPropagation(); setShowDeployDropdown(prev => !prev); }}
                 disabled={deploying}
-                className="lp-btn-primary"
                 style={{ 
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'white',
+                  borderTopRightRadius: 6, 
+                  borderBottomRightRadius: 6,
                   borderTopLeftRadius: 0, 
                   borderBottomLeftRadius: 0, 
                   padding: '6px 8px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: 'var(--accent-primary)',
-                  cursor: 'pointer'
+                  cursor: deploying ? 'not-allowed' : 'pointer'
                 }}
               >
                 <span style={{ 
@@ -1616,7 +1638,7 @@ Use bold headers, bullet lists, and code blocks.`;
 
           {/* Right Content Area */}
           <div className="lp-content-container">
-            <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <div style={{ maxWidth: 1200, display: 'flex', flexDirection: 'column', gap: 24 }}>
           {error && (
             <div className="lp-status-bar error" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
             <span>⚠️ {error}</span>
@@ -1902,14 +1924,14 @@ Use bold headers, bullet lists, and code blocks.`;
               />
             )}
             <div className="lp-terminal">
-              <div className="lp-terminal-header">
+              <div className="lp-terminal-header" style={{ position: 'relative' }}>
                 <div className="lp-terminal-dots">
                   <div className="lp-terminal-dot" style={{ background: '#ff5f57' }} />
                   <div className="lp-terminal-dot" style={{ background: '#ffbd2e' }} />
                   <div className="lp-terminal-dot" style={{ background: '#28c840' }} />
                 </div>
-                <span>Build Output — {project.name}</span>
-                {deploying && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-primary)' }}>
+                <span style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>Build Output — {project.name}</span>
+                {deploying && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-primary)', marginLeft: 'auto' }}>
                   <div className="loading-spinner" style={{ width: 12, height: 12, border: '2px solid rgba(56,189,248,0.2)', borderTopColor: 'var(--accent-primary)' }} />
                   Live Stream
                 </div>}
@@ -1927,14 +1949,14 @@ Use bold headers, bullet lists, and code blocks.`;
         {/* ── Runtime Logs ── */}
         {activeTab === 'runtime-logs' && (
           <div className="lp-terminal fade-in">
-            <div className="lp-terminal-header">
+            <div className="lp-terminal-header" style={{ position: 'relative' }}>
               <div className="lp-terminal-dots">
                 <div className="lp-terminal-dot" style={{ background: '#ff5f57' }} />
                 <div className="lp-terminal-dot" style={{ background: '#ffbd2e' }} />
                 <div className="lp-terminal-dot" style={{ background: '#28c840' }} />
               </div>
-              <span>Container stdout/stderr — {project.name}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10b981' }}>
+              <span style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>Container stdout/stderr — {project.name}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10b981', marginLeft: 'auto' }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'pulse-dot 2s infinite' }}></div>
                 Live Stream
               </div>
