@@ -388,7 +388,36 @@ buildQueue.process(1, async (job) => {
       } else {
         await log(`✅ [SECURITY AUDIT] Pre-flight secrets check passed. No leaked keys found.`);
       }
+
+      // ── Pre-flight Anti-Phishing AI Scanner ──
+      await log(`🔍 [SECURITY] Scanning repository for phishing and abuse patterns...`);
+      const phishingPrompt = `Act as an expert cybersecurity analyst. Examine the following source code snippet from a user's web project. Does this code contain a phishing site, fake login page, scam, or abuse? 
+Source Code:
+${aggregatedCode.slice(0, 10000)}
+
+Reply in strict JSON format:
+{
+  "isPhishing": true/false,
+  "confidence": 0-100,
+  "reasoning": "Explanation"
+}`;
+      const { generateAiText } = require('../services/ai.service');
+      const aiResponseStr = await generateAiText(phishingPrompt, true);
+      const aiResponse = JSON.parse(aiResponseStr);
+
+      if (aiResponse.isPhishing && aiResponse.confidence > 75) {
+        await log(`🛑 [ABUSE DETECTED] AI Phishing Scanner triggered!`);
+        await log(`   ↳ Reason: ${aiResponse.reasoning}`);
+        await Project.findByIdAndUpdate(projectId, { status: 'suspended' });
+        throw new Error('Deployment blocked: Phishing/Abuse detected by AI Security Scanner.');
+      } else {
+        await log(`   ✅ [SECURITY] Clean. No phishing patterns detected.`);
+      }
+
     } catch (secErr) {
+      if (secErr.message.includes('Deployment blocked')) {
+        throw secErr; // Abort the build
+      }
       console.warn('[Security Shield Check Failed]:', secErr.message);
     }
 

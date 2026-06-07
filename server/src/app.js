@@ -20,6 +20,7 @@ const teamRoutes      = require('./routes/team.routes');
 const vulnRoutes      = require('./routes/vuln.routes');
 const healthRoutes    = require('./routes/health.routes');
 const previewRoutes   = require('./routes/preview.routes');
+const abuseRoutes     = require('./routes/abuse.routes');
 
 // ── Project Proxy ──────────────────────────────────────────────────────────────
 const { projectProxyMiddleware } = require('./middleware/projectProxy.middleware');
@@ -108,6 +109,14 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth', authLimiter);
 
+// ── Deploy rate limiter (anti-botnet protection) ──────────────────────────────
+const deployLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  message: { message: 'Deployment limit reached to prevent abuse. Try again later.' },
+});
+app.use('/api/deploy', deployLimiter);
+
 // ── Enable compression for API and proxied responses ──────────────────────────
 app.use(compression());
 
@@ -139,6 +148,7 @@ app.use('/api/team',      teamRoutes);
 app.use('/api/vuln',      vulnRoutes);
 app.use('/api/health',   healthRoutes);
 app.use('/api/previews', previewRoutes);
+app.use('/api/abuse',    abuseRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
 
