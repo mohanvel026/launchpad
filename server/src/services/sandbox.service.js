@@ -1,14 +1,11 @@
 const puppeteer = require('puppeteer');
 
-/**
- * Launches a headless browser to take a screenshot of a given URL.
- * @param {string} url - The URL to screenshot.
- * @returns {Promise<Buffer|null>} - The screenshot buffer, or null if failed.
- */
-const takeScreenshot = async (url) => {
-  let browser = null;
-  try {
-    browser = await puppeteer.launch({
+// Persistent browser instance to make screenshots ultra-fast
+let persistentBrowser = null;
+
+const getBrowser = async () => {
+  if (!persistentBrowser) {
+    persistentBrowser = await puppeteer.launch({
       headless: 'new',
       args: [
         '--no-sandbox',
@@ -18,22 +15,35 @@ const takeScreenshot = async (url) => {
         '--window-size=1280,800'
       ]
     });
+  }
+  return persistentBrowser;
+};
 
-    const page = await browser.newPage();
+/**
+ * Launches a headless browser tab to take a lightning-fast screenshot of a given URL.
+ * @param {string} url - The URL to screenshot.
+ * @returns {Promise<Buffer|null>} - The screenshot buffer, or null if failed.
+ */
+const takeScreenshot = async (url) => {
+  let page = null;
+  try {
+    const browser = await getBrowser();
+    page = await browser.newPage();
     
-    // Set a reasonable timeout so we don't hang the worker indefinitely
-    await page.setDefaultNavigationTimeout(15000);
+    // Ultra-fast timeout
+    await page.setDefaultNavigationTimeout(8000);
 
-    // Go to the local container URL
-    await page.goto(url, { waitUntil: 'networkidle2' });
+    // DomContentLoaded is much faster than networkidle2. 
+    // Phishing sites usually have static login forms that render instantly.
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-    // Give it a tiny bit extra time to render any lazy-loaded JS
-    await new Promise(r => setTimeout(r, 2000));
+    // Wait only 500ms for visual paint
+    await new Promise(r => setTimeout(r, 500));
 
-    // Capture screenshot
+    // Capture compressed, low-res screenshot to upload to AI instantly
     const screenshotBuffer = await page.screenshot({
       type: 'jpeg',
-      quality: 80,
+      quality: 50,
       fullPage: false
     });
 
@@ -42,8 +52,8 @@ const takeScreenshot = async (url) => {
     console.error('[Sandbox] Headless browser screenshot failed:', error.message);
     return null;
   } finally {
-    if (browser) {
-      await browser.close().catch(() => {});
+    if (page) {
+      await page.close().catch(() => {});
     }
   }
 };
