@@ -250,6 +250,11 @@ a { color: inherit; text-decoration: none; }
   50% { opacity: 0.4; }
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.98); }
+}
+
 /* ─── Inputs ─────────────────────────────────────────────────────── */
 .lp-input {
   background: rgba(255,255,255,0.03);
