@@ -283,7 +283,12 @@ const projectProxyMiddleware = async (req, res, next) => {
           req.url,
           req.ip || req.connection.remoteAddress
         ).catch(() => {});
-        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        const responseHeaders = { ...proxyRes.headers };
+        responseHeaders['X-Powered-By'] = 'LaunchLive (User-Generated Content)';
+        responseHeaders['X-Abuse-Report'] = 'abuse@launchlive.in';
+        responseHeaders['X-Platform-Notice'] = 'This is a user-generated environment. Do not submit sensitive personal information.';
+        
+        res.writeHead(proxyRes.statusCode, responseHeaders);
         proxyRes.pipe(res, { end: true });
       }
     );
