@@ -598,6 +598,36 @@ buildQueue.process(1, async (job) => {
         runtimeEnv[e.key] = decryptValue(e.value);
       } catch {}
     }
+
+    // Convert rawEnvs to a mutable list of decrypted environment variables
+    const envVarsList = rawEnvs.map(e => {
+      let val = '';
+      try { val = decryptValue(e.value); } catch {}
+      return {
+        key: e.key,
+        value: val,
+        isSecret: e.isSecret
+      };
+    });
+
+    // Auto-detect and inject frontend API URLs for fullstack/MERN applications to prevent localhost hardcoding errors
+    const isFullstack = ['fullstack-split', 'mern'].includes(stack);
+    if (isFullstack) {
+      const domain = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
+      const liveUrl = `https://${project.subdomain}.${domain}`;
+      const commonFrontendVars = ['VITE_API_URL', 'REACT_APP_API_URL', 'NEXT_PUBLIC_API_URL'];
+      for (const key of commonFrontendVars) {
+        if (!envVarsList.some(e => e.key === key)) {
+          envVarsList.push({
+            key,
+            value: liveUrl,
+            isSecret: false
+          });
+          runtimeEnv[key] = liveUrl;
+        }
+      }
+    }
+
     const containerPort = detectContainerPort(repoDir, stack, runtimeEnv);
 
     // ── Pre-flight Leaked Secrets Shield ──
@@ -646,7 +676,7 @@ buildQueue.process(1, async (job) => {
       installCommand: project.installCommand,
       buildCommand:   project.buildCommand,
       outputDir:      project.outputDir,
-      envVars:        rawEnvs,
+      envVars:        envVarsList,
       containerPort:  containerPort
     });
     fs.writeFileSync(path.join(repoDir, 'Dockerfile'), dockerfile);
@@ -654,7 +684,7 @@ buildQueue.process(1, async (job) => {
 
     // ── AI Pre-flight Health Check ──
     try {
-      const envVarKeys = rawEnvs.map(e => e.key);
+      const envVarKeys = envVarsList.map(e => e.key);
       const health = await predictDeploymentHealth(dockerfile, envVarKeys, stack);
       if (health.willFail && health.confidence >= 70) {
         await log(`   ⚠️  AI Pre-flight Warning (${health.confidence}% confidence): ${health.reason}`);
@@ -671,15 +701,15 @@ buildQueue.process(1, async (job) => {
     if (!isWindows) {
       // Build-time args for --build-arg injection
       const buildArgs = {};
-      for (const e of rawEnvs) {
-        buildArgs[e.key] = decryptValue(e.value);
+      for (const e of envVarsList) {
+        buildArgs[e.key] = e.value;
       }
       // Ensure runtime env PORT reflects what container actually listens on
       runtimeEnv.PORT = String(containerPort);
 
       // Elite SRE addition: Auto-write a secure build-time .env file so client-side builders (Vite, Next, etc.) can compile constants correctly
-      if (rawEnvs.length > 0) {
-        await log(`🔐 PHASE 4: Injecting ${rawEnvs.length} encrypted secrets into temporary .env…`);
+      if (envVarsList.length > 0) {
+        await log(`🔐 PHASE 4: Injecting ${envVarsList.length} encrypted secrets into temporary .env…`);
         try {
           let envContent = '';
           for (const [k, v] of Object.entries(buildArgs)) {
