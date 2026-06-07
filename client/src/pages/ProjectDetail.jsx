@@ -2174,8 +2174,9 @@ Use bold headers, bullet lists, and code blocks.`;
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 24 }}>
                   {[
                     {
-                      title: '🤖 AI Auto-Healing & Self-Correction',
+                      title: 'AI Auto-Healing & Self-Correction',
                       icon: '🤖',
+                      explanation: 'An autonomous background system that detects production crashes, uses AI to write patches, tests them in a sandbox, and deploys the fix without human intervention.',
                       schema: 'Crash ➔ Capture Logs ➔ AI Diagnose ➔ Test Fix ➔ Auto-Deploy ✅',
                       why: 'If your application crashes in production, it normally stays down until a developer manually reads logs and fixes the code.',
                       works: 'LaunchLive catches exit codes, analyzes the latest crash logs using SRE AI, tests the generated code patch in an isolated sandbox, and automatically hot-swaps traffic to the healed container.',
@@ -2183,8 +2184,9 @@ Use bold headers, bullet lists, and code blocks.`;
                       how: 'Enable "Auto Heal" in the Settings tab, and customize your commit or Pull Request notifications.',
                     },
                     {
-                      title: '🔍 Ephemeral Pull Request Previews',
+                      title: 'Ephemeral Pull Request Previews',
                       icon: '🔍',
+                      explanation: 'A dynamic deployment engine that spins up a completely isolated, temporary copy of your application for every GitHub Pull Request you open.',
                       schema: 'Git PR Open ➔ Build Isolated App ➔ Let\'s Encrypt SSL ➔ Share Link ✅',
                       why: 'Testing pull requests in isolation without affecting the main staging/production environments is difficult to configure and costly to host.',
                       works: 'Spins up an isolated preview replica of your app (including local databases and private env vars) whenever a new PR is opened, commenting a secure link on your GitHub.',
@@ -2192,8 +2194,9 @@ Use bold headers, bullet lists, and code blocks.`;
                       how: 'Simply open a Pull Request in your connected GitHub repository. LaunchLive will handle the rest automatically.',
                     },
                     {
-                      title: '⚡ Zero-Downtime Container Scaling',
+                      title: 'Zero-Downtime Container Scaling',
                       icon: '⚡',
+                      explanation: 'A seamless load-balancing pipeline that swaps outdated or crashed server containers with new ones without dropping any active user connections.',
                       schema: 'Scale Trigger ➔ Spawn Container ➔ Health Check ➔ Nginx Route Swap ✅',
                       why: 'Standard server restarts or scaling resources usually disconnect active users, causing downtime.',
                       works: 'LaunchLive spins up the new container version, performs health checks to ensure it is healthy, and dynamically re-routes traffic using Nginx before shutting down the old container.',
@@ -2201,8 +2204,9 @@ Use bold headers, bullet lists, and code blocks.`;
                       how: 'Change the CPU or RAM limits in the Settings tab. The system handles the rolling update.',
                     },
                     {
-                      title: '🛡️ Automated Security Patching',
+                      title: 'Automated Security Patching',
                       icon: '🛡️',
+                      explanation: 'A continuous security scanner that actively monitors your dependencies for vulnerabilities and automatically creates safe upgrade Pull Requests.',
                       schema: 'Security Scan ➔ OSV Check ➔ AI Dependency Patch ➔ Deploy PR ✅',
                       why: 'Keeping dependencies secure against newly discovered CVEs requires constant monitoring and manual upgrades.',
                       works: 'LaunchLive regularly scans your dependency tree. If a vulnerability is found, the AI calculates the safest upgrade path, tests it, and prepares a pull request with the fix.',
@@ -2210,8 +2214,9 @@ Use bold headers, bullet lists, and code blocks.`;
                       how: 'Check the "Security" tab. If vulnerabilities are found, click "Apply Auto-Fix" to generate a secure Pull Request.',
                     },
                     {
-                      title: '🌐 Automated SSL & DNS Routing',
+                      title: 'Automated SSL & DNS Routing',
                       icon: '🌐',
+                      explanation: 'An integrated networking router that automatically binds custom domains, issues SSL certificates, and handles DNS propagation instantly.',
                       schema: 'New Custom Domain ➔ Cloudflare DNS Hook ➔ SSL Gen ➔ Cron Renewal ✅',
                       why: 'Setting up DNS records and securing them with SSL certificates can be a tedious process of DNS configuration and web server tuning.',
                       works: 'LaunchLive integrates with Cloudflare to set up subdomains and custom domains instantly. It configures Let\'s Encrypt certificates and automatically renews them via a weekly cron job.',
@@ -2219,8 +2224,9 @@ Use bold headers, bullet lists, and code blocks.`;
                       how: 'Add a custom domain in the "Domains" tab and configure your CNAME. SSL is provisioned automatically.',
                     },
                     {
-                      title: '📈 Real-time Observability & Telemetry',
+                      title: 'Real-time Observability & Telemetry',
                       icon: '📈',
+                      explanation: 'A high-performance monitoring stack that captures live HTTP requests, memory spikes, and error rates to provide instant visual feedback on app health.',
                       schema: 'Inbound Request ➔ Middleware Interceptor ➔ Redis sliding window ➔ Charts ✅',
                       why: 'Identifying slow API endpoints, traffic spikes, or memory leaks requires complex monitoring setups.',
                       works: 'An Nginx/Express middleware interceptor streams live performance metrics directly to a Redis-backed sliding window, providing instant access to latency, traffic, and error rates.',
@@ -2245,11 +2251,15 @@ Use bold headers, bullet lists, and code blocks.`;
                           padding: '6px 12px',
                           borderRadius: 6,
                           border: '1px solid rgba(56, 189, 248, 0.1)',
-                          marginBottom: 16
+                          marginBottom: 12
                         }}>
                           {g.schema}
                         </div>
 
+                        {/* Explanation */}
+                        <p style={{ fontSize: 13, color: 'var(--text-main)', lineHeight: 1.5, marginBottom: 16 }}>
+                          {g.explanation}
+                        </p>
                         {/* Side by side Problem / Solution */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, marginBottom: 12 }}>
                           {/* Problem */}
