@@ -258,14 +258,53 @@ const estimateBuildTime = (repoDir, stack, hasCache, skipBuild) => {
     breakdown.push(`${totalDeps} dependencies (+${Math.round(depAdd)}s)`);
   }
 
-  // 3. Prisma detection (adds generate step)
-  const hasPrisma = ['server', 'backend', ''].some(sub => {
+  // 3. Detect ALL code-generation tools (each adds build time)
+  const codeGenTools = [];
+  const subDirs = ['', 'server', 'backend', 'client', 'frontend'];
+  const readPkgEta = (sub) => {
     try {
-      const pkg = JSON.parse(fs.readFileSync(path.join(repoDir, sub, 'package.json'), 'utf8'));
-      return 'prisma' in (pkg.dependencies || {}) || '@prisma/client' in (pkg.dependencies || {});
-    } catch { return false; }
-  });
-  if (hasPrisma) { low += 25; high += 40; breakdown.push('Prisma ORM (+25-40s)'); }
+      const pkgPath = sub
+        ? path.join(repoDir, sub, 'package.json')
+        : path.join(repoDir, 'package.json');
+      return JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    } catch { return null; }
+  };
+  const hasDepEta = (pkg, dep) => pkg && (dep in (pkg.dependencies || {}) || dep in (pkg.devDependencies || {}));
+  const allPkgs = subDirs.map(readPkgEta).filter(Boolean);
+
+  if (allPkgs.some(p => hasDepEta(p, 'prisma') || hasDepEta(p, '@prisma/client'))) {
+    low += 25; high += 40; codeGenTools.push('Prisma');
+  }
+  if (allPkgs.some(p => hasDepEta(p, 'drizzle-kit') || hasDepEta(p, 'drizzle-orm'))) {
+    low += 15; high += 25; codeGenTools.push('Drizzle');
+  }
+  if (allPkgs.some(p => hasDepEta(p, '@graphql-codegen/cli') || hasDepEta(p, 'graphql-codegen'))) {
+    low += 20; high += 35; codeGenTools.push('GraphQL Codegen');
+  }
+  if (allPkgs.some(p => hasDepEta(p, 'typeorm'))) {
+    low += 15; high += 30; codeGenTools.push('TypeORM');
+  }
+  if (allPkgs.some(p => hasDepEta(p, 'sequelize') || hasDepEta(p, 'sequelize-cli'))) {
+    low += 10; high += 20; codeGenTools.push('Sequelize');
+  }
+  if (allPkgs.some(p => hasDepEta(p, '@grpc/grpc-js') || hasDepEta(p, 'grpc-tools'))) {
+    low += 20; high += 35; codeGenTools.push('gRPC/Protobuf');
+  }
+  if (allPkgs.some(p => hasDepEta(p, '@nestjs/core') || hasDepEta(p, '@nestjs/cli'))) {
+    low += 20; high += 40; codeGenTools.push('NestJS');
+  }
+  if (allPkgs.some(p => hasDepEta(p, 'typescript') || hasDepEta(p, 'ts-node'))) {
+    // Only count TS compile time if no build script already handles it
+    const hasBuildScript = allPkgs.some(p => {
+      const build = (p.scripts || {}).build || '';
+      return build.includes('tsc') || build.includes('nest build');
+    });
+    if (!hasBuildScript) { low += 15; high += 30; codeGenTools.push('TypeScript'); }
+  }
+  if (codeGenTools.length > 0) {
+    breakdown.push(`Code generation: ${codeGenTools.join(', ')}`);
+  }
+
 
   // 4. Repo file count (rough complexity signal)
   let fileCount = 0;

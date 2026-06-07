@@ -127,6 +127,73 @@ const detectStack = (repoPath) => {
   return hasHtmlFile ? 'static' : 'node';
 };
 
+// ─── Universal Code Generation Step Detector ─────────────────────────────────
+// Scans a package.json for ALL tools that require a pre-run generation step.
+// Returns a string of RUN commands to inject into the Dockerfile.
+const detectCodeGenSteps = (pkgDir, prismaSchemaPrefix = '') => {
+  const pkg = readPkg(pkgDir);
+  if (!pkg) return '';
+
+  const steps = [];
+
+  // 1. Prisma ORM — requires generate to build the typed DB client
+  if (hasDep(pkg, 'prisma') || hasDep(pkg, '@prisma/client')) {
+    if (prismaSchemaPrefix) steps.push(`COPY ${prismaSchemaPrefix}prisma* ./prisma/`);
+    steps.push('RUN npx prisma generate || true');
+  }
+
+  // 2. Drizzle ORM — requires drizzle-kit generate for schema types
+  if (hasDep(pkg, 'drizzle-kit') || hasDep(pkg, 'drizzle-orm')) {
+    steps.push('RUN npx drizzle-kit generate || true');
+  }
+
+  // 3. GraphQL Code Generator — generates typed resolvers/hooks from schema
+  if (hasDep(pkg, '@graphql-codegen/cli') || hasDep(pkg, 'graphql-codegen')) {
+    steps.push('RUN npx graphql-codegen --config codegen.yml || npx graphql-codegen --config codegen.ts || true');
+  }
+
+  // 4. TypeORM — runs migrations so DB schema is up to date
+  if (hasDep(pkg, 'typeorm')) {
+    steps.push('RUN npx typeorm migration:run || true');
+  }
+
+  // 5. Sequelize CLI — runs pending migrations
+  if (hasDep(pkg, 'sequelize-cli') || hasDep(pkg, 'sequelize')) {
+    steps.push('RUN npx sequelize-cli db:migrate || true');
+  }
+
+  // 6. Mongoose Auto-populate indexes / plugins (no codegen needed — skip)
+
+  // 7. gRPC / Protobuf — generates typed stubs from .proto files
+  if (hasDep(pkg, '@grpc/grpc-js') || hasDep(pkg, 'grpc-tools') || hasDep(pkg, '@grpc/proto-loader')) {
+    steps.push('RUN find . -name "*.proto" | head -1 | xargs -I{} sh -c "npx grpc_tools_node_protoc_ts --js_out=import_style=commonjs,binary:. --grpc_out=grpc_mode=grpc-js:. {} || true" || true');
+  }
+
+  // 8. tRPC — no codegen required, types are inferred at build time — skip
+
+  // 9. TypeScript standalone compile (only for pure node backends without a build script)
+  if (hasDep(pkg, 'typescript') || hasDep(pkg, 'ts-node')) {
+    const scripts = pkg.scripts || {};
+    const hasBuildScript = scripts.build && (
+      scripts.build.includes('tsc') ||
+      scripts.build.includes('ts-node') ||
+      scripts.build.includes('nest build')
+    );
+    // Only add explicit tsc if there's no npm run build script already handling it
+    if (!hasBuildScript) {
+      steps.push('RUN npx tsc --skipLibCheck || true');
+    }
+  }
+
+  // 10. NestJS — compiles TypeScript source
+  if (hasDep(pkg, '@nestjs/core') || hasDep(pkg, '@nestjs/cli')) {
+    const scripts = pkg.scripts || {};
+    if (!scripts.build) steps.push('RUN npx nest build || true');
+  }
+
+  return steps.length > 0 ? '\n' + steps.join('\n') : '';
+};
+
 // ─── Dockerfile Generation ────────────────────────────────────────────────────
 const generateDockerfile = (stack, repoPath = '', options = {}) => {
   // If stack is passed as string use it, otherwise detect it.
@@ -344,8 +411,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
       const beLockStr = beLock ? ` ${beLock}` : '';
 
       const bePkg = readPkg(path.join(repoPath, beDir));
-      const hasPrisma = hasDep(bePkg, 'prisma') || hasDep(bePkg, '@prisma/client');
-      const prismaGen = hasPrisma ? `\nCOPY ${beDir}/prisma* ./prisma/\nRUN npx prisma generate || true` : '';
+      const codeGenSteps = detectCodeGenSteps(path.join(repoPath, beDir), `${beDir}/`);
 
       const start = getStartCommand(path.join(repoPath, beDir), pm.name);
       const backendCmd = start.isScript
@@ -374,7 +440,7 @@ WORKDIR /app
 ${pmSetup}
 COPY ${beDir}/package*.json${beLockStr} ./
 ${beInstallCmd}
-COPY ${beDir}/ .${prismaGen}
+COPY ${beDir}/ .${codeGenSteps}
 
 # ── Stage 3: Final SRE container — assembles from both parallel stages ──
 FROM node:20-alpine
@@ -428,8 +494,7 @@ CMD ["node", ".output/server/index.mjs"]`;
     case 'node':
     default: {
       const rootPkg = readPkg(repoPath);
-      const hasPrisma = hasDep(rootPkg, 'prisma') || hasDep(rootPkg, '@prisma/client');
-      const prismaGen = hasPrisma ? `\nRUN npx prisma generate || true` : '';
+      const codeGenSteps = detectCodeGenSteps(repoPath);
 
       const start = getStartCommand(repoPath, pm.name);
       const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
@@ -441,7 +506,7 @@ WORKDIR /app
 COPY package*.json ./
 ${lockFileCopy}
 ${installRunInstruction}
-COPY . .${prismaGen}
+COPY . .${codeGenSteps}
 ENV PORT=${containerPort}
 ENV NODE_ENV=production
 EXPOSE ${containerPort}
