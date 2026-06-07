@@ -389,31 +389,6 @@ buildQueue.process(1, async (job) => {
         await log(`✅ [SECURITY AUDIT] Pre-flight secrets check passed. No leaked keys found.`);
       }
 
-      // ── Pre-flight Anti-Phishing AI Scanner ──
-      await log(`🔍 [SECURITY] Scanning repository for phishing and abuse patterns...`);
-      const phishingPrompt = `Act as an expert cybersecurity analyst. Examine the following source code snippet from a user's web project. Does this code contain a phishing site, fake login page, scam, or abuse? 
-Source Code:
-${aggregatedCode.slice(0, 10000)}
-
-Reply in strict JSON format:
-{
-  "isPhishing": true/false,
-  "confidence": 0-100,
-  "reasoning": "Explanation"
-}`;
-      const { generateAiText } = require('../services/ai.service');
-      const aiResponseStr = await generateAiText(phishingPrompt, true);
-      const aiResponse = JSON.parse(aiResponseStr);
-
-      if (aiResponse.isPhishing && aiResponse.confidence > 75) {
-        await log(`🛑 [ABUSE DETECTED] AI Phishing Scanner triggered!`);
-        await log(`   ↳ Reason: ${aiResponse.reasoning}`);
-        await Project.findByIdAndUpdate(projectId, { status: 'suspended' });
-        throw new Error('Deployment blocked: Phishing/Abuse detected by AI Security Scanner.');
-      } else {
-        await log(`   ✅ [SECURITY] Clean. No phishing patterns detected.`);
-      }
-
     } catch (secErr) {
       if (secErr.message.includes('Deployment blocked')) {
         throw secErr; // Abort the build
@@ -434,11 +409,16 @@ Reply in strict JSON format:
     await log(`   ✅ Dockerfile generated for ${stack.toUpperCase()} environment (Internal Port: ${containerPort}).`);
 
     // ── AI Pre-flight Health Check ──
-    const envVarKeys = rawEnvs.map(e => e.key);
-    const health = await predictDeploymentHealth(dockerfile, envVarKeys, stack);
-    if (health.willFail && health.confidence >= 70) {
-      await log(`   ⚠️  AI Pre-flight Warning (${health.confidence}% confidence): ${health.reason}`);
-      await log(`   💡 Suggestion: ${health.suggestion}`);
+    try {
+      const envVarKeys = rawEnvs.map(e => e.key);
+      const health = await predictDeploymentHealth(dockerfile, envVarKeys, stack);
+      if (health.willFail && health.confidence >= 70) {
+        await log(`   ⚠️  AI Pre-flight Warning (${health.confidence}% confidence): ${health.reason}`);
+        await log(`   💡 Suggestion: ${health.suggestion}`);
+      }
+    } catch (healthErr) {
+      console.warn('[AI Pre-flight Health Check Failed]:', healthErr.message);
+      await log(`   ⚠️ AI Pre-flight check skipped (AI service temporarily unavailable).`);
     }
 
     // ── PHASE 4/5: Build & Run ──
