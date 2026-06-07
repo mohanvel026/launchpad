@@ -436,6 +436,16 @@ export default function ProjectDetail() {
   const pollRef    = useRef(null);
   const chatEndRef = useRef(null);
 
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  const deploymentsRef = useRef(deployments);
+  useEffect(() => {
+    deploymentsRef.current = deployments;
+  }, [deployments]);
+
   const fetchBranches = useCallback(async (repoFullName) => {
     if (!repoFullName) return;
     setLoadingBranches(true);
@@ -779,14 +789,15 @@ Use bold headers, bullet lists, and code blocks.`;
     });
 
     socket.on('connect', () => {
+      console.log('[Socket] Connected, joining project:', id);
       socket.emit('join:project', id);
       // Re-join active deployment room if activeTab is logs
-      const latestDep = deployments?.[0];
-      if (activeTab === 'logs' && latestDep && (latestDep.status === 'building' || latestDep.status === 'queued')) {
+      const latestDep = deploymentsRef.current?.[0];
+      if (activeTabRef.current === 'logs' && latestDep && (latestDep.status === 'building' || latestDep.status === 'queued')) {
         socket.emit('join:deployment', latestDep._id);
       }
       // Re-join runtime logs room if activeTab is runtime-logs
-      if (activeTab === 'runtime-logs') {
+      if (activeTabRef.current === 'runtime-logs') {
         socket.emit('join:runtime-logs', id);
       }
     });
@@ -800,7 +811,7 @@ Use bold headers, bullet lists, and code blocks.`;
           if (latest.status === 'building' || latest.status === 'queued') {
             setDeploying(true);
             // Auto-join building log stream if on logs tab
-            if (activeTab === 'logs') {
+            if (activeTabRef.current === 'logs') {
               socket.emit('join:deployment', latest._id);
             }
           } else {
@@ -823,9 +834,10 @@ Use bold headers, bullet lists, and code blocks.`;
     socketRef.current = socket;
 
     return () => {
+      console.log('[Socket] Cleaning up socket connection...');
       socket.disconnect();
     };
-  }, [id, activeTab, deployments?.[0]?._id]);
+  }, [id]);
 
   // Auto-switch to logs tab if a build is active on page load/refresh
   useEffect(() => {
