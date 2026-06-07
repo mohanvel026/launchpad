@@ -496,22 +496,54 @@ Use bold headers, lists, code blocks, or tables to format your response.`;
   const handleRunSimulation = async (scenarioKey, mode = 'auto') => {
     if (simulationLoading && mode === 'auto') return;
 
-    setActiveSimulation(scenarioKey);
-    activeSimulationRef.current = scenarioKey; // Sync Ref to prevent race condition
-    setStepMode(mode);
-    setSimulationResponse('');
-    setSimulationSteps([]);
-    setCurrentStep(0);
-    setIsPaused(false);
-    isPausedRef.current = false; // Sync Ref synchronously to bypass React scheduling delay
-    setSimulationLoading(true);
+    try {
+      setActiveSimulation(scenarioKey);
+      activeSimulationRef.current = scenarioKey; // Sync Ref to prevent race condition
+      setStepMode(mode);
+      setSimulationResponse('');
+      setSimulationSteps([]);
+      setCurrentStep(0);
+      setIsPaused(false);
+      isPausedRef.current = false; // Sync Ref synchronously to bypass React scheduling delay
+      setSimulationLoading(true);
 
-    const domain = project?.subdomain ? `${project.subdomain}.launchlive.in` : 'app.launchlive.in';
-    const rawSteps = SIMULATION_SCENARIOS[scenarioKey].steps;
-    const steps = rawSteps.map(s => s.replace(/\{\{DOMAIN\}\}/g, domain));
+      const domain = project?.subdomain ? `${project.subdomain}.launchlive.in` : 'app.launchlive.in';
+      const scenario = SIMULATION_SCENARIOS[scenarioKey];
+      if (!scenario) {
+        throw new Error(`Simulation scenario "${scenarioKey}" not found`);
+      }
 
-    if (mode === 'auto') {
-      for (let i = 0; i < steps.length; i++) {
+      const rawSteps = scenario.steps || [];
+      const steps = rawSteps.map(s => typeof s === 'string' ? s.replace(/\{\{DOMAIN\}\}/g, domain) : String(s));
+
+      if (mode === 'auto') {
+        for (let i = 0; i < steps.length; i++) {
+          while (isPausedRef.current) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            if (activeSimulationRef.current !== scenarioKey) {
+              setSimulationLoading(false);
+              return;
+            }
+          }
+
+          if (activeSimulationRef.current !== scenarioKey) {
+            setSimulationLoading(false);
+            return;
+          }
+
+          setCurrentStep(i);
+          setSimulationSteps(steps.slice(0, i + 1));
+          
+          const currentSpeed = speedRef.current || 1;
+          const delay = 850 / currentSpeed;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          if (activeSimulationRef.current !== scenarioKey) {
+            setSimulationLoading(false);
+            return;
+          }
+        }
+        
         while (isPausedRef.current) {
           await new Promise(resolve => setTimeout(resolve, 100));
           if (activeSimulationRef.current !== scenarioKey) {
@@ -519,36 +551,16 @@ Use bold headers, lists, code blocks, or tables to format your response.`;
             return;
           }
         }
-
-        if (activeSimulationRef.current !== scenarioKey) {
-          setSimulationLoading(false);
-          return;
-        }
-
-        setCurrentStep(i);
-        setSimulationSteps(steps.slice(0, i + 1));
         
-        const delay = 850 / speedRef.current;
-        await new Promise(resolve => setTimeout(resolve, delay));
-        
-        if (activeSimulationRef.current !== scenarioKey) {
-          setSimulationLoading(false);
-          return;
-        }
+        await finishSimulation(scenarioKey);
+      } else {
+        setCurrentStep(0);
+        setSimulationSteps([steps[0]]);
+        setSimulationLoading(false);
       }
-      
-      while (isPausedRef.current) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        if (activeSimulationRef.current !== scenarioKey) {
-          setSimulationLoading(false);
-          return;
-        }
-      }
-      
-      await finishSimulation(scenarioKey);
-    } else {
-      setCurrentStep(0);
-      setSimulationSteps([steps[0]]);
+    } catch (err) {
+      console.error('[Simulator SRE Error]:', err);
+      setSimulationSteps([`❌ Simulation initialization failed: ${err.message}`]);
       setSimulationLoading(false);
     }
   };
