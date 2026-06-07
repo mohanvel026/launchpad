@@ -406,7 +406,7 @@ export default function DomainManager({ project, onUpdate }) {
                     )}
                     
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Subdomain Prefix</span>
                         <input
                           value={domainPrefix}
@@ -447,24 +447,46 @@ export default function DomainManager({ project, onUpdate }) {
                       </div>
                       <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Extension / Suffix</span>
-                        <select
-                          value={domainSuffix}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setDomainSuffix(val);
-                            if (val === `.${domain}`) {
-                              setMockVerify(true);
-                            }
-                          }}
-                          className="lp-input"
-                          style={{ width: '100%', padding: '0 10px', borderRadius: 8, fontSize: 13, height: 42, background: 'rgba(24, 18, 39, 0.9)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-main)', cursor: 'pointer', outline: 'none' }}
-                        >
-                          <option value={`.${domain}`} style={{ background: '#181227', color: '#fff' }}>.{domain} (✨ Free & Instant)</option>
-                          <option value=".com" style={{ background: '#181227', color: '#fff' }}>.com</option>
-                          <option value=".net" style={{ background: '#181227', color: '#fff' }}>.net</option>
-                          <option value=".org" style={{ background: '#181227', color: '#fff' }}>.org</option>
-                          <option value="custom" style={{ background: '#181227', color: '#fff' }}>Custom Suffix...</option>
-                        </select>
+                        <div style={{ position: 'relative' }}>
+                          <select
+                            value={domainSuffix}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setDomainSuffix(val);
+                              if (val === `.${domain}`) {
+                                setMockVerify(true);
+                              }
+                            }}
+                            className="lp-input"
+                            style={{ 
+                              width: '100%', 
+                              padding: '0 32px 0 14px', 
+                              borderRadius: 8, 
+                              fontSize: 13, 
+                              height: 42, 
+                              background: 'rgba(255,255,255,0.03)', 
+                              border: '1px solid rgba(255,255,255,0.1)', 
+                              color: 'var(--text-main)', 
+                              cursor: 'pointer', 
+                              outline: 'none',
+                              appearance: 'none',
+                              WebkitAppearance: 'none',
+                              MozAppearance: 'none',
+                              transition: 'all 0.2s'
+                            }}
+                            onMouseOver={(e) => { e.target.style.background = 'rgba(255,255,255,0.06)'; e.target.style.borderColor = 'var(--accent-primary)'; }}
+                            onMouseOut={(e) => { e.target.style.background = 'rgba(255,255,255,0.03)'; e.target.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+                          >
+                            <option value={`.${domain}`} style={{ background: '#181227', color: '#fff' }}>.{domain} (Free)</option>
+                            <option value=".com" style={{ background: '#181227', color: '#fff' }}>.com</option>
+                            <option value=".net" style={{ background: '#181227', color: '#fff' }}>.net</option>
+                            <option value=".org" style={{ background: '#181227', color: '#fff' }}>.org</option>
+                            <option value="custom" style={{ background: '#181227', color: '#fff' }}>Custom Suffix...</option>
+                          </select>
+                          <div style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-muted)' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                          </div>
+                        </div>
                       </div>
                     </div>
 

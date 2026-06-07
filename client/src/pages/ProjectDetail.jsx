@@ -2125,7 +2125,7 @@ Use bold headers, bullet lists, and code blocks.`;
           };
 
           return (
-            <div className="fade-in" style={{ display: 'grid', gap: 24, maxWidth: 1000 }}>
+            <div className="fade-in" style={{ display: 'grid', gap: 24, maxWidth: 1000, color: 'var(--text-main)' }}>
               {/* Header Card */}
               <div className="lp-card glass" style={{
                 padding: 32,
@@ -2228,7 +2228,7 @@ Use bold headers, bullet lists, and code blocks.`;
                       how: 'Monitor real-time application health under the "Live Metrics" and "Analytics" tabs.'
                     }
                   ].map((g, i) => (
-                    <div key={i} className="lp-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div key={i} className="lp-card glass hover-lift" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                       <div>
                         {/* Header */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -3554,84 +3554,134 @@ Use bold headers, bullet lists, and code blocks.`;
 
         {/* ── AI Deployment Advisor ── */}
         {activeTab === 'advisor' && (
-          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div className="lp-card glass" style={{ padding: 20, borderLeft: '4px solid #818cf8', background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.04) 0%, rgba(56, 189, 248, 0.01) 100%)' }}>
-              <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, margin: 0 }}>🧠 AI Code Readiness & SRE Advisor</h4>
-              <p style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5, margin: 0 }}>
-                <strong>How it works:</strong> LaunchLive AI scans your repository structure, configuration files, and package dependencies. It calculates a readiness score and uncovers missing environment variables or setup errors before you trigger a deployment to avoid build failures.
+          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 900 }}>
+            <div className="lp-card glass" style={{ padding: 32, borderLeft: '4px solid #818cf8', background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.08) 0%, rgba(56, 189, 248, 0.02) 100%)', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', right: -20, top: -20, opacity: 0.1, fontSize: 140 }}>🧠</div>
+              <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 12, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 26 }}>🧠</span> AI Code Readiness & SRE Advisor
+              </h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.6, margin: 0, maxWidth: 650 }}>
+                LaunchLive AI dynamically scans your repository structure, configuration files, and package dependencies in real-time. It calculates a deployment readiness score and uncovers missing environment variables, security risks, or setup errors before you trigger a deployment—guaranteeing zero-downtime launches.
               </p>
             </div>
-            <div className="lp-card glass" style={{ padding: 28, borderLeft: '4px solid #818cf8', background: 'linear-gradient(135deg, rgba(129,140,248,0.06) 0%, rgba(56,189,248,0.03) 100%)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+
+            <div className="lp-card glass" style={{ padding: 32, border: '1px solid rgba(129, 140, 248, 0.2)', boxShadow: '0 8px 30px rgba(0,0,0,0.15)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                 <div>
-                  <h3 style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>🧠 AI Deployment Readiness Advisor</h3>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Analyzes your repository and scores deployment readiness 0–100 before you go live.</p>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    ⚡ Pre-Deployment Analysis
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 6, margin: 0 }}>
+                    Run a comprehensive AI scan to score your deployment readiness (0–100) before going live.
+                  </p>
                 </div>
-                <button className="lp-btn-primary" style={{ padding: '7px 18px', fontSize: 13, background: 'var(--accent-secondary)', boxShadow: '0 0 20px rgba(129,140,248,0.25)' }} onClick={handleReadinessCheck} disabled={readinessLoading}>
-                  {readinessLoading ? 'Analyzing...' : '⚡ Run Readiness Check'}
+                <button 
+                  className="lp-btn-primary" 
+                  style={{ 
+                    padding: '10px 24px', 
+                    fontSize: 14, 
+                    fontWeight: 600,
+                    background: 'linear-gradient(135deg, #6366f1 0%, #3b82f6 100%)', 
+                    boxShadow: '0 4px 15px rgba(99, 102, 241, 0.3)',
+                    border: 'none',
+                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    transition: 'all 0.2s'
+                  }} 
+                  onClick={handleReadinessCheck} 
+                  disabled={readinessLoading}
+                >
+                  {readinessLoading ? (
+                    <><div className="spinner" style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid #fff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} /> Analyzing Repository...</>
+                  ) : (
+                    <>✨ Run AI Readiness Check</>
+                  )}
                 </button>
               </div>
 
               {readinessLoading && (
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 20, color: 'var(--text-muted)' }}>
-                  <div className="loading-spinner" style={{ width: 20, height: 20 }} />
-                  Analyzing repository structure...
+                <div style={{ padding: '40px 0', textAlign: 'center' }}>
+                  <div className="spinner" style={{ width: 36, height: 36, border: '3px solid rgba(129,140,248,0.2)', borderTop: '3px solid #818cf8', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 20px auto' }} />
+                  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-main)', marginBottom: 8 }}>AI is scanning your repository...</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Checking dependencies, security headers, and configuration files.</div>
                 </div>
               )}
 
               {readiness && !readinessLoading && (
-                <div>
+                <div className="fade-in">
                   {/* Score Display */}
-                  <div style={{ display: 'flex', gap: 32, alignItems: 'center', marginBottom: 28, padding: '24px 28px', background: 'var(--bg-surface)', borderRadius: 16, border: '1px solid var(--border)' }}>
+                  <div className="glass" style={{ display: 'flex', gap: 32, alignItems: 'center', marginBottom: 32, padding: '28px 32px', background: 'rgba(0,0,0,0.3)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.05)', position: 'relative', overflow: 'hidden', boxShadow: 'inset 0 0 20px rgba(129, 140, 248, 0.05)' }}>
+                    <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 200, background: `linear-gradient(90deg, transparent, ${readiness.score >= 80 ? 'rgba(52,211,153,0.05)' : readiness.score >= 50 ? 'rgba(251,191,36,0.05)' : 'rgba(248,113,113,0.05)'})` }} />
+                    
                     {/* Animated score circle */}
-                    <div style={{ position: 'relative', width: 100, height: 100, flexShrink: 0 }}>
-                      <svg width="100" height="100" viewBox="0 0 100 100">
-                        <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(129,140,248,0.15)" strokeWidth="10" />
-                        <circle cx="50" cy="50" r="44" fill="none"
+                    <div style={{ position: 'relative', width: 110, height: 110, flexShrink: 0 }}>
+                      <svg width="110" height="110" viewBox="0 0 110 110">
+                        <circle cx="55" cy="55" r="48" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="10" />
+                        <circle cx="55" cy="55" r="48" fill="none"
                           stroke={readiness.score >= 80 ? '#34d399' : readiness.score >= 50 ? '#fbbf24' : '#f87171'}
                           strokeWidth="10" strokeLinecap="round"
-                          strokeDasharray={`${(readiness.score / 100) * 276.5} 276.5`}
-                          transform="rotate(-90 50 50)" style={{ transition: 'stroke-dasharray 1s ease' }}
+                          strokeDasharray={`${(readiness.score / 100) * 301.5} 301.5`}
+                          transform="rotate(-90 55 55)" style={{ transition: 'stroke-dasharray 1.5s cubic-bezier(0.4, 0, 0.2, 1)' }}
                         />
                       </svg>
                       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ fontSize: 24, fontWeight: 900, color: readiness.score >= 80 ? '#34d399' : readiness.score >= 50 ? '#fbbf24' : '#f87171' }}>{readiness.score}</span>
-                        <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>/ 100</span>
+                        <span style={{ fontSize: 28, fontWeight: 900, color: readiness.score >= 80 ? '#34d399' : readiness.score >= 50 ? '#fbbf24' : '#f87171', letterSpacing: '-1px' }}>{readiness.score}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 600 }}>/ 100</span>
                       </div>
                     </div>
-                    <div>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: readiness.score >= 80 ? '#34d399' : readiness.score >= 50 ? '#fbbf24' : '#f87171', marginBottom: 6 }}>
-                        {readiness.score >= 80 ? '🟢 Ready to Deploy' : readiness.score >= 50 ? '🟡 Needs Attention' : '🔴 Not Recommended'}
+                    <div style={{ zIndex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: readiness.score >= 80 ? '#34d399' : readiness.score >= 50 ? '#fbbf24' : '#f87171' }}>
+                          {readiness.score >= 80 ? '🟢 Ready for Production' : readiness.score >= 50 ? '🟡 Attention Recommended' : '🔴 Deployment High Risk'}
+                        </div>
                       </div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{readiness.passed} of {readiness.total} checks passed.</div>
-                      {readiness.score < 80 && (
-                        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-dim)' }}>Fix the issues below before deploying to production.</div>
-                      )}
+                      <div style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.5 }}>
+                        <strong style={{ color: 'var(--text-main)' }}>{readiness.passed} of {readiness.total}</strong> critical deployment checks passed successfully.
+                        {readiness.score < 80 && (
+                          <span style={{ display: 'block', marginTop: 4 }}>Please review the flagged items below to ensure a stable release.</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   {/* Checklist */}
-                  <div className="lp-section-label" style={{ marginBottom: 12 }}>READINESS CHECKLIST</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                    <h4 style={{ fontSize: 14, fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Detailed Diagnostic Report</h4>
+                    <div style={{ height: 1, flex: 1, background: 'rgba(255,255,255,0.05)' }} />
+                  </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {readiness.checks?.map((check, i) => (
                       <div key={i} style={{
-                        display: 'flex', gap: 14, alignItems: 'flex-start',
-                        padding: '14px 18px', borderRadius: 12,
-                        background: check.passed ? 'rgba(52,211,153,0.05)' : 'rgba(248,113,113,0.05)',
-                        border: `1px solid ${check.passed ? 'rgba(52,211,153,0.2)' : 'rgba(248,113,113,0.2)'}`,
+                        display: 'flex', gap: 16, alignItems: 'flex-start',
+                        padding: '18px 20px', borderRadius: 12,
+                        background: check.passed ? 'rgba(52,211,153,0.03)' : 'rgba(248,113,113,0.03)',
+                        border: `1px solid ${check.passed ? 'rgba(52,211,153,0.15)' : 'rgba(248,113,113,0.2)'}`,
+                        transition: 'transform 0.2s',
                       }}>
-                        <span style={{ fontSize: 18, flexShrink: 0 }}>{check.passed ? '✅' : check.severity === 'critical' ? '🔴' : check.severity === 'high' ? '⚠️' : 'ℹ️'}</span>
+                        <div style={{ 
+                          width: 28, height: 28, borderRadius: '50%', flexShrink: 0, 
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: check.passed ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)',
+                          color: check.passed ? '#34d399' : '#f87171',
+                          fontSize: 14
+                        }}>
+                          {check.passed ? '✓' : check.severity === 'critical' ? '✕' : '!'}
+                        </div>
                         <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                            <span style={{ fontWeight: 600, fontSize: 14 }}>{check.name}</span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontWeight: 600, fontSize: 15, color: check.passed ? 'var(--text-main)' : '#f87171' }}>{check.name}</span>
                             {!check.passed && (
-                              <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                                background: check.severity === 'critical' ? 'rgba(248,113,113,0.2)' : check.severity === 'high' ? 'rgba(251,146,60,0.2)' : 'rgba(251,191,36,0.1)',
+                              <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
+                                background: check.severity === 'critical' ? 'rgba(248,113,113,0.15)' : check.severity === 'high' ? 'rgba(251,146,60,0.15)' : 'rgba(251,191,36,0.1)',
                                 color: check.severity === 'critical' ? '#f87171' : check.severity === 'high' ? '#fb923c' : '#fbbf24',
+                                border: `1px solid ${check.severity === 'critical' ? 'rgba(248,113,113,0.3)' : check.severity === 'high' ? 'rgba(251,146,60,0.3)' : 'rgba(251,191,36,0.2)'}`
                               }}>{check.severity}</span>
                             )}
                           </div>
-                          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{check.recommendation}</div>
+                          <div style={{ fontSize: 13.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>{check.recommendation}</div>
                         </div>
                       </div>
                     ))}
@@ -3640,10 +3690,12 @@ Use bold headers, bullet lists, and code blocks.`;
               )}
 
               {!readiness && !readinessLoading && (
-                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-dim)' }}>
-                  <div style={{ fontSize: 32, marginBottom: 12 }}>🧠</div>
-                  <p style={{ fontSize: 14 }}>Click "Run Readiness Check" to analyze your repository.</p>
-                  <p style={{ fontSize: 13, marginTop: 6 }}>This checks for health endpoints, error handling, security headers, and more.</p>
+                <div style={{ textAlign: 'center', padding: '60px 0', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 16, background: 'rgba(0,0,0,0.1)' }}>
+                  <div style={{ fontSize: 40, marginBottom: 16, opacity: 0.8 }}>🤖</div>
+                  <h4 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 8px 0', color: 'var(--text-main)' }}>AI Advisor is standing by</h4>
+                  <p style={{ fontSize: 14, color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto', lineHeight: 1.5 }}>
+                    Click "Run AI Readiness Check" to initiate a deep scan of your repository structure, missing env variables, and potential deployment bottlenecks.
+                  </p>
                 </div>
               )}
             </div>
