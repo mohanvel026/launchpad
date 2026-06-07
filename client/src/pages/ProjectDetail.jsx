@@ -525,6 +525,58 @@ Use bold headers, lists, code blocks, or tables to format your response.`;
     handleAskArchitect(`Explain the role, internal mechanics, and configuration of the "${desc.title}" component in the context of my project.`);
   };
 
+  const handleClearChat = () => {
+    if (project) {
+      setArchitectMessages([
+        {
+          role: 'assistant',
+          content: `🤖 Greetings! I am the SRE AI Architect for **${project.name}**. I oversee the container scaling, Nginx reverse proxies, SSL certificate crons, and the telemetry auto-healing monitor for this application.\n\nAsk me anything about how the infrastructure runs, click on a quick suggestion, or run a **DevOps Simulation** below!`
+        }
+      ]);
+    }
+  };
+
+  const getSimulatedMetrics = (scenarioKey, step) => {
+    if (scenarioKey === 'app-crash') {
+      const metrics = [
+        { cpu: 25, ram: 180, status: 'Memory leak alert', code: 200, ssl: 90 },
+        { cpu: 98, ram: 512, status: 'OOM Threshold Reached', code: 500, ssl: 90 },
+        { cpu: 0, ram: 0, status: 'Container Dead', code: 502, ssl: 90 },
+        { cpu: 0, ram: 0, status: 'AI Diagnosing Logs', code: 502, ssl: 90 },
+        { cpu: 15, ram: 45, status: 'Testing Sandbox Patch', code: 502, ssl: 90 },
+        { cpu: 45, ram: 140, status: 'Traffic Routing Swapped', code: 200, ssl: 90 },
+        { cpu: 12, ram: 110, status: 'Operational & Stable', code: 200, ssl: 90 },
+      ];
+      return metrics[step] || { cpu: 12, ram: 110, status: 'Operational & Stable', code: 200, ssl: 90 };
+    }
+    if (scenarioKey === 'build-fail') {
+      const metrics = [
+        { cpu: 5, ram: 80, status: 'Webhook received', code: 200, ssl: 90 },
+        { cpu: 85, ram: 210, status: 'Dependencies installing', code: 200, ssl: 90 },
+        { cpu: 5, ram: 80, status: 'Syntax error detected', code: 200, ssl: 90 },
+        { cpu: 15, ram: 80, status: 'AI Scanning compiler log', code: 200, ssl: 90 },
+        { cpu: 20, ram: 80, status: 'AI Patching source files', code: 200, ssl: 90 },
+        { cpu: 90, ram: 230, status: 'Recompiling patched app', code: 200, ssl: 90 },
+        { cpu: 35, ram: 130, status: 'Traffic routing swapped', code: 200, ssl: 90 },
+        { cpu: 10, ram: 95, status: 'Operational & Stable', code: 200, ssl: 90 },
+      ];
+      return metrics[step] || { cpu: 10, ram: 95, status: 'Operational & Stable', code: 200, ssl: 90 };
+    }
+    if (scenarioKey === 'ssl-expired') {
+      const metrics = [
+        { cpu: 12, ram: 95, status: 'Verifying TLS cert', code: 200, ssl: 90 },
+        { cpu: 12, ram: 95, status: 'TLS certificate expired', code: 495, ssl: 0 },
+        { cpu: 12, ram: 95, status: 'AI alerted on expiry', code: 495, ssl: 0 },
+        { cpu: 30, ram: 110, status: 'Verifying DNS TXT challenge', code: 495, ssl: 0 },
+        { cpu: 35, ram: 110, status: 'Let\'s Encrypt validation', code: 495, ssl: 0 },
+        { cpu: 20, ram: 110, status: 'SSL certificate issued', code: 495, ssl: 90 },
+        { cpu: 28, ram: 115, status: 'Hot-reloading Nginx gateway', code: 200, ssl: 90 },
+        { cpu: 10, ram: 95, status: 'TLS Secure & Healthy', code: 200, ssl: 90 },
+      ];
+      return metrics[step] || { cpu: 10, ram: 95, status: 'TLS Secure & Healthy', code: 200, ssl: 90 };
+    }
+    return { cpu: 0, ram: 0, status: 'Inactive', code: null, ssl: 90 };
+  };
 
   const handleGenerateArchitecture = async () => {
     if (archDiagramLoading) return;
@@ -2235,6 +2287,310 @@ Use bold headers, bullet lists, and code blocks.`;
                 </div>
               )}
 
+              {/* Sub-tab 2: SRE AI Chat */}
+              {guideSubTab === 'chat' && (
+                <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, minHeight: '600px', alignItems: 'stretch' }}>
+                  {/* Left Pane: Chat Window */}
+                  <div className="lp-card glass" style={{ display: 'flex', flexDirection: 'column', padding: 24, height: '650px', background: 'rgba(9, 9, 14, 0.4)' }}>
+                    {/* Chat Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{
+                          position: 'relative',
+                          width: 36,
+                          height: 36,
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 18,
+                          boxShadow: '0 0 10px rgba(56, 189, 248, 0.4)'
+                        }}>
+                          🤖
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            right: 0,
+                            width: 10,
+                            height: 10,
+                            borderRadius: '50%',
+                            background: '#10b981',
+                            border: '2px solid #09090e',
+                            boxShadow: '0 0 5px #10b981'
+                          }} />
+                        </div>
+                        <div>
+                          <h4 style={{ fontSize: 15, fontWeight: 700, color: '#fff', margin: 0 }}>SRE AI Architect</h4>
+                          <span style={{ fontSize: 11, color: 'var(--accent-primary)', fontWeight: 600 }}>Active Platform Monitor</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleClearChat}
+                        className="lp-btn-secondary"
+                        style={{ fontSize: 11, padding: '4px 10px', height: 'auto', border: '1px solid var(--border)' }}
+                      >
+                        🗑️ Reset Chat
+                      </button>
+                    </div>
+
+                    {/* Messages Scroll Area */}
+                    <div style={{
+                      flex: 1,
+                      overflowY: 'auto',
+                      paddingRight: 8,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 16,
+                      marginBottom: 16
+                    }}>
+                      {architectMessages.map((msg, idx) => {
+                        const isUser = msg.role === 'user';
+                        return (
+                          <div key={idx} style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: isUser ? 'flex-end' : 'flex-start',
+                            maxWidth: '85%',
+                            alignSelf: isUser ? 'flex-end' : 'flex-start',
+                            animation: 'fade-in 0.25s ease-out forwards'
+                          }}>
+                            {/* Sender Name */}
+                            <span style={{ fontSize: 10, color: 'var(--text-dim)', marginBottom: 4, display: 'block', paddingLeft: isUser ? 0 : 4, paddingRight: isUser ? 4 : 0 }}>
+                              {isUser ? 'Developer' : 'SRE AI Architect'}
+                            </span>
+
+                            {/* Message Bubble */}
+                            <div style={{
+                              padding: '14px 18px',
+                              borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                              background: isUser 
+                                ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(129, 140, 248, 0.15) 100%)' 
+                                : 'rgba(255, 255, 255, 0.02)',
+                              border: '1px solid ' + (isUser ? 'rgba(56, 189, 248, 0.25)' : 'var(--border)'),
+                              color: isUser ? '#fff' : 'var(--text-main)',
+                              fontSize: '13.5px',
+                              lineHeight: 1.6,
+                              boxShadow: isUser ? '0 4px 15px rgba(56, 189, 248, 0.05)' : 'none',
+                              position: 'relative'
+                            }}>
+                              {/* Content */}
+                              <div style={{ whiteSpace: 'pre-wrap' }}>
+                                {formatMessageContent(msg.content)}
+                              </div>
+
+                              {/* Copy Button */}
+                              {!isUser && (
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(msg.content);
+                                    alert('Copied AI message to clipboard!');
+                                  }}
+                                  style={{
+                                    position: 'absolute',
+                                    top: 6,
+                                    right: 6,
+                                    background: 'rgba(0,0,0,0.3)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--text-dim)',
+                                    borderRadius: 4,
+                                    fontSize: 10,
+                                    padding: '2px 4px',
+                                    cursor: 'pointer',
+                                    opacity: 0.7,
+                                    transition: 'opacity 0.2s'
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                                  onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
+                                >
+                                  📋 Copy
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {architectLoading && (
+                        <div style={{
+                          alignSelf: 'flex-start',
+                          maxWidth: '85%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          color: 'var(--accent-secondary)',
+                          fontSize: 13,
+                          padding: '12px 16px',
+                          background: 'rgba(255, 255, 255, 0.02)',
+                          borderRadius: '12px',
+                          border: '1px solid var(--border)'
+                        }}>
+                          <div className="loading-spinner" style={{ width: 12, height: 12 }} />
+                          <span>SRE AI Architect is analyzing telemetry data...</span>
+                        </div>
+                      )}
+
+                      <div ref={chatEndRef} />
+                    </div>
+
+                    {/* Suggestion Prompts Section */}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 8, letterSpacing: '0.05em' }}>
+                        💡 Click a suggestion to ask immediately:
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {[
+                          { label: '💥 Diagnose Crashes', query: 'How does LaunchLive auto-healing diagnose runtime crashes? Can you show me an example of an OOM resolution?' },
+                          { label: '🛡️ Security Audits', query: 'What security scans are run on my repository? How does the dependency vulnerability patcher work?' },
+                          { label: '⚡ Nginx & SSL Routing', query: 'Explain how Let\'s Encrypt SSL certificates are requested, provisioned, and automatically renewed. What does the Nginx routing configuration look like?' },
+                          { label: '📦 Resource Limits', query: 'How are Docker CPU and memory limit flags enforced on my application container? What happens if they are exceeded?' }
+                        ].map((sug, i) => (
+                          <button
+                            key={i}
+                            onClick={() => handleAskArchitect(sug.query)}
+                            disabled={architectLoading}
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.02)',
+                              border: '1px solid var(--border)',
+                              borderRadius: '20px',
+                              padding: '6px 12px',
+                              fontSize: '11.5px',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              fontWeight: 500
+                            }}
+                            onMouseEnter={e => {
+                              if (!architectLoading) {
+                                e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                                e.currentTarget.style.color = '#fff';
+                                e.currentTarget.style.background = 'rgba(56, 189, 248, 0.05)';
+                              }
+                            }}
+                            onMouseLeave={e => {
+                              if (!architectLoading) {
+                                e.currentTarget.style.borderColor = 'var(--border)';
+                                e.currentTarget.style.color = 'var(--text-muted)';
+                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
+                              }
+                            }}
+                          >
+                            {sug.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Chat Input */}
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      handleAskArchitect(customQuestion);
+                    }} style={{ display: 'flex', gap: 10 }}>
+                      <input
+                        type="text"
+                        value={customQuestion}
+                        onChange={(e) => setCustomQuestion(e.target.value)}
+                        placeholder="Ask SRE AI about Let's Encrypt certificates, Nginx configuration, container limits..."
+                        disabled={architectLoading}
+                        className="lp-input"
+                        style={{ flex: 1, fontSize: 13, height: '42px', padding: '0 16px' }}
+                      />
+                      <button
+                        type="submit"
+                        className="lp-btn-primary"
+                        disabled={architectLoading || !customQuestion.trim()}
+                        style={{
+                          background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)',
+                          height: '42px',
+                          padding: '0 20px',
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <span>💬</span> Send
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Right Pane: Live Telemetry Context & Recommendations */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    {/* Project SRE Config Status Card */}
+                    <div className="lp-card glass" style={{ padding: 20, borderLeft: '4px solid var(--accent-success)' }}>
+                      <h4 style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: '0 0 14px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        🟢 Infrastructure Configuration
+                      </h4>
+                      <div style={{ display: 'grid', gap: 12 }}>
+                        {[
+                          { label: 'Auto-Healing (SRE)', value: project?.autoHeal ? 'ENABLED (Auto-Recover)' : 'DISABLED', color: project?.autoHeal ? 'var(--accent-success)' : 'var(--text-dim)' },
+                          { label: 'Container RAM Allocation', value: `${project?.ramLimitMB || 256} MB`, color: 'var(--accent-secondary)' },
+                          { label: 'Container CPU Allocation', value: `${project?.cpuLimit || 0.5} Cores (Shares)`, color: 'var(--accent-primary)' },
+                          { label: 'Reverse Proxy Routing', value: 'Nginx Edge Gateway (HTTP/2)', color: 'var(--text-muted)' },
+                          { label: 'Domain Binding', value: project?.subdomain ? `${project.subdomain}.launchlive.in` : 'Dev IP Proxy', color: '#fff' }
+                        ].map((it, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.02)', paddingBottom: 8 }}>
+                            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{it.label}</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: it.color }}>{it.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* SRE Operations Checklist */}
+                    <div className="lp-card glass" style={{ padding: 20 }}>
+                      <h4 style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: '0 0 14px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        ⚡ Platform SRE Checklist
+                      </h4>
+                      <div style={{ display: 'grid', gap: 12 }}>
+                        {[
+                          { title: 'Docker Sandboxing', desc: 'Isolates code in secure containers.', status: 'ACTIVE', color: 'var(--accent-success)' },
+                          { title: 'SSL (Let\'s Encrypt)', desc: 'Automatic provision & cron renewals.', status: 'SECURED', color: 'var(--accent-primary)' },
+                          { title: 'Nginx Traffic Gate', desc: 'Zero-downtime rolling deploys.', status: 'ROUTING', color: 'var(--accent-secondary)' },
+                          { title: 'Telemetry Monitor', desc: 'Continuous health check loops.', status: 'WATCHING', color: 'var(--accent-success)' },
+                          { title: 'OSV Dependency Scan', desc: 'Vulnerability scanners in compiler.', status: 'SECURED', color: 'var(--accent-success)' }
+                        ].map((chk, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                            <div style={{ fontSize: 14, marginTop: 2 }}>✅</div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: 12.5, fontWeight: 600, color: '#fff' }}>{chk.title}</span>
+                                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.04)', color: chk.color }}>{chk.status}</span>
+                              </div>
+                              <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '2px 0 0 0', lineHeight: 1.3 }}>{chk.desc}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Stack-Specific AI Recommendation */}
+                    <div className="lp-card glass" style={{
+                      padding: 20,
+                      background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.05) 0%, rgba(56, 189, 248, 0.02) 100%)',
+                      borderLeft: '4px solid var(--accent-secondary)'
+                    }}>
+                      <h4 style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px 0' }}>
+                        💡 AI Recommendation
+                      </h4>
+                      {project?.stack === 'react' || project?.stack === 'vue' || project?.stack === 'svelte' || project?.stack === 'next' ? (
+                        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                          Your application runs on <strong>{project.stack.toUpperCase()}</strong>. Since this is a client-side bundle, Nginx acts as a high-performance web server caching assets statically.
+                          Configure browser caching or CDN rules on Cloudflare to improve your PageSpeed score by up to 40%.
+                        </p>
+                      ) : (
+                        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                          Your application is a backend node stack (<strong>{project?.stack?.toUpperCase() || 'node'}</strong>). Ensure your container does not exceed the allotted memory limit.
+                          If your app crashes due to OOM (Out Of Memory), the platform's **SRE Auto-Healer** will immediately restart it and adjust resource scaling hooks.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Sub-tab 3: DevOps Sandbox (Visual Simulation) */}
               {guideSubTab === 'sandbox' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24 }}>
@@ -2551,37 +2907,164 @@ Use bold headers, bullet lists, and code blocks.`;
                       </div>
                     )}
 
-                    {/* Simulator Screen */}
+                    {/* Simulated Console + Telemetry Metrics Grid */}
                     <div style={{
-                      background: '#09090e',
-                      border: '1px solid var(--border)',
-                      borderRadius: 12,
-                      padding: 20,
-                      fontFamily: 'var(--font-mono, monospace)',
-                      fontSize: 13,
-                      minHeight: 180,
-                      color: '#e2e8f0',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between'
+                      display: 'grid',
+                      gridTemplateColumns: activeSimulation ? 'repeat(auto-fit, minmax(300px, 1fr))' : '1fr',
+                      gap: 20,
+                      alignItems: 'stretch'
                     }}>
-                      <div>
-                        {simulationSteps.length === 0 && <span style={{ color: 'var(--text-dim)' }}>Select a scenario above to run the live simulator...</span>}
-                        {simulationSteps.map((step, idx) => (
-                          <div key={idx} style={{
-                            marginBottom: 8,
-                            color: step.includes('❌') ? '#ef4444' : step.includes('⚠️') ? '#f59e0b' : step.includes('✅') ? '#10b981' : '#e2e8f0',
-                            animation: 'fade-in 0.2s ease-out forwards'
-                          }}>
-                            {step}
-                          </div>
-                        ))}
-                      </div>
-                      {simulationLoading && (
-                        <div style={{ marginTop: 10, color: 'var(--accent-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div className="loading-spinner" style={{ width: 12, height: 12 }}></div> Running automated recovery workflows...
+                      {/* Left Pane: Simulator Screen */}
+                      <div style={{
+                        background: '#09090e',
+                        border: '1px solid var(--border)',
+                        borderRadius: 12,
+                        padding: 20,
+                        fontFamily: 'var(--font-mono, monospace)',
+                        fontSize: 13,
+                        minHeight: 220,
+                        color: '#e2e8f0',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.8)'
+                      }}>
+                        <div>
+                          {simulationSteps.length === 0 && <span style={{ color: 'var(--text-dim)' }}>Select a scenario above to run the live simulator...</span>}
+                          {simulationSteps.map((step, idx) => (
+                            <div key={idx} style={{
+                              marginBottom: 8,
+                              color: step.includes('❌') ? '#ef4444' : step.includes('⚠️') ? '#f59e0b' : step.includes('✅') ? '#10b981' : '#e2e8f0',
+                              animation: 'fade-in 0.2s ease-out forwards'
+                            }}>
+                              {step}
+                            </div>
+                          ))}
                         </div>
-                      )}
+                        {simulationLoading && (
+                          <div style={{ marginTop: 10, color: 'var(--accent-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div className="loading-spinner" style={{ width: 12, height: 12 }}></div> Running automated recovery workflows...
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right Pane: Simulated Telemetry Metrics Dashboard */}
+                      {activeSimulation && (() => {
+                        const m = getSimulatedMetrics(activeSimulation, currentStep);
+                        return (
+                          <div className="fade-in" style={{
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 12,
+                            padding: 20,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            gap: 16
+                          }}>
+                            {/* Header */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 10 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', letterSpacing: '0.05em' }}>📡 LIVE SRE TELEMETRY STREAM</span>
+                              <span style={{
+                                fontSize: 9.5,
+                                fontWeight: 700,
+                                padding: '2px 8px',
+                                borderRadius: 10,
+                                background: m.code === 200 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: m.code === 200 ? 'var(--accent-success)' : 'var(--accent-danger)'
+                              }}>
+                                STATUS: {m.status.toUpperCase()}
+                              </span>
+                            </div>
+
+                            {/* Gauges Grid */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                              {/* CPU Meter */}
+                              <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.02)' }}>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>CPU Load</div>
+                                <div style={{ fontSize: 20, fontWeight: 800, color: m.cpu > 80 ? 'var(--accent-danger)' : 'var(--accent-primary)', fontFamily: 'var(--font-mono, monospace)' }}>
+                                  {m.cpu}%
+                                </div>
+                                <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
+                                  <div style={{ width: `${m.cpu}%`, height: '100%', background: m.cpu > 80 ? 'var(--accent-danger)' : 'var(--accent-primary)', transition: 'all 0.3s' }} />
+                                </div>
+                              </div>
+
+                              {/* RAM Meter */}
+                              <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.02)' }}>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>Memory Usage</div>
+                                <div style={{ fontSize: 20, fontWeight: 800, color: m.ram > 450 ? 'var(--accent-danger)' : 'var(--accent-success)', fontFamily: 'var(--font-mono, monospace)' }}>
+                                  {m.ram} MB
+                                </div>
+                                <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
+                                  <div style={{ width: `${(m.ram / 512) * 100}%`, height: '100%', background: m.ram > 450 ? 'var(--accent-danger)' : 'var(--accent-success)', transition: 'all 0.3s' }} />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Details Row */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                              {/* HTTP status */}
+                              <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>HTTP Code</div>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono, monospace)' }}>
+                                    {m.code ? m.code : '—'}
+                                  </span>
+                                </div>
+                                <span style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  color: m.code === 200 ? 'var(--accent-success)' : m.code ? 'var(--accent-danger)' : 'var(--text-dim)'
+                                }}>
+                                  {m.code === 200 ? 'SUCCESS' : m.code ? 'FAIL' : 'OFFLINE'}
+                                </span>
+                              </div>
+
+                              {/* SSL Status */}
+                              <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>SSL Age</div>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono, monospace)' }}>
+                                    {m.ssl} days
+                                  </span>
+                                </div>
+                                <span style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  color: m.ssl > 0 ? 'var(--accent-primary)' : 'var(--accent-danger)'
+                                }}>
+                                  {m.ssl > 0 ? 'SECURE' : 'EXPIRED'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Live Alert Box */}
+                            <div style={{
+                              padding: '10px 14px',
+                              background: m.code !== 200 && m.code !== null ? 'rgba(239,68,68,0.05)' : 'rgba(16,185,129,0.05)',
+                              border: '1px solid ' + (m.code !== 200 && m.code !== null ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)'),
+                              borderRadius: 8,
+                              fontSize: 12,
+                              color: m.code !== 200 && m.code !== null ? 'var(--accent-danger)' : 'var(--accent-success)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8
+                            }}>
+                              <span>
+                                {m.code !== 200 && m.code !== null ? '⚠️' : '🟢'}
+                              </span>
+                              <span style={{ flex: 1, lineHeight: 1.4 }}>
+                                {m.code === 502 && 'Nginx Gateway reports 502 Bad Gateway. App is offline.'}
+                                {m.code === 500 && 'Container crashed due to OOM (Out Of Memory). Restarting.'}
+                                {m.code === 495 && 'TLS verification failed: Handshake error (SSL Expired).'}
+                                {m.code === 200 && 'Application responding successfully. Ingress traffic secure.'}
+                                {m.code === null && 'Awaiting simulator initialization...'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Post-Simulation Report */}
