@@ -18,10 +18,46 @@ function startMonitoring(project) {
 
   const intervalId = setInterval(async () => {
     try {
-      const logsCmd = `docker logs --tail 200 --since 90s ${containerId} 2>&1`;
+      const Project = require('../models/Project.model');
+
+      // 1. Verify container exists and get its running state
+      let containerState = ''; // 'running' | 'stopped' | 'missing'
+      try {
+        const inspectOut = execSync(`docker inspect -f "{{.State.Status}}" ${containerId}`, { stdio: 'pipe', timeout: 3000 }).toString().trim();
+        containerState = inspectOut; // e.g., 'running', 'exited', 'paused'
+      } catch (e) {
+        containerState = 'missing';
+      }
+
+      if (containerState === 'missing') {
+        console.warn(`[HealthMonitor] Container ${containerId} is missing for project ${projectId}.`);
+        await Project.findByIdAndUpdate(projectId, { lastHealthScore: 0, status: 'failed' });
+        await notifyUpdate(projectId);
+        stopMonitoring(projectId);
+        return;
+      }
+
+      if (containerState !== 'running') {
+        console.warn(`[HealthMonitor] Container ${containerId} is not running (state: ${containerState}). Attempting recovery restart...`);
+        try {
+          const { startContainer } = require('./docker.service');
+          await startContainer(containerId);
+          console.log(`[HealthMonitor] Container ${containerId} started successfully during recovery.`);
+          await Project.findByIdAndUpdate(projectId, { lastHealthScore: 60, status: 'live' });
+          await notifyUpdate(projectId);
+          return; // Skip log analysis this tick, let it boot
+        } catch (startErr) {
+          console.error(`[HealthMonitor] Failed to start container ${containerId}:`, startErr.message);
+          await Project.findByIdAndUpdate(projectId, { lastHealthScore: 10, status: 'failed' });
+          await notifyUpdate(projectId);
+          return;
+        }
+      }
+
+      // 2. Container is running, fetch logs
       let logs = '';
       try {
-        logs = execSync(logsCmd, { timeout: 8000 }).toString();
+        logs = execSync(`docker logs --tail 200 --since 90s ${containerId} 2>&1`, { timeout: 8000 }).toString();
       } catch (e) {
         logs = e.stdout?.toString() || e.stderr?.toString() || '';
       }
@@ -43,8 +79,8 @@ function startMonitoring(project) {
 
       // ── Persist score to DB on every monitoring tick ──────────────────────────
       try {
-        const Project = require('../models/Project.model');
         await Project.findByIdAndUpdate(projectId, { lastHealthScore: healthScore });
+        await notifyUpdate(projectId);
       } catch (dbErr) {
         console.warn(`[HealthMonitor] DB persist failed for ${projectId}:`, dbErr.message);
       }
@@ -68,8 +104,8 @@ function startMonitoring(project) {
             });
             // Update DB to reflect recovery attempt
             try {
-              const Project = require('../models/Project.model');
-              await Project.findByIdAndUpdate(projectId, { lastHealthScore: 60 });
+              await Project.findByIdAndUpdate(projectId, { lastHealthScore: 60, status: 'live' });
+              await notifyUpdate(projectId);
             } catch {}
           } catch (restartErr) {
             console.error(`[HealthMonitor] ❌ Container restart failed for ${containerId}:`, restartErr.message);
@@ -109,6 +145,20 @@ function acknowledgeAlert(projectId) {
   const existing = monitors.get(String(projectId));
   if (existing) {
     monitors.set(String(projectId), { ...existing, anomalies: [], lastScore: 100, isHealthy: true });
+    notifyUpdate(projectId).catch(() => {});
+  }
+}
+
+async function notifyUpdate(projectId) {
+  try {
+    const Project = require('../models/Project.model');
+    const Deployment = require('../models/Deployment.model');
+    const { emitProjectUpdate } = require('../sockets/logs.socket');
+    const project = await Project.findById(projectId);
+    const deployments = await Deployment.find({ project: projectId }).sort({ createdAt: -1 }).limit(10);
+    emitProjectUpdate(String(projectId), { project, deployments });
+  } catch (err) {
+    console.warn(`[HealthMonitor] Socket notify failed for ${projectId}:`, err.message);
   }
 }
 

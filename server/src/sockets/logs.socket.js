@@ -95,6 +95,18 @@ const initSocket = (server) => {
       }
     });
 
+    socket.on('leave:deployment', (deploymentId) => {
+      socket.leave(`deployment:${deploymentId}`);
+    });
+
+    socket.on('join:project', (projectId) => {
+      socket.join(`project:${projectId}`);
+    });
+
+    socket.on('leave:project', (projectId) => {
+      socket.leave(`project:${projectId}`);
+    });
+
     socket.on('disconnect', () => {
       if (socket.runtimeLogProcess) {
         try { socket.runtimeLogProcess.kill(); } catch {}
@@ -128,4 +140,15 @@ const emitMetrics = (projectId, stats) => {
   } catch {}
 };
 
-module.exports = { initSocket, getIO, emitLog, emitMetrics };
+// Emit project state/deployment updates to project room & global dashboard
+const emitProjectUpdate = (projectId, payload) => {
+  try {
+    const ioInstance = getIO();
+    ioInstance.to(`project:${projectId}`).emit('project-update', payload);
+    ioInstance.emit('dashboard-update', { projectId, ...payload });
+  } catch (err) {
+    console.error('Failed to emit project update:', err.message);
+  }
+};
+
+module.exports = { initSocket, getIO, emitLog, emitMetrics, emitProjectUpdate };

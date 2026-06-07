@@ -15,7 +15,7 @@ const { createNginxConfig }                       = require('../services/nginx.s
 const { createSubdomain }                         = require('../services/cloudflare.service');
 const { provisionSSL }                            = require('../services/ssl.service');
 const { getNextFreePort, isPortFree }              = require('../services/portAllocator.service');
-const { emitLog }                                 = require('../sockets/logs.socket');
+const { emitLog, emitProjectUpdate }              = require('../sockets/logs.socket');
 const { sendDeployNotification }                  = require('../services/notification.service');
 const { invalidateProjectCache }                  = require('../middleware/projectProxy.middleware');
 
@@ -37,6 +37,16 @@ const REPOS_DIR = path.join(__dirname, '../../repos');
 if (!fs.existsSync(REPOS_DIR)) fs.mkdirSync(REPOS_DIR, { recursive: true });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+const notifyUpdate = async (projectId) => {
+  try {
+    const project = await Project.findById(projectId);
+    const deployments = await Deployment.find({ project: projectId }).sort({ createdAt: -1 }).limit(10);
+    emitProjectUpdate(projectId, { project, deployments });
+  } catch (err) {
+    console.error('Failed to send real-time update:', err.message);
+  }
+};
+
 const decryptValue = (encrypted) => {
   try {
     const bytes = CryptoJS.AES.decrypt(encrypted, process.env.ENCRYPTION_KEY);
@@ -396,6 +406,7 @@ buildQueue.process(1, async (job) => {
 
   await deployment.updateOne({ status: 'building', startedAt: new Date() });
   await Project.findByIdAndUpdate(projectId, { status: 'building' });
+  await notifyUpdate(projectId);
 
   const repoDir   = path.join(REPOS_DIR, projectId);
   const imageTag  = `launchlive-${projectId}:${deploymentId}`;
@@ -825,19 +836,13 @@ buildQueue.process(1, async (job) => {
         }
       });
 
-      // Use a stable container name per project so re-deploys cleanly replace the old one
-      const containerName = `lp-${projectId.slice(-8)}`;
+      // SRE Blue-Green Zero-Downtime Swap:
+      // Suffix container name with deployment ID so the old container can remain running
+      const containerName = `lp-${projectId.slice(-8)}-${deploymentId.slice(-8)}`;
+      const legacyContainerName = `lp-${projectId.slice(-8)}`;
+      const oldContainerId = project.containerId;
 
-      // Stop old container whether it's tracked by ID or by name
-      await log('🔄 PHASE 6: Replacing previous instance…');
-      if (project.containerId) {
-        try { await execAsync(`docker stop ${project.containerId}`); } catch(e) {}
-      }
-      try { await execAsync(`docker stop ${containerName}`); } catch(e) {}
-      try { await execAsync(`docker rm -f ${containerName}`); } catch(e) {}
-      if (project.containerId) {
-        try { await execAsync(`docker rm -f ${project.containerId}`); } catch(e) {}
-      }
+      await log('🔄 PHASE 6: Initializing Zero-Downtime Blue-Green Swap…');
 
       // Verify EXPOSE port from the built image matches what we detected
       // containerPort is already computed above — this step reconciles any mismatch
@@ -856,16 +861,9 @@ buildQueue.process(1, async (job) => {
         }
       } catch { /* keep detected default */ }
 
-      let hostPort = project.port;
-      if (!hostPort || !(await isPortFree(hostPort))) {
-        const oldPort = hostPort;
-        hostPort = await getNextFreePort();
-        await Project.findByIdAndUpdate(projectId, { port: hostPort });
-        if (oldPort) {
-          await log(`   ⚠️ Port ${oldPort} was already allocated. Dynamically re-allocated free port: ${hostPort}`);
-        }
-      }
-      await log(`   ↳ Container port ${finalContainerPort} → Host port ${hostPort}`);
+      // Allocate a fresh temporary port to verify the new container
+      const hostPort = await getNextFreePort();
+      await log(`   ↳ Target container port ${finalContainerPort} → Allocated temporary host port ${hostPort}`);
 
       // Build docker run with all env vars and resource limits
       const cpu = project.cpuLimit || 0.5;
@@ -1015,6 +1013,15 @@ buildQueue.process(1, async (job) => {
       const { invalidateProjectCache } = require('../middleware/projectProxy.middleware');
       invalidateProjectCache(project.subdomain);
       await log(`   ✅ Internal proxy updated. Traffic routed to ${liveUrl}`);
+
+      // Zero-Downtime Swap Cleanup: stop and remove the old container now that new one is live
+      if (oldContainerId && oldContainerId !== containerId) {
+        await log(`   🧹 Cleaning up previous instance (ID: ${oldContainerId.slice(0, 12)})…`);
+        try { await execAsync(`docker stop ${oldContainerId}`); } catch(e) {}
+        try { await execAsync(`docker rm -f ${oldContainerId}`); } catch(e) {}
+      }
+      try { await execAsync(`docker stop ${legacyContainerName}`); } catch(e) {}
+      try { await execAsync(`docker rm -f ${legacyContainerName}`); } catch(e) {}
 
       const DOMAIN = (process.env.CLOUDFLARE_DOMAIN || 'launchlive.in').toLowerCase();
       const isNipIo = DOMAIN.includes('nip.io');
@@ -1207,6 +1214,8 @@ buildQueue.process(1, async (job) => {
       status: 'success', imageTag, finishedAt, duration,
     });
 
+    await notifyUpdate(projectId);
+
     await log(`✨ ALL PHASES COMPLETE! Deployed in ${(duration / 1000).toFixed(1)}s.`);
     await log(`🚀 Project is now live at: ${liveUrl}`);
 
@@ -1333,6 +1342,7 @@ buildQueue.process(1, async (job) => {
             });
             // Update project status to building
             await Project.findByIdAndUpdate(projectId, { status: 'building' });
+            await notifyUpdate(projectId);
             return; // Exit early: follow-up auto-heal job will handle live/failed state
           } else {
             // Revert any partially applied files and untracked files
@@ -1384,6 +1394,18 @@ buildQueue.process(1, async (job) => {
       status: 'failed', finishedAt: new Date(),
     });
 
+    // SRE Zero-Downtime Rollback Check: If the old container is still running, keep the project live!
+    let oldContainerRunning = false;
+    try {
+      const oldProj = await Project.findById(projectId).select('containerId');
+      if (oldProj && oldProj.containerId) {
+        const checkStatus = execSync(`docker inspect -f "{{.State.Status}}" ${oldProj.containerId}`, { stdio: 'pipe' }).toString().trim();
+        if (checkStatus === 'running') {
+          oldContainerRunning = true;
+        }
+      }
+    } catch {}
+
     // ── Guard: only mark project as 'failed' if there is no newer successful deployment ──
     // This prevents a retried old job from overwriting a newer successful live deployment.
     const latestSuccessfulDeploy = await Deployment.findOne({
@@ -1394,13 +1416,18 @@ buildQueue.process(1, async (job) => {
     const thisDeploymentRecord = await Deployment.findById(deploymentId).select('finishedAt createdAt');
     const thisTimestamp = thisDeploymentRecord?.finishedAt || thisDeploymentRecord?.createdAt || new Date(0);
 
-    if (!latestSuccessfulDeploy || new Date(latestSuccessfulDeploy.finishedAt) < new Date(thisTimestamp)) {
+    if (oldContainerRunning) {
+      await Project.findByIdAndUpdate(projectId, { status: 'live' });
+      await log(`ℹ️ Active previous deployment is still running. Rollback complete: project status remains 'live'.`);
+    } else if (!latestSuccessfulDeploy || new Date(latestSuccessfulDeploy.finishedAt) < new Date(thisTimestamp)) {
       // No newer success exists — safe to mark as failed
       await Project.findByIdAndUpdate(projectId, { status: 'failed' });
     } else {
       // A newer successful deployment already exists — keep the project as 'live'
       await log(`ℹ️ A newer successful deployment exists. Keeping project status as 'live'.`);
     }
+
+    await notifyUpdate(projectId);
 
     if (project.owner?.email && project.owner.notifyOnCrash !== false) {
       sendDeployNotification(project.owner.email, {

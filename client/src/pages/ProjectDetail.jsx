@@ -369,6 +369,7 @@ export default function ProjectDetail() {
   const [vulnLoading, setVulnLoading] = useState(false);
   const [vulnFixData, setVulnFixData] = useState(null);
   const [vulnFixLoading, setVulnFixLoading] = useState(false);
+  const [applyingVulnFix, setApplyingVulnFix] = useState(false);
 
   // 🧠 AI Deployment Advisor (Readiness)
   const [readiness, setReadiness] = useState(null);
@@ -749,23 +750,8 @@ Use bold headers, bullet lists, and code blocks.`;
   }, [id]);
 
   const connectToRuntimeLogs = () => {
-    socketRef.current?.disconnect();
     setRuntimeLogs([]);
-
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
-    const socket = io(socketUrl, {
-      transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
-    socket.on('connect', () => {
-      socket.emit('join:runtime-logs', id);
-    });
-    socket.on('runtime-log', ({ line }) => {
-      setRuntimeLogs(prev => [...prev, line]);
-    });
-    socket.on('connect_error', (err) => console.warn('Runtime socket error:', err.message));
-    socketRef.current = socket;
+    socketRef.current?.emit('join:runtime-logs', id);
   };
 
   useEffect(() => {
@@ -781,54 +767,65 @@ Use bold headers, bullet lists, and code blocks.`;
     loadProject();
     loadDeployments();
     loadEnvVars();
-    return () => {
-      socketRef.current?.disconnect();
-      clearInterval(pollRef.current);
-    };
   }, [loadProject, loadDeployments, loadEnvVars]);
 
-  // Auto-resume polling and live log connection if a build is active on page load/refresh
+  // Page-level persistent socket connection
   useEffect(() => {
-    const latestDep = deployments?.[0];
-    if (latestDep && (latestDep.status === 'building' || latestDep.status === 'queued')) {
-      setDeploying(true);
-      
-      // Auto-connect to live logs if activeTab is logs
-      if (activeTab === 'logs' && (!socketRef.current || socketRef.current.disconnected)) {
-        connectToLogs(latestDep._id);
-      }
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+    const socket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+    });
 
-      if (!pollRef.current) {
-        pollRef.current = setInterval(async () => {
-          try {
-            const r = await api.get(`/deploy/${id}`);
-            const updated = r.data.deployments || [];
-            setDeployments(updated);
-            
-            const latest = updated[0];
-            if (latest) {
-              const detailRes = await api.get(`/deploy/${id}/${latest._id}`);
-              setActiveDeployment(detailRes.data.deployment);
+    socket.on('connect', () => {
+      socket.emit('join:project', id);
+      // Re-join active deployment room if activeTab is logs
+      const latestDep = deployments?.[0];
+      if (activeTab === 'logs' && latestDep && (latestDep.status === 'building' || latestDep.status === 'queued')) {
+        socket.emit('join:deployment', latestDep._id);
+      }
+      // Re-join runtime logs room if activeTab is runtime-logs
+      if (activeTab === 'runtime-logs') {
+        socket.emit('join:runtime-logs', id);
+      }
+    });
+
+    socket.on('project-update', ({ deployments: updatedDeployments, project: updatedProject }) => {
+      if (updatedProject) setProject(updatedProject);
+      if (updatedDeployments) {
+        setDeployments(updatedDeployments);
+        const latest = updatedDeployments[0];
+        if (latest) {
+          if (latest.status === 'building' || latest.status === 'queued') {
+            setDeploying(true);
+            // Auto-join building log stream if on logs tab
+            if (activeTab === 'logs') {
+              socket.emit('join:deployment', latest._id);
             }
-            
-            if (latest?.status === 'success' || latest?.status === 'failed') {
-              clearInterval(pollRef.current);
-              pollRef.current = null;
-              setDeploying(false);
-              loadProject();
-            }
-          } catch (err) {
-            console.error('Failed to poll deployment status:', err);
+          } else {
+            setDeploying(false);
           }
-        }, 3000);
+        }
       }
-    } else {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    }
-  }, [deployments?.[0]?.status, deployments?.[0]?._id, activeTab, id, loadProject]);
+    });
+
+    socket.on('log', ({ line }) => {
+      setLogs(prev => [...prev, line]);
+    });
+
+    socket.on('runtime-log', ({ line }) => {
+      setRuntimeLogs(prev => [...prev, line]);
+    });
+
+    socket.on('connect_error', (err) => console.warn('Socket error:', err.message));
+
+    socketRef.current = socket;
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [id, activeTab, deployments?.[0]?._id]);
 
   // Auto-switch to logs tab if a build is active on page load/refresh
   useEffect(() => {
@@ -881,7 +878,6 @@ Use bold headers, bullet lists, and code blocks.`;
     connectingRef.current = deploymentId;
 
     try {
-      socketRef.current?.disconnect();
       setLogs([]);
 
       // Fetch any logs already stored in DB (handles page refresh / mid-build reconnect)
@@ -893,19 +889,7 @@ Use bold headers, bullet lists, and code blocks.`;
         console.warn('Failed to fetch stored logs from DB:', err.message);
       }
 
-      // Connect socket for live streaming of future log lines
-      const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
-      const socket = io(socketUrl, {
-        transports: ['websocket', 'polling'],  // polling fallback if nginx doesn't upgrade WS
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-      });
-      socket.on('connect', () => {
-        socket.emit('join:deployment', deploymentId);
-      });
-      socket.on('log', ({ line }) => setLogs(prev => [...prev, line]));
-      socket.on('connect_error', (err) => console.warn('Socket error:', err.message));
-      socketRef.current = socket;
+      socketRef.current?.emit('join:deployment', deploymentId);
     } finally {
       connectingRef.current = null;
     }
@@ -921,22 +905,6 @@ Use bold headers, bullet lists, and code blocks.`;
       const res = await api.post(`/deploy/${id}`, { forceRebuild });
       setActiveDeployment(res.data.deployment);
       connectToLogs(res.data.deployment._id);
-      pollRef.current = setInterval(async () => {
-        const r = await api.get(`/deploy/${id}`);
-        setDeployments(r.data.deployments || []);
-        const latest = r.data.deployments?.[0];
-        if (latest) {
-          try {
-            const detailRes = await api.get(`/deploy/${id}/${latest._id}`);
-            setActiveDeployment(detailRes.data.deployment);
-          } catch {}
-        }
-        if (latest?.status === 'success' || latest?.status === 'failed') {
-          clearInterval(pollRef.current);
-          setDeploying(false);
-          loadProject();
-        }
-      }, 3000);
     } catch (err) {
       setError(err.response?.data?.message || 'Deployment failed');
       setDeploying(false);
@@ -1221,6 +1189,27 @@ Use bold headers, bullet lists, and code blocks.`;
     }
   };
 
+  // Execute vulnerability auto-fix patches and trigger redeploy
+  const handleApplyVulnFix = async () => {
+    setApplyingVulnFix(true);
+    try {
+      const res = await api.post(`/vuln/${id}/apply-fix`);
+      alert('Security patches applied successfully! Starting fresh cache-bypassed SRE build...');
+      
+      // Navigate to logs tab to view rebuild progress in real-time
+      setActiveTab('logs');
+      if (res.data.deployment) {
+        setActiveDeployment(res.data.deployment);
+        setDeploying(true);
+        connectToLogs(res.data.deployment._id);
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to apply security patches.');
+    } finally {
+      setApplyingVulnFix(false);
+    }
+  };
+
   const handleCreatePreview = async (e) => {
     e.preventDefault();
     if (!newPreviewPR || !newPreviewBranch) return;
@@ -1296,12 +1285,17 @@ Use bold headers, bullet lists, and code blocks.`;
     }
   }, [project?._id, readiness, readinessLoading, vulnData, vulnLoading, missingVars, missingVarsLoading]);
 
-  // Tab switch logic to auto-load tab details and disconnect sockets on tab cleanups
+  // Tab switch logic to auto-load tab details and clean up socket rooms on tab change
   useEffect(() => {
+    const latestDep = deployments?.[0];
     if (activeTab === 'logs') {
       logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      if (logs.length === 0 && !deploying && deployments.length > 0) {
-        viewLogs(deployments[0]);
+      if (latestDep) {
+        if (latestDep.status === 'building' || latestDep.status === 'queued') {
+          connectToLogs(latestDep._id);
+        } else if (logs.length === 0) {
+          viewLogs(latestDep);
+        }
       }
     } else if (activeTab === 'runtime-logs') {
       connectToRuntimeLogs();
@@ -1319,10 +1313,17 @@ Use bold headers, bullet lists, and code blocks.`;
       if (missingVars === null && !missingVarsLoading) {
         handleAiScanMissingVars();
       }
-    } else {
-      socketRef.current?.disconnect();
     }
-  }, [activeTab, handleLoadPreviews, readiness, readinessLoading, vulnData, vulnLoading, missingVars, missingVarsLoading]);
+
+    return () => {
+      if (activeTab === 'runtime-logs') {
+        socketRef.current?.emit('leave:runtime-logs');
+      }
+      if (activeTab === 'logs' && latestDep) {
+        socketRef.current?.emit('leave:deployment', latestDep._id);
+      }
+    };
+  }, [activeTab, deployments?.[0]?._id, handleLoadPreviews, readiness, readinessLoading, vulnData, vulnLoading, missingVars, missingVarsLoading]);
 
   if (!project) return (
     <div className="launchlive-container flex-center" style={{ minHeight: '100vh' }}>
@@ -3548,7 +3549,7 @@ Use bold headers, bullet lists, and code blocks.`;
                 </div>
               ))}
             </div>
-            <MetricsChart projectId={id} />
+            <MetricsChart projectId={id} socket={socketRef.current} />
 
             {/* 💰 Cost Estimator Card */}
             <div className="lp-card glass" style={{ padding: 28, borderLeft: '4px solid #a78bfa', background: 'linear-gradient(135deg, rgba(167,139,250,0.06) 0%, rgba(56,189,248,0.03) 100%)' }}>
@@ -3737,9 +3738,25 @@ Use bold headers, bullet lists, and code blocks.`;
                         <span style={{ fontWeight: 700, fontSize: 14, color: '#34d399' }}>AI-Generated Security Fix Commands</span>
                       </div>
                       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12 }}>{vulnFixData.description}</p>
-                      <pre style={{ background: '#090d16', borderRadius: 8, padding: 16, fontFamily: 'var(--font-mono)', fontSize: 12, color: '#e2e8f0', overflowX: 'auto' }}>
+                      <pre style={{ background: '#090d16', borderRadius: 8, padding: 16, fontFamily: 'var(--font-mono)', fontSize: 12, color: '#e2e8f0', overflowX: 'auto', marginBottom: 16 }}>
                         {vulnFixData.patchCommands?.join('\n') || 'No specific commands generated.'}
                       </pre>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          className="lp-btn-primary"
+                          style={{
+                            padding: '8px 20px',
+                            fontSize: 13,
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            border: 'none',
+                            cursor: applyingVulnFix ? 'not-allowed' : 'pointer'
+                          }}
+                          onClick={handleApplyVulnFix}
+                          disabled={applyingVulnFix}
+                        >
+                          {applyingVulnFix ? '🛡️ Applying patches...' : '🛡️ Apply Patches & Redeploy'}
+                        </button>
+                      </div>
                     </div>
                   )}
 

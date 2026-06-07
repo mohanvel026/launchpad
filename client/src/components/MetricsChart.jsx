@@ -35,7 +35,7 @@ function Sparkline({ data, color, height = 60 }) {
   );
 }
 
-export default function MetricsChart({ projectId }) {
+export default function MetricsChart({ projectId, socket }) {
   const [live,    setLive]    = useState(null);
   const [history, setHistory] = useState([]);
   const [project, setProject] = useState(null);
@@ -85,18 +85,32 @@ export default function MetricsChart({ projectId }) {
   }, [projectId]);
 
   useEffect(() => {
-    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000');
-    socket.emit('join:metrics', projectId);
-    socket.on('metrics', (stats) => {
+    let activeSocket = socket;
+    let createdLocal = false;
+
+    if (!activeSocket) {
+      activeSocket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000');
+      createdLocal = true;
+    }
+
+    activeSocket.emit('join:metrics', projectId);
+
+    const handleMetricsUpdate = (stats) => {
       setLive(stats);
       setHistory((prev) => [...prev.slice(-59), stats]);
-    });
-    socketRef.current = socket;
-    return () => {
-      socket.emit('leave:metrics', projectId);
-      socket.disconnect();
     };
-  }, [projectId]);
+
+    activeSocket.on('metrics', handleMetricsUpdate);
+    socketRef.current = activeSocket;
+
+    return () => {
+      activeSocket.emit('leave:metrics', projectId);
+      activeSocket.off('metrics', handleMetricsUpdate);
+      if (createdLocal) {
+        activeSocket.disconnect();
+      }
+    };
+  }, [projectId, socket]);
 
   const stats   = live || history[history.length - 1];
   const cpuHist = history.map((h) => h.cpu    || 0);

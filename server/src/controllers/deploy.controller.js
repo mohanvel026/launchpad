@@ -3,6 +3,17 @@ const Deployment = require('../models/Deployment.model');
 const Project    = require('../models/Project.model');
 const buildQueue = require('../workers/build.worker');
 const { stopContainer, runContainer, stopContainerOnly, startContainer, restartContainer } = require('../services/docker.service');
+const { emitProjectUpdate } = require('../sockets/logs.socket');
+
+const notifyUpdate = async (projectId) => {
+  try {
+    const project = await Project.findById(projectId);
+    const deployments = await Deployment.find({ project: projectId }).sort({ createdAt: -1 }).limit(10);
+    emitProjectUpdate(projectId, { project, deployments });
+  } catch (err) {
+    console.error('Failed to notify real-time update:', err.message);
+  }
+};
 
 // ─── POST /api/deploy/webhook ─────────────────────────────────────────────────
 const githubWebhook = async (req, res) => {
@@ -70,6 +81,7 @@ const githubWebhook = async (req, res) => {
       }
     );
 
+    await notifyUpdate(project._id);
     res.status(200).json({ message: 'Build queued', deploymentId: deployment._id });
   } catch (err) {
     console.error('Webhook error:', err.message);
@@ -124,6 +136,7 @@ const triggerDeploy = async (req, res) => {
       }
     );
 
+    await notifyUpdate(project._id);
     res.status(202).json({ deployment });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -218,6 +231,7 @@ const rollback = async (req, res) => {
 
     await Project.findByIdAndUpdate(project._id, { containerId, status: 'live' });
 
+    await notifyUpdate(project._id);
     res.json({ message: `Rolled back to commit ${target.commitSha}`, containerId, deployment: rollbackDep });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -267,6 +281,7 @@ const cancelDeploy = async (req, res) => {
       await Project.findByIdAndUpdate(project._id, { status: 'failed' });
     }
 
+    await notifyUpdate(project._id);
     res.json({ message: 'Deployment cancelled', deploymentId: activeDeployment._id });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -285,6 +300,7 @@ const stopProject = async (req, res) => {
 
     await stopContainerOnly(project.containerId);
     await Project.findByIdAndUpdate(project._id, { status: 'stopped' });
+    await notifyUpdate(project._id);
     res.json({ message: 'Container stopped successfully', status: 'stopped' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -303,6 +319,7 @@ const startProject = async (req, res) => {
 
     await startContainer(project.containerId);
     await Project.findByIdAndUpdate(project._id, { status: 'live' });
+    await notifyUpdate(project._id);
     res.json({ message: 'Container started successfully', status: 'live' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -321,6 +338,7 @@ const restartProject = async (req, res) => {
 
     await restartContainer(project.containerId);
     await Project.findByIdAndUpdate(project._id, { status: 'live' });
+    await notifyUpdate(project._id);
     res.json({ message: 'Container restarted successfully', status: 'live' });
   } catch (err) {
     res.status(500).json({ message: err.message });

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 
@@ -24,6 +25,22 @@ export default function Dashboard() {
     if (!loading && user) {
       api.get('/projects').then(res => setProjects(res.data.projects || [])).catch(console.error);
     }
+  }, [user, loading]);
+
+  useEffect(() => {
+    if (loading || !user) return;
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+    const socket = io(socketUrl, {
+      transports: ['websocket', 'polling']
+    });
+
+    socket.on('dashboard-update', () => {
+      api.get('/projects').then(res => setProjects(res.data.projects || [])).catch(console.error);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, [user, loading]);
 
   const loadActivity = async () => {
