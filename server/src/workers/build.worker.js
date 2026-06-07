@@ -215,7 +215,7 @@ const estimateBuildTime = (repoDir, stack, hasCache, skipBuild) => {
 
   const breakdown = [];
 
-  // 1. Base time by stack
+  // 1. Base time by stack (includes non-Node backends)
   const stackBase = {
     'static':          { low: 20,  high: 40  },
     'react':           { low: 90,  high: 150 },
@@ -227,6 +227,14 @@ const estimateBuildTime = (repoDir, stack, hasCache, skipBuild) => {
     'nuxt':            { low: 120, high: 210 },
     'mern':            { low: 180, high: 300 },
     'fullstack-split': { low: 180, high: 300 },
+    // Non-Node backends
+    'python':          { low: 60,  high: 120 }, // pip install is fast
+    'go':              { low: 120, high: 240 }, // go build is slow first time, fast after cache
+    'rust':            { low: 240, high: 480 }, // cargo compile is very slow (LLVM)
+    'ruby':            { low: 90,  high: 180 }, // bundle install is moderate
+    'java':            { low: 180, high: 360 }, // Maven/Gradle + JDK compile
+    'php':             { low: 80,  high: 160 },
+    'dotnet':          { low: 100, high: 200 },
     'unknown':         { low: 120, high: 240 },
   };
   const base = stackBase[stack] || stackBase['unknown'];
@@ -297,6 +305,12 @@ const estimateBuildTime = (repoDir, stack, hasCache, skipBuild) => {
       return build.includes('tsc') || build.includes('nest build');
     });
     if (!hasBuildScript) { low += 15; high += 30; codeGenTools.push('TypeScript'); }
+  }
+  if (allPkgs.some(p => hasDepEta(p, '@mikro-orm/core') || hasDepEta(p, 'mikro-orm'))) {
+    low += 15; high += 30; codeGenTools.push('MikroORM');
+  }
+  if (allPkgs.some(p => hasDepEta(p, 'knex'))) {
+    low += 10; high += 20; codeGenTools.push('Knex');
   }
 
   // ── Frontend codegen ──
@@ -454,14 +468,19 @@ buildQueue.process(1, async (job) => {
     await log(`🔍 PHASE 2: Analyzing project architecture…`);
     let stack = project.framework;
     if (!stack || stack === 'auto') {
-      const { detectStackWithAI } = require('../services/ai.service');
-      const files = fs.readdirSync(repoDir).slice(0, 50);
-      let pkg = null;
-      if (fs.existsSync(path.join(repoDir, 'package.json'))) {
-        try { pkg = JSON.parse(fs.readFileSync(path.join(repoDir, 'package.json'), 'utf8')); } catch(e){}
+      stack = detectStack(repoDir);
+      if (stack === 'unknown') {
+        await log('   ⏳ Local detection returned unknown. Invoking AI Stack Detector…');
+        const { detectStackWithAI } = require('../services/ai.service');
+        const files = fs.readdirSync(repoDir).slice(0, 50);
+        let pkg = null;
+        if (fs.existsSync(path.join(repoDir, 'package.json'))) {
+          try { pkg = JSON.parse(fs.readFileSync(path.join(repoDir, 'package.json'), 'utf8')); } catch(e){}
+        }
+        stack = await detectStackWithAI(files, pkg);
+      } else {
+        await log(`   ↳ Stack detected statically: ${stack.toUpperCase()} (Speed Boost ⚡)`);
       }
-      stack = await detectStackWithAI(files, pkg);
-      if (stack === 'unknown') stack = detectStack(repoDir); // Fallback to local static analysis
     }
     
     await log(`   ↳ Detected Stack: ${stack.toUpperCase()}`);
@@ -477,6 +496,12 @@ buildQueue.process(1, async (job) => {
       const etaHigh = eta.high < 60 ? `${eta.high}s` : `${Math.floor(eta.high/60)}m ${eta.high%60 > 0 ? (eta.high%60)+'s' : ''}`.trim();
       await log(`⏱️  Estimated build time: ${etaLow} – ${etaHigh}`);
       await log(`   └─ Factors: ${eta.breakdown.join(' • ')}`);
+      try {
+        await deployment.updateOne({ estimatedDuration: eta.high });
+        deployment.estimatedDuration = eta.high;
+      } catch (err) {
+        console.error('Failed to save estimatedDuration:', err.message);
+      }
     }
 
     let rawEnvs = await EnvVar.find({ project: projectId });

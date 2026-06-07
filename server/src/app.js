@@ -115,7 +115,7 @@ app.use('/api/auth', authLimiter);
 // ── Deploy rate limiter (anti-botnet protection) ──────────────────────────────
 const deployLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10,
+  max: 100,
   message: { message: 'Deployment limit reached to prevent abuse. Try again later.' },
 });
 app.use('/api/deploy', deployLimiter);

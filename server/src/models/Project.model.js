@@ -7,7 +7,7 @@ const projectSchema = new mongoose.Schema({
   repoFullName:  { type: String, required: true },   // e.g. "username/my-app"
   repoUrl:       { type: String, required: true },
   branch:        { type: String, default: 'main' },
-  stack:         { type: String, enum: ['react', 'node', 'mern', 'mern-split', 'fullstack-split', 'next', 'nuxt', 'static', 'unknown'], default: 'unknown' },
+  stack:         { type: String, enum: ['react', 'node', 'mern', 'mern-split', 'fullstack-split', 'next', 'nuxt', 'static', 'python', 'go', 'rust', 'ruby', 'java', 'php', 'dotnet', 'unknown'], default: 'unknown' },
   framework:     { type: String }, // user-selected framework override
   subdomain:     { type: String, unique: true, sparse: true },
   customDomain:  { type: String },
@@ -20,7 +20,7 @@ const projectSchema = new mongoose.Schema({
   installCommand: { type: String },
   buildCommand:   { type: String },
   outputDir:      { type: String },
-  status:        { type: String, enum: ['idle', 'building', 'live', 'failed', 'stopped'], default: 'idle' },
+  status:        { type: String, enum: ['idle', 'building', 'live', 'failed', 'stopped', 'suspended'], default: 'idle' },
   webhookId:     { type: String },
   lastDeployedAt: { type: Date },
   lastImageTag:  { type: String },   // last successful image — used for --cache-from on next build

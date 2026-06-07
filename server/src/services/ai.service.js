@@ -14,7 +14,7 @@ const CONFIG = {
 const VALID_STACKS = new Set([
   'react', 'vue', 'svelte', 'astro', 'angular',
   'node', 'mern', 'static', 'next', 'nuxt',
-  'fullstack-split', 'unknown'
+  'fullstack-split', 'python', 'go', 'rust', 'ruby', 'java', 'php', 'dotnet', 'unknown'
 ]);
 
 // ─── HTTP Client ───────────────────────────────────────────────────────────────
@@ -268,24 +268,31 @@ Rules:
  */
 const detectStackWithAI = async (fileList, packageJsonContent) => {
   const systemPrompt = `You are a project stack detection API for a deployment platform.
-Analyze the file list and package.json and determine the exact framework.
+Analyze the file list and package.json and determine the exact framework or language stack.
 
 Return ONLY a valid JSON object: { "stack": "<value>", "confidence": <0-100> }
 
-Valid stack values: "react", "vue", "svelte", "astro", "angular", "node", "mern", "static", "next", "nuxt", "fullstack-split", "unknown"
+Valid stack values: "react", "vue", "svelte", "astro", "angular", "node", "mern", "static", "next", "nuxt", "fullstack-split", "python", "go", "rust", "ruby", "java", "php", "dotnet", "unknown"
 
 Detection rules:
-- "next" if next.js dependency present
-- "nuxt" if nuxt dependency present
-- "astro" if astro dependency present
-- "svelte" if svelte or @sveltejs/kit present
-- "vue" if vue dependency present (and not nuxt)
-- "angular" if @angular/core present
-- "react" if react present (and not next/mern)
-- "mern" if express + react both present
+- "go" if go.mod exists
+- "rust" if Cargo.toml exists
+- "java" if pom.xml or build.gradle exists
+- "ruby" if Gemfile exists
+- "python" if requirements.txt, Pipfile, or pyproject.toml exists
+- "php" if composer.json exists
+- "dotnet" if .sln or .csproj exists
+- "next" if next.js dependency present in package.json
+- "nuxt" if nuxt dependency present in package.json
+- "astro" if astro dependency present in package.json
+- "svelte" if svelte or @sveltejs/kit present in package.json
+- "vue" if vue dependency present in package.json (and not nuxt)
+- "angular" if @angular/core present in package.json
+- "react" if react present in package.json (and not next/mern)
+- "mern" if express + react both present in package.json
 - "fullstack-split" if both a frontend dir (client/frontend) and backend dir (server/backend) exist
-- "node" if express/fastify present without react
-- "static" if only HTML/CSS/JS files, no package.json dependencies
+- "node" if express/fastify present in package.json without react
+- "static" if only HTML/CSS/JS files, no package.json or backend config files
 - "unknown" if you cannot determine with confidence`;
 
   const safeFiles = Array.isArray(fileList) ? fileList.slice(0, 120).join(', ') : '';

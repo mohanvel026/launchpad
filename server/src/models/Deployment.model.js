@@ -13,6 +13,7 @@ const deploymentSchema = new mongoose.Schema({
   startedAt:      { type: Date },
   finishedAt:     { type: Date },
   duration:       { type: Number },  // milliseconds
+  estimatedDuration: { type: Number }, // seconds
   isAutoHeal:     { type: Boolean, default: false },
   parentDeployment: { type: mongoose.Schema.Types.ObjectId, ref: 'Deployment' },
   autoHealFixDescription: { type: String },

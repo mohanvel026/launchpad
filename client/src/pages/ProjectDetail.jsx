@@ -267,6 +267,65 @@ const NODE_DESCRIPTIONS = {
   }
 };
 
+const BuildCountdownTimer = ({ startedAt, estimatedDuration }) => {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!startedAt) return;
+    const start = new Date(startedAt).getTime();
+    
+    const tick = () => {
+      const diff = Math.max(0, Math.floor((Date.now() - start) / 1000));
+      setElapsed(diff);
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [startedAt]);
+
+  const duration = estimatedDuration || 120; // fallback 2 mins
+  const remaining = Math.max(0, duration - elapsed);
+  const percent = Math.min(100, (elapsed / duration) * 100);
+
+  const formatTime = (sec) => {
+    if (sec < 60) return `${sec}s`;
+    return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+  };
+
+  return (
+    <div className="lp-card glass fade-in" style={{
+      padding: '16px 20px',
+      border: '1px solid rgba(56, 189, 248, 0.2)',
+      background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(30, 41, 59, 0.6) 100%)',
+      borderRadius: 12,
+      marginBottom: 16
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          ⚡ Live Build Estimation
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: remaining > 0 ? 'var(--accent-primary)' : '#10b981' }}>
+          {remaining > 0 ? `Estimated remaining: ${formatTime(remaining)}` : 'Build finishing up...'}
+        </span>
+      </div>
+      <div style={{ width: '100%', height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
+        <div style={{
+          width: `${percent}%`,
+          height: '100%',
+          background: 'linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)',
+          transition: 'width 1s linear',
+          boxShadow: '0 0 8px rgba(56, 189, 248, 0.4)'
+        }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}>
+        <span>Elapsed: {formatTime(elapsed)}</span>
+        <span>Total Est: {formatTime(duration)}</span>
+      </div>
+    </div>
+  );
+};
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -356,22 +415,11 @@ export default function ProjectDetail() {
   const [currentStep, setCurrentStep] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
+  const [showSandboxGuide, setShowSandboxGuide] = useState(true);
   
   const isPausedRef = useRef(isPaused);
   const speedRef = useRef(simulationSpeed);
   const activeSimulationRef = useRef(activeSimulation);
-
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-  }, [isPaused]);
-
-  useEffect(() => {
-    speedRef.current = simulationSpeed;
-  }, [simulationSpeed]);
-
-  useEffect(() => {
-    activeSimulationRef.current = activeSimulation;
-  }, [activeSimulation]);
 
 
   // 🔐 Env Vault — AI missing variable scanner
@@ -382,6 +430,7 @@ export default function ProjectDetail() {
   const logsEndRef = useRef(null);
   const runtimeLogsEndRef = useRef(null);
   const socketRef  = useRef(null);
+  const connectingRef = useRef(null);
   const pollRef    = useRef(null);
   const chatEndRef = useRef(null);
 
@@ -436,11 +485,13 @@ Use bold headers, lists, code blocks, or tables to format your response.`;
     if (simulationLoading && mode === 'auto') return;
 
     setActiveSimulation(scenarioKey);
+    activeSimulationRef.current = scenarioKey; // Sync Ref to prevent race condition
     setStepMode(mode);
     setSimulationResponse('');
     setSimulationSteps([]);
     setCurrentStep(0);
     setIsPaused(false);
+    isPausedRef.current = false; // Sync Ref synchronously to bypass React scheduling delay
     setSimulationLoading(true);
 
     const domain = project?.subdomain ? `${project.subdomain}.launchlive.in` : 'app.launchlive.in';
@@ -451,10 +502,16 @@ Use bold headers, lists, code blocks, or tables to format your response.`;
       for (let i = 0; i < steps.length; i++) {
         while (isPausedRef.current) {
           await new Promise(resolve => setTimeout(resolve, 100));
-          if (activeSimulationRef.current !== scenarioKey) return;
+          if (activeSimulationRef.current !== scenarioKey) {
+            setSimulationLoading(false);
+            return;
+          }
         }
 
-        if (activeSimulationRef.current !== scenarioKey) return;
+        if (activeSimulationRef.current !== scenarioKey) {
+          setSimulationLoading(false);
+          return;
+        }
 
         setCurrentStep(i);
         setSimulationSteps(steps.slice(0, i + 1));
@@ -462,12 +519,18 @@ Use bold headers, lists, code blocks, or tables to format your response.`;
         const delay = 850 / speedRef.current;
         await new Promise(resolve => setTimeout(resolve, delay));
         
-        if (activeSimulationRef.current !== scenarioKey) return;
+        if (activeSimulationRef.current !== scenarioKey) {
+          setSimulationLoading(false);
+          return;
+        }
       }
       
       while (isPausedRef.current) {
         await new Promise(resolve => setTimeout(resolve, 100));
-        if (activeSimulationRef.current !== scenarioKey) return;
+        if (activeSimulationRef.current !== scenarioKey) {
+          setSimulationLoading(false);
+          return;
+        }
       }
       
       await finishSimulation(scenarioKey);
@@ -480,10 +543,12 @@ Use bold headers, lists, code blocks, or tables to format your response.`;
 
   const handleResetSimulation = () => {
     setActiveSimulation(null);
+    activeSimulationRef.current = null; // Sync Ref to cancel loop immediately
     setSimulationSteps([]);
     setSimulationResponse('');
     setSimulationLoading(false);
     setIsPaused(false);
+    isPausedRef.current = false; // Sync Ref synchronously
     setCurrentStep(0);
   };
 
@@ -686,7 +751,9 @@ Use bold headers, bullet lists, and code blocks.`;
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
     });
-    socket.emit('join:runtime-logs', id);
+    socket.on('connect', () => {
+      socket.emit('join:runtime-logs', id);
+    });
     socket.on('runtime-log', ({ line }) => {
       setRuntimeLogs(prev => [...prev, line]);
     });
@@ -703,6 +770,57 @@ Use bold headers, bullet lists, and code blocks.`;
       clearInterval(pollRef.current);
     };
   }, [loadProject, loadDeployments, loadEnvVars]);
+
+  // Auto-resume polling and live log connection if a build is active on page load/refresh
+  useEffect(() => {
+    const latestDep = deployments?.[0];
+    if (latestDep && (latestDep.status === 'building' || latestDep.status === 'queued')) {
+      setDeploying(true);
+      
+      // Auto-connect to live logs if activeTab is logs
+      if (activeTab === 'logs' && (!socketRef.current || socketRef.current.disconnected)) {
+        connectToLogs(latestDep._id);
+      }
+
+      if (!pollRef.current) {
+        pollRef.current = setInterval(async () => {
+          try {
+            const r = await api.get(`/deploy/${id}`);
+            const updated = r.data.deployments || [];
+            setDeployments(updated);
+            
+            const latest = updated[0];
+            if (latest) {
+              const detailRes = await api.get(`/deploy/${id}/${latest._id}`);
+              setActiveDeployment(detailRes.data.deployment);
+            }
+            
+            if (latest?.status === 'success' || latest?.status === 'failed') {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+              setDeploying(false);
+              loadProject();
+            }
+          } catch (err) {
+            console.error('Failed to poll deployment status:', err);
+          }
+        }, 3000);
+      }
+    } else {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }
+  }, [deployments?.[0]?.status, deployments?.[0]?._id, activeTab, id, loadProject]);
+
+  // Auto-switch to logs tab if a build is active on page load/refresh
+  useEffect(() => {
+    const latestDep = deployments?.[0];
+    if (latestDep && (latestDep.status === 'building' || latestDep.status === 'queued')) {
+      setActiveTab('logs');
+    }
+  }, [deployments?.[0]?._id, deployments?.[0]?.status]);
 
 
 
@@ -743,27 +861,38 @@ Use bold headers, bullet lists, and code blocks.`;
   }, [architectMessages, guideSubTab]);
 
   const connectToLogs = async (deploymentId) => {
-    socketRef.current?.disconnect();
-    setLogs([]);
+    if (connectingRef.current === deploymentId) return;
+    connectingRef.current = deploymentId;
 
-    // Fetch any logs already stored in DB (handles page refresh / mid-build reconnect)
     try {
-      const r = await api.get(`/deploy/${id}/${deploymentId}`);
-      const stored = r.data.deployment?.logs || [];
-      if (stored.length > 0) setLogs(stored);
-    } catch { /* no stored logs yet */ }
+      socketRef.current?.disconnect();
+      setLogs([]);
 
-    // Connect socket for live streaming of future log lines
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
-    const socket = io(socketUrl, {
-      transports: ['websocket', 'polling'],  // polling fallback if nginx doesn't upgrade WS
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
-    socket.emit('join:deployment', deploymentId);
-    socket.on('log', ({ line }) => setLogs(prev => [...prev, line]));
-    socket.on('connect_error', (err) => console.warn('Socket error:', err.message));
-    socketRef.current = socket;
+      // Fetch any logs already stored in DB (handles page refresh / mid-build reconnect)
+      try {
+        const r = await api.get(`/deploy/${id}/${deploymentId}`);
+        const stored = r.data.deployment?.logs || [];
+        if (stored.length > 0) setLogs(stored);
+      } catch (err) {
+        console.warn('Failed to fetch stored logs from DB:', err.message);
+      }
+
+      // Connect socket for live streaming of future log lines
+      const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+      const socket = io(socketUrl, {
+        transports: ['websocket', 'polling'],  // polling fallback if nginx doesn't upgrade WS
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+      });
+      socket.on('connect', () => {
+        socket.emit('join:deployment', deploymentId);
+      });
+      socket.on('log', ({ line }) => setLogs(prev => [...prev, line]));
+      socket.on('connect_error', (err) => console.warn('Socket error:', err.message));
+      socketRef.current = socket;
+    } finally {
+      connectingRef.current = null;
+    }
   };
 
 
@@ -823,6 +952,10 @@ Use bold headers, bullet lists, and code blocks.`;
     setActiveTab('logs');
     setActiveDeployment(dep);
     setShowDiff(false);
+    if (dep.status === 'building' || dep.status === 'queued') {
+      connectToLogs(dep._id);
+      return;
+    }
     try {
       const res = await api.get(`/deploy/${id}/${dep._id}`);
       const fetched = res.data.deployment;
@@ -1624,6 +1757,12 @@ Use bold headers, bullet lists, and code blocks.`;
                   </div>
                 )}
               </div>
+            )}
+            {deploying && (deployments?.[0] || activeDeployment) && (
+              <BuildCountdownTimer 
+                startedAt={(deployments?.[0] || activeDeployment)?.startedAt || (deployments?.[0] || activeDeployment)?.createdAt}
+                estimatedDuration={(deployments?.[0] || activeDeployment)?.estimatedDuration}
+              />
             )}
             <div className="lp-terminal">
               <div className="lp-terminal-header">
@@ -2604,6 +2743,56 @@ Use bold headers, bullet lists, and code blocks.`;
               {/* Sub-tab 3: DevOps Sandbox (Visual Simulation) */}
               {guideSubTab === 'sandbox' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24 }}>
+                  {/* Quick Start Guide */}
+                  {showSandboxGuide && (
+                    <div className="lp-card glass fade-in" style={{
+                      padding: 20,
+                      border: '1px solid rgba(129, 140, 248, 0.2)',
+                      background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.4) 0%, rgba(15, 23, 42, 0.4) 100%)',
+                      position: 'relative'
+                    }}>
+                      <button 
+                        onClick={() => setShowSandboxGuide(false)}
+                        style={{
+                          position: 'absolute',
+                          top: 12,
+                          right: 12,
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          fontSize: 16,
+                          cursor: 'pointer'
+                        }}
+                        title="Dismiss Guide"
+                      >
+                        ✕
+                      </button>
+                      
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                        <span style={{ fontSize: 24 }}>📖</span>
+                        <div>
+                          <h4 style={{ fontSize: 15, fontWeight: 800, color: '#fff', marginBottom: 8 }}>
+                            DevOps Sandbox — Quick Start Tutorial
+                          </h4>
+                          <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+                            Welcome to the DevOps Sandbox! This interactive simulator lets you trigger real-world production outages and watch LaunchLive's <strong>Zero-Touch Self-Healing system</strong> diagnose and repair them automatically.
+                          </p>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, fontSize: 12.5, color: 'var(--text-dim)' }}>
+                            <div style={{ background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 8 }}>
+                              <strong>1. SRE Flow Diagram:</strong> Click any of the nodes (e.g. 💻 Developer, 🧠 AI SRE Agent) to learn what that part of the infrastructure does under the hood.
+                            </div>
+                            <div style={{ background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 8 }}>
+                              <strong>2. Choose a Mode:</strong> Set the toggle to <strong>Auto-Play</strong> to watch the disaster repair itself, or <strong>Step-by-Step</strong> to click through the steps manually.
+                            </div>
+                            <div style={{ background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 8 }}>
+                              <strong>3. Trigger Outages:</strong> Click any scenario button below (like 💥 <em>Simulate App Crash</em>) and watch the terminal logs and telemetry gauges react in real-time!
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* SRE Infrastructure Flow Diagram */}
                   <div className="lp-card glass" style={{ padding: 24 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -2754,11 +2943,22 @@ Use bold headers, bullet lists, and code blocks.`;
                   {/* DevOps Simulator & Controls */}
                   <div className="lp-card glass" style={{ padding: 24 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
-                      <div>
-                        <h3 style={{ fontSize: 16, color: '#fff' }}>🎮 DevOps & SRE Incident Simulator</h3>
-                        <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
-                          Run simulated production outages and watch LaunchLive self-heal.
-                        </p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                        <div>
+                          <h3 style={{ fontSize: 16, color: '#fff' }}>🎮 DevOps & SRE Incident Simulator</h3>
+                          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
+                            Run simulated production outages and watch LaunchLive self-heal.
+                          </p>
+                        </div>
+                        {!showSandboxGuide && (
+                          <button
+                            onClick={() => setShowSandboxGuide(true)}
+                            className="lp-btn-secondary"
+                            style={{ padding: '4px 10px', fontSize: 11, alignSelf: 'center' }}
+                          >
+                            📖 Show Guide
+                          </button>
+                        )}
                       </div>
                       
                       {/* Simulation Status Info */}
@@ -2771,7 +2971,10 @@ Use bold headers, bullet lists, and code blocks.`;
                             {[0.5, 1, 2].map(speed => (
                               <button
                                 key={speed}
-                                onClick={() => setSimulationSpeed(speed)}
+                                onClick={() => {
+                                  setSimulationSpeed(speed);
+                                  speedRef.current = speed;
+                                }}
                                 style={{
                                   padding: '2px 6px',
                                   fontSize: 10,
@@ -2869,7 +3072,11 @@ Use bold headers, bullet lists, and code blocks.`;
                           <div style={{ display: 'flex', gap: 8 }}>
                             {stepMode === 'auto' && (
                               <button
-                                onClick={() => setIsPaused(!isPaused)}
+                                onClick={() => {
+                                  const nextPaused = !isPaused;
+                                  setIsPaused(nextPaused);
+                                  isPausedRef.current = nextPaused;
+                                }}
                                 className="lp-btn-secondary"
                                 style={{ padding: '6px 12px', fontSize: 12 }}
                               >
