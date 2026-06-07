@@ -133,8 +133,13 @@ const selfHealingPage = (host) => `<!DOCTYPE html>
 const extractSubdomain = (host) => {
   const h = host.toLowerCase().split(':')[0]; // strip port
 
+  const ip = process.env.SERVER_IP || '';
+  const isIpRoot = ip && (h === ip.toLowerCase() || h === `${ip}.nip.io`.toLowerCase());
+
   // Root domain — LaunchLive dashboard itself
-  if (h === DOMAIN) return { subdomain: null, isCustomDomain: false, isRoot: true };
+  if (h === DOMAIN || h === 'localhost' || h === '127.0.0.1' || isIpRoot) {
+    return { subdomain: null, isCustomDomain: false, isRoot: true };
+  }
 
   // Project subdomain: host ends with .DOMAIN
   if (h.endsWith(`.${DOMAIN}`)) {
@@ -143,6 +148,15 @@ const extractSubdomain = (host) => {
     // We allow dashes but NOT nested dots (prevent double-subdomain confusion)
     if (!sub || sub.includes('.')) {
       // Multi-level subdomain under our domain — not a valid project slug
+      return { subdomain: null, isCustomDomain: false, isRoot: false };
+    }
+    return { subdomain: sub, isCustomDomain: false, isRoot: false };
+  }
+
+  // Also support project subdomains using the IP-based nip.io domain
+  if (ip && h.endsWith(`.${ip}.nip.io`)) {
+    const sub = h.slice(0, -(`${ip}.nip.io`.length + 1));
+    if (!sub || sub.includes('.')) {
       return { subdomain: null, isCustomDomain: false, isRoot: false };
     }
     return { subdomain: sub, isCustomDomain: false, isRoot: false };
@@ -224,11 +238,12 @@ const projectProxyMiddleware = async (req, res, next) => {
       }
     }
 
-    // ── Windows dev mode: serve static files directly ─────────────────────────
+    // ── Windows dev mode & Static container fallback: serve static files directly ──
     const isWindows = process.platform === 'win32';
     const isStaticStack = ['static', 'react', 'vue', 'svelte', 'astro', 'angular'].includes(stack);
+    const directServe = isWindows || containerId === 'local-static' || !port;
 
-    if (isWindows && isStaticStack) {
+    if (directServe && isStaticStack) {
       const fs = require('fs');
       const path = require('path');
       const repoPath = path.join(__dirname, '../../repos', projectId);
@@ -243,7 +258,18 @@ const projectProxyMiddleware = async (req, res, next) => {
         let targetPath = path.join(buildDir, req.path);
         if (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory()) {
           const idx = path.join(targetPath, 'index.html');
-          targetPath = fs.existsSync(idx) ? idx : targetPath;
+          if (fs.existsSync(idx)) {
+            targetPath = idx;
+          } else {
+            // Fallback to first .html file if index.html doesn't exist
+            try {
+              const files = fs.readdirSync(targetPath);
+              const htmlFile = files.find(f => f.toLowerCase().endsWith('.html'));
+              if (htmlFile) {
+                targetPath = path.join(targetPath, htmlFile);
+              }
+            } catch (err) {}
+          }
         }
         if (!fs.existsSync(targetPath)) {
           if (fs.existsSync(targetPath + '.html')) targetPath = targetPath + '.html';
