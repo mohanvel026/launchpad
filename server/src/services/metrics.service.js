@@ -18,6 +18,10 @@ const getRedis = async () => {
       socket: {
         host: process.env.REDIS_HOST || '127.0.0.1',
         port: parseInt(process.env.REDIS_PORT) || 6379,
+        reconnectStrategy: (retries) => {
+          if (retries > 10) return new Error('Redis connection retries exhausted');
+          return Math.min(retries * 100, 3000);
+        }
       },
     });
     client.on('error', (err) => console.warn('Redis metrics error:', err.message));

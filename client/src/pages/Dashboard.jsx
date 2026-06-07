@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState('');
   const [recentActivity, setRecentActivity] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
 
   useEffect(() => {
     if (!loading && user) {
@@ -153,12 +154,72 @@ export default function Dashboard() {
             </div>
 
             {/* Project Grid */}
-            {filtered.length === 0 ? (
+            {projects.length === 0 ? (
+              <div className="lp-card glass" style={{
+                padding: '48px 40px',
+                textAlign: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 24,
+                border: '1px solid var(--border)',
+                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, rgba(129, 140, 248, 0.03) 100%)',
+                borderRadius: 20,
+                maxWidth: 600,
+                margin: '40px auto 0'
+              }}>
+                <div style={{
+                  width: 64, height: 64, borderRadius: 16,
+                  background: 'var(--gradient-glow)',
+                  border: '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 28, color: 'var(--accent-primary)',
+                  boxShadow: '0 0 30px rgba(56, 189, 248, 0.15)',
+                  marginBottom: 8
+                }}>
+                  🚀
+                </div>
+                <div>
+                  <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8, letterSpacing: '-0.02em' }}>Welcome to LaunchLive!</h2>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.6, maxWidth: 460 }}>
+                    Your next-gen developer platform is ready. Connect a GitHub repository to automatically build, secure, and deploy your web applications with SRE health monitoring.
+                  </p>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: 12,
+                  width: '100%',
+                  textAlign: 'left',
+                  margin: '8px 0'
+                }}>
+                  {[
+                    { step: '1', title: 'Connect GitHub', desc: 'Authorize and list repositories' },
+                    { step: '2', title: 'Auto Stack Detect', desc: 'Framework & env vars auto-discovered' },
+                    { step: '3', title: 'Push to Deploy', desc: 'Automatic builds on every commit' }
+                  ].map(s => (
+                    <div key={s.step} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border)', borderRadius: 12, padding: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
+                          {s.step}
+                        </span>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-main)' }}>{s.title}</span>
+                      </div>
+                      <p style={{ color: 'var(--text-dim)', fontSize: 11, lineHeight: 1.4 }}>{s.desc}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <button className="lp-btn-primary" onClick={() => navigate('/projects/new')} style={{ padding: '10px 24px', fontSize: 14 }}>
+                  Deploy Your First Project →
+                </button>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="lp-card flex-center" style={{ padding: '80px 24px', flexDirection: 'column', gap: 16, borderStyle: 'dashed' }}>
                 <div style={{ fontSize: 40 }}>🚀</div>
-                <h3 style={{ fontWeight: 700 }}>No projects yet</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Connect a repository to start deploying.</p>
-                <button className="lp-btn-primary" onClick={() => navigate('/projects/new')}>Deploy First App</button>
+                <h3 style={{ fontWeight: 700 }}>No projects found</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Try searching with a different term.</p>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 16 }}>
@@ -178,7 +239,7 @@ export default function Dashboard() {
                             <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>{project.repoFullName}</div>
                           </div>
                         </div>
-                        <span className={`lp-badge ${project.status || 'idle'}`}>{project.status || 'idle'}</span>
+                        <span className={`lp-badge ${project.status || 'idle'} ${project.status === 'building' ? 'animate-pulse-gold' : ''}`}>{project.status || 'idle'}</span>
                       </div>
 
                       {/* Status indicators row */}
@@ -429,8 +490,39 @@ export default function Dashboard() {
                             background: 'rgba(56,189,248,0.08)', color: '#38bdf8',
                             border: '1px solid rgba(56,189,248,0.15)',
                           }}>
-                            {dep.projectName}
+                            {dep.project?.name || dep.projectName}
                           </span>
+                          {dep.project && (dep.project.subdomain || dep.project.customDomain) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const liveUrl = dep.project.customDomain 
+                                  ? `https://${dep.project.customDomain}` 
+                                  : `https://${dep.project.subdomain}.${import.meta.env.VITE_DOMAIN || 'launchlive.in'}`;
+                                navigator.clipboard.writeText(liveUrl);
+                                setCopiedId(dep._id);
+                                setTimeout(() => setCopiedId(null), 2000);
+                              }}
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                padding: 4, color: 'var(--text-dim)', borderRadius: 4, transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent-primary)'; e.currentTarget.style.background = 'rgba(56,189,248,0.08)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-dim)'; e.currentTarget.style.background = 'none'; }}
+                              title="Copy Live URL"
+                            >
+                              {copiedId === dep._id ? (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                              ) : (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                              )}
+                            </button>
+                          )}
                           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 4 }}>
                             {dep.branch || 'main'}
                           </span>
@@ -448,7 +540,7 @@ export default function Dashboard() {
                       {/* Right side */}
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
                         <span
-                          className={`lp-badge ${dep.status === 'success' ? 'success' : dep.status === 'failed' ? 'failed' : dep.status === 'building' ? 'building' : 'idle'}`}
+                          className={`lp-badge ${dep.status === 'success' ? 'success' : dep.status === 'failed' ? 'failed' : dep.status === 'building' ? 'building' : 'idle'} ${dep.status === 'building' ? 'animate-pulse-gold' : ''}`}
                         >
                           {dep.status}
                         </span>

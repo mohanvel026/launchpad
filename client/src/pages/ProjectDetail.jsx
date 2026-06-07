@@ -26,6 +26,7 @@ const SIDEBAR_GROUPS = [
     items: [
       { id: 'ai',           label: 'AI Co-Pilot',  icon: '🤖' },
       { id: 'advisor',      label: 'AI Advisor',   icon: '🧠' },
+      { id: 'guide',        label: 'How It Works', icon: '📖' },
     ]
   },
   {
@@ -135,6 +136,8 @@ export default function ProjectDetail() {
   const [newPreviewPR, setNewPreviewPR] = useState('');
   const [newPreviewBranch, setNewPreviewBranch] = useState('');
   const [creatingPreview, setCreatingPreview] = useState(false);
+  const [branches, setBranches] = useState([]);
+  const [loadingBranches, setLoadingBranches] = useState(false);
 
   // 🔐 Env Vault — AI missing variable scanner
   const [missingVars, setMissingVars] = useState(null); // null = not scanned, [] = none found
@@ -146,11 +149,27 @@ export default function ProjectDetail() {
   const socketRef  = useRef(null);
   const pollRef    = useRef(null);
 
+  const fetchBranches = useCallback(async (repoFullName) => {
+    if (!repoFullName) return;
+    setLoadingBranches(true);
+    try {
+      const res = await api.post('/projects/repos/analyze', { repoFullName });
+      if (res.data && res.data.branches) {
+        setBranches(res.data.branches);
+      }
+    } catch (err) {
+      console.warn('Failed to load repo branches:', err.message);
+    } finally {
+      setLoadingBranches(false);
+    }
+  }, []);
+
   const loadProject = useCallback(async () => {
     try {
       const r = await api.get(`/projects/${id}`);
       const p = r.data.project;
       setProject(p);
+      fetchBranches(p.repoFullName);
       setCpuLimit(p.cpuLimit || 0.5);
       setRamLimitMB(p.ramLimitMB || 256);
       setSettings({
@@ -162,7 +181,7 @@ export default function ProjectDetail() {
         autoHealStrategy: p.autoHealStrategy || 'push-on-success',
       });
     } catch { navigate('/dashboard'); }
-  }, [id, navigate]);
+  }, [id, navigate, fetchBranches]);
 
   const loadDeployments = useCallback(() =>
     api.get(`/deploy/${id}`).then(r => setDeployments(r.data.deployments || [])).catch(() => {}),
@@ -743,6 +762,37 @@ export default function ProjectDetail() {
             )}
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {branches.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-dim)', fontWeight: 600 }}>SWITCH BRANCH:</span>
+                <select
+                  value={project?.branch || 'main'}
+                  onChange={async (e) => {
+                    const newBranch = e.target.value;
+                    if (window.confirm(`Are you sure you want to switch branch to "${newBranch}" and deploy?`)) {
+                      try {
+                        setDeploying(true);
+                        await api.patch(`/projects/${id}`, { branch: newBranch });
+                        setProject(prev => ({ ...prev, branch: newBranch }));
+                        setSettings(prev => ({ ...prev, branch: newBranch }));
+                        handleDeploy();
+                      } catch (err) {
+                        alert(err.response?.data?.message || 'Failed to switch branch and deploy');
+                      } finally {
+                        setDeploying(false);
+                      }
+                    }
+                  }}
+                  className="lp-input"
+                  style={{ width: 140, padding: '4px 10px', height: 32, fontSize: 13, background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-main)', cursor: 'pointer', borderRadius: 6 }}
+                  disabled={deploying}
+                >
+                  {branches.map(b => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {deployUrl && (
               <a href={deployUrl} target="_blank" rel="noreferrer" className="lp-btn-secondary" style={{ padding: '6px 14px', fontSize: 13 }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -1257,12 +1307,25 @@ export default function ProjectDetail() {
                 ].map(({ label, key, placeholder, mono }) => (
                   <div key={key}>
                     <div className="lp-section-label">{label}</div>
-                    <input
-                      value={settings[key]}
-                      onChange={e => setSettings(s => ({ ...s, [key]: e.target.value }))}
-                      placeholder={placeholder}
-                      className={`lp-input${mono ? ' lp-input-mono' : ''}`}
-                    />
+                    {key === 'branch' && branches.length > 0 ? (
+                      <select
+                        value={settings.branch}
+                        onChange={e => setSettings(s => ({ ...s, branch: e.target.value }))}
+                        className="lp-input"
+                        style={{ background: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border)' }}
+                      >
+                        {branches.map(b => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={settings[key]}
+                        onChange={e => setSettings(s => ({ ...s, [key]: e.target.value }))}
+                        placeholder={placeholder}
+                        className={`lp-input${mono ? ' lp-input-mono' : ''}`}
+                      />
+                    )}
                   </div>
                 ))}
 
@@ -1479,6 +1542,69 @@ export default function ProjectDetail() {
           </div>
         )}
 
+        {/* ── Automation Guide ── */}
+        {activeTab === 'guide' && (
+          <div className="fade-in" style={{ display: 'grid', gap: 20, maxWidth: 900 }}>
+            <div className="lp-card glass" style={{
+              padding: 32,
+              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, rgba(129, 140, 248, 0.03) 100%)',
+              borderLeft: '4px solid var(--accent-primary)',
+            }}>
+              <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8, letterSpacing: '-0.02em', margin: 0 }}>How LaunchLive Automates Your DevOps & SRE</h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.6, maxWidth: 680, margin: '8px 0 0 0' }}>
+                LaunchLive runs SRE monitoring, zero-downtime server scaling, and automated code healing in the background. Here is a breakdown of the core systems and how they handle automation.
+              </p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+              {[
+                {
+                  title: '🤖 AI Auto-Healing & Self-Correction',
+                  desc: 'If your application crashes or fails during build, the LaunchLive health monitor triggers the AI agent. The AI inspects the build/runtime logs, writes a code fix patch, verifies it locally inside a test container, and applies it directly. Based on your settings, it can also automatically open a GitHub Pull Request.',
+                  trigger: 'Triggered by: Docker container exit / Webhook build failures'
+                },
+                {
+                  title: '🔍 Ephemeral PR Preview Environments',
+                  desc: 'When you open a Pull Request on GitHub, LaunchLive receives a webhook event. It automatically clones the PR branch, isolates its database variables, builds a preview Docker container, and comments the unique live URL directly on your GitHub PR. When the PR is merged or closed, it automatically destroys the container to save resources.',
+                  trigger: 'Triggered by: GitHub webhook pull_request events'
+                },
+                {
+                  title: '⚡ Zero-Downtime Container Scaling',
+                  desc: 'When you resize resource limits (CPU/RAM bounds), LaunchLive performs an SRE hot-swap. It boots a new container running the active image with the new resource constraints, verifies the internal port is ready, updates the Nginx reverse proxy routing, and finally shuts down the old container. Your app stays 100% online.',
+                  trigger: 'Triggered by: Saving resource limits in settings'
+                },
+                {
+                  title: '🛡️ Dependency & Security Scanning',
+                  desc: 'LaunchLive automatically audits your package-lock.json/yarn.lock files on every deployment. If it detects vulnerabilities (CVEs), it assesses the threat level. The SRE agent then generates verified upgrade patches using AI, letting you secure your codebase with a single click.',
+                  trigger: 'Triggered by: Code checkouts / Deployment builds'
+                },
+                {
+                  title: '🌐 Zero-Downtime SSL & DNS Routing',
+                  desc: 'When you create a project, LaunchLive registers the DNS record on Cloudflare and uses Certbot to provision Let\'s Encrypt SSL. A background cron job runs every Monday at 3:00 AM to automatically renew certificates, ensuring your applications never lose HTTPS.',
+                  trigger: 'Triggered by: Project creation / Weekly cron schedule'
+                },
+                {
+                  title: '📈 Observability & Live Analytics',
+                  desc: 'A Redis-backed sliding window tracks response times, error rates, and route access logs in real-time. This telemetry data is piped directly into your dashboard, enabling the health worker to detect anomalies and trigger restarts before users experience downtime.',
+                  trigger: 'Triggered by: Node.js proxy middleware interceptor'
+                }
+              ].map((g, i) => (
+                <div key={i} className="lp-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <h4 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>{g.title}</h4>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6, flex: 1, margin: 0 }}>{g.desc}</p>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, color: 'var(--accent-primary)',
+                    background: 'rgba(56, 189, 248, 0.08)', padding: '6px 12px', borderRadius: 8,
+                    border: '1px solid rgba(56, 189, 248, 0.15)', marginTop: 8
+                  }}>
+                    {g.trigger}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Domains ── */}
         {activeTab === 'domains' && (
           <div className="fade-in">
@@ -1604,6 +1730,12 @@ export default function ProjectDetail() {
         {/* ── Security Scanner ── */}
         {activeTab === 'security' && (
           <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div className="lp-card glass" style={{ padding: 20, borderLeft: '4px solid #f87171', background: 'linear-gradient(135deg, rgba(248, 113, 113, 0.04) 0%, rgba(251, 191, 36, 0.01) 100%)' }}>
+              <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, margin: 0 }}>🛡️ Automated Vulnerability Scanner & CVE Patching</h4>
+              <p style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5, margin: 0 }}>
+                <strong>How it works:</strong> LaunchLive automatically scans your dependencies for known vulnerabilities (CVEs) on every build. When security threats are found, you can generate verified AI patches that upgrade packages or resolve issues with one click.
+              </p>
+            </div>
             <div className="lp-card glass" style={{ padding: 28, borderLeft: '4px solid #f87171', background: 'linear-gradient(135deg, rgba(248,113,113,0.05) 0%, rgba(251,191,36,0.02) 100%)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
                 <div>
@@ -1701,6 +1833,12 @@ export default function ProjectDetail() {
         {/* ── PR Previews ── */}
         {activeTab === 'previews' && (
           <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <div className="lp-card glass" style={{ padding: 20, borderLeft: '4px solid var(--accent-primary)', background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.04) 0%, rgba(129, 140, 248, 0.01) 100%)' }}>
+              <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, margin: 0 }}>🔍 Ephemeral Pull Request (PR) Preview Environments</h4>
+              <p style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5, margin: 0 }}>
+                <strong>How it works:</strong> LaunchLive listens to your GitHub repository webhooks. When you open a Pull Request (PR), it automatically builds an isolated preview container of that branch and comments the live URL directly on your PR. When you merge or close the PR, the container is automatically deleted to save resources.
+              </p>
+            </div>
             <div className="lp-card glass" style={{ padding: 28 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
                 <div>
@@ -1827,6 +1965,12 @@ export default function ProjectDetail() {
         {/* ── AI Deployment Advisor ── */}
         {activeTab === 'advisor' && (
           <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div className="lp-card glass" style={{ padding: 20, borderLeft: '4px solid #818cf8', background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.04) 0%, rgba(56, 189, 248, 0.01) 100%)' }}>
+              <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, margin: 0 }}>🧠 AI Code Readiness & SRE Advisor</h4>
+              <p style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5, margin: 0 }}>
+                <strong>How it works:</strong> LaunchLive AI scans your repository structure, configuration files, and package dependencies. It calculates a readiness score and uncovers missing environment variables or setup errors before you trigger a deployment to avoid build failures.
+              </p>
+            </div>
             <div className="lp-card glass" style={{ padding: 28, borderLeft: '4px solid #818cf8', background: 'linear-gradient(135deg, rgba(129,140,248,0.06) 0%, rgba(56,189,248,0.03) 100%)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
                 <div>

@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /api/
+Disallow: /projects/
+Disallow: /settings/
+Sitemap: https://launchlive.in/sitemap.xml

@@ -3,6 +3,7 @@ const cors    = require('cors');
 const helmet  = require('helmet');
 const morgan  = require('morgan');
 const path    = require('path');
+const compression = require('compression');
 const { connectDB } = require('./lib/db');
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -107,6 +108,9 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth', authLimiter);
 
+// ── Enable compression for API and proxied responses ──────────────────────────
+app.use(compression());
+
 // ── Project subdomain proxy — MUST be before body parsers ─────────────────────
 // When the Host header is a project subdomain (e.g. portfolio-xyz.nip.io),
 // the request is piped directly to the Docker container and never reaches
@@ -114,7 +118,11 @@ app.use('/api/auth', authLimiter);
 app.use(projectProxyMiddleware);
 
 // ── Body parsers (only reached for requests to 129.159.22.142.nip.io itself) ──
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString('utf-8');
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // ── API Routes ─────────────────────────────────────────────────────────────────

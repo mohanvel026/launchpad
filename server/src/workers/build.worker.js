@@ -213,7 +213,7 @@ buildQueue.process(1, async (job) => {
 
   const deployment = await Deployment.findById(deploymentId);
   const project    = await Project.findById(projectId)
-    .populate('owner', 'email username githubAccessToken');
+    .populate('owner', 'email username githubAccessToken notifyOnDeploy notifyOnCrash');
 
   if (!deployment || !project) throw new Error('Deployment or project not found');
 
@@ -224,7 +224,7 @@ buildQueue.process(1, async (job) => {
   const log = async (msg) => {
     const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
     emitLog(deploymentId, line);
-    await Deployment.findByIdAndUpdate(deploymentId, { $push: { logs: line } });
+    await Deployment.findByIdAndUpdate(deploymentId, { $push: { logs: { $each: [line], $slice: -1000 } } });
   };
 
   await deployment.updateOne({ status: 'building', startedAt: new Date() });
@@ -925,7 +925,7 @@ buildQueue.process(1, async (job) => {
       }
     }
 
-    if (project.owner?.email) {
+    if (project.owner?.email && project.owner.notifyOnDeploy !== false) {
       sendDeployNotification(project.owner.email, {
         projectName: project.name, status: 'success',
         url: liveUrl, commitMsg: deployment.commitMessage,
@@ -1091,10 +1091,10 @@ buildQueue.process(1, async (job) => {
       await log(`ℹ️ A newer successful deployment exists. Keeping project status as 'live'.`);
     }
 
-    if (project.owner?.email) {
+    if (project.owner?.email && project.owner.notifyOnCrash !== false) {
       sendDeployNotification(project.owner.email, {
         projectName: project.name, status: 'failed',
-        url: `${process.env.CLIENT_URL}/projects/${projectId}`,
+        url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/projects/${projectId}`,
         commitMsg: deployment.commitMessage,
       }).catch(() => {});
     }

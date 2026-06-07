@@ -70,4 +70,44 @@ const deleteEnvVar = async (req, res) => {
   }
 };
 
-module.exports = { getEnvVars, setEnvVar, deleteEnvVar };
+// POST /api/env/:projectId/rotate — rotate AES keys for all project variables
+const rotateProjectEnvKeys = async (req, res) => {
+  const { oldKey, newKey } = req.body;
+  if (!oldKey || !newKey) {
+    return res.status(400).json({ message: 'oldKey and newKey are required' });
+  }
+
+  try {
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      owner: req.user._id // Only owner can rotate keys
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const envVars = await EnvVar.find({ project: project._id });
+    let rotatedCount = 0;
+
+    for (const envVar of envVars) {
+      try {
+        // Decrypt with old key
+        const bytes = CryptoJS.AES.decrypt(envVar.value, oldKey);
+        const decryptedValue = bytes.toString(CryptoJS.enc.Utf8);
+        if (!decryptedValue) continue; // Skip if decryption fails (e.g. wrong old key)
+
+        // Encrypt with new key
+        const encryptedValue = CryptoJS.AES.encrypt(decryptedValue, newKey).toString();
+        envVar.value = encryptedValue;
+        await envVar.save();
+        rotatedCount++;
+      } catch (err) {
+        console.warn(`Failed to rotate env var "${envVar.key}":`, err.message);
+      }
+    }
+
+    res.json({ message: `Successfully rotated encryption keys for ${rotatedCount} env vars.`, rotatedCount });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { getEnvVars, setEnvVar, deleteEnvVar, rotateProjectEnvKeys };

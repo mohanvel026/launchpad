@@ -398,6 +398,13 @@ textarea.lp-input {
 }
 .animate-pulse-cyan { animation: pulse-cyan 1.5s infinite; }
 
+@keyframes pulse-gold {
+  0%   { box-shadow: 0 0 0 0 rgba(251,191,36,0.4); }
+  70%  { box-shadow: 0 0 0 10px rgba(251,191,36,0); }
+  100% { box-shadow: 0 0 0 0 rgba(251,191,36,0); }
+}
+.animate-pulse-gold { animation: pulse-gold 1.5s infinite; }
+
 @keyframes fade-in-up {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }

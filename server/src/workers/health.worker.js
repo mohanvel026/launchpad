@@ -13,23 +13,26 @@ const docker = new Docker(
  * Health checker, Inactivity Auto-Sleep, and Docker Image Pruner workers.
  */
 const startHealthChecker = () => {
-  // 1. Check all live projects every 2 minutes for crash recovery
+  // 1. Check all live and sleeping projects every 2 minutes for crash recovery
   cron.schedule('*/2 * * * *', async () => {
     try {
-      const liveProjects = await Project.find({ status: 'live', containerId: { $exists: true, $ne: null } })
-        .populate('owner', 'email username');
+      const liveProjects = await Project.find({
+        status: { $in: ['live', 'sleeping'] },
+        containerId: { $exists: true, $ne: null }
+      }).populate('owner', 'email username notifyOnCrash notifyOnDeploy');
 
       for (const project of liveProjects) {
         try {
           const container = docker.getContainer(project.containerId);
           const info      = await container.inspect();
 
-          if (!info.State.Running) {
+          // Only mark as failed if it's supposed to be running (status: 'live') but isn't
+          if (!info.State.Running && project.status === 'live') {
             console.log(`[Health-Check] Container crashed for project ${project.name} — updating status`);
             await Project.findByIdAndUpdate(project._id, { status: 'failed' });
 
-            // Notify owner
-            if (project.owner?.email) {
+            // Notify owner if they have opt-in notifications
+            if (project.owner?.email && project.owner.notifyOnCrash !== false) {
               await sendDeployNotification(project.owner.email, {
                 projectName: project.name,
                 status:      'failed',
@@ -51,6 +54,18 @@ const startHealthChecker = () => {
     }
   });
   console.log('SRE Health checker worker active (every 2 minutes)');
+
+  // 1.5. Weekly SSL Auto-Renewal (runs every Monday at 3:00 AM)
+  cron.schedule('0 3 * * 1', () => {
+    console.log('[SSL-Renewal-Cron] Running weekly SSL certificate auto-renewal...');
+    try {
+      const { renewAllSSL } = require('../services/ssl.service');
+      renewAllSSL();
+    } catch (err) {
+      console.error('[SSL-Renewal-Cron] Error running auto-renewal:', err.message);
+    }
+  });
+  console.log('SRE SSL auto-renewal worker active (weekly on Mondays at 3:00 AM)');
 
   // 2. Scale-to-Zero Container Auto-Sleep (runs every 5 minutes)
   cron.schedule('*/5 * * * *', async () => {

@@ -11,6 +11,8 @@ export default function Settings() {
   const [token,       setToken]       = useState('');
   const [tokenShown,  setTokenShown]  = useState(false);
   const [email,       setEmail]       = useState('');
+  const [notifyOnDeploy, setNotifyOnDeploy] = useState(true);
+  const [notifyOnCrash,  setNotifyOnCrash]  = useState(true);
   const [deleteInput, setDeleteInput] = useState('');
   const [message,     setMessage]     = useState('');
   const [error,       setError]       = useState('');
@@ -19,15 +21,28 @@ export default function Settings() {
 
   useEffect(() => {
     api.get('/settings/stats')
-      .then((r) => { setStats(r.data.stats); setEmail(user?.email || ''); })
+      .then((r) => { setStats(r.data.stats); })
+      .catch(() => {});
+
+    api.get('/settings/profile')
+      .then((r) => {
+        setEmail(r.data.user?.email || '');
+        setNotifyOnDeploy(r.data.user?.notifyOnDeploy !== false);
+        setNotifyOnCrash(r.data.user?.notifyOnCrash !== false);
+      })
       .catch(() => {});
   }, [user]);
 
   const handleSaveProfile = async () => {
     setSaving(true); setError(''); setMessage('');
     try {
-      await api.put('/settings/profile', { email });
+      const res = await api.put('/settings/profile', { email, notifyOnDeploy, notifyOnCrash });
       setMessage('Profile updated successfully');
+      if (res.data.user) {
+        setEmail(res.data.user.email || '');
+        setNotifyOnDeploy(res.data.user.notifyOnDeploy !== false);
+        setNotifyOnCrash(res.data.user.notifyOnCrash !== false);
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to update profile');
     } finally { setSaving(false); }
@@ -261,8 +276,32 @@ export default function Settings() {
             onChange={(e) => setEmail(e.target.value)}
             type="email"
             placeholder="your@email.com"
-            style={{ marginBottom: 14 }}
+            style={{ marginBottom: 20 }}
           />
+
+          {/* Notification Preferences */}
+          <div style={{ display: 'grid', gap: 12, marginBottom: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Notification preferences</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: 'var(--text-main)' }}>
+              <input
+                type="checkbox"
+                checked={notifyOnDeploy}
+                onChange={(e) => setNotifyOnDeploy(e.target.checked)}
+                style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+              />
+              Email notifications for build success / failure
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: 'var(--text-main)' }}>
+              <input
+                type="checkbox"
+                checked={notifyOnCrash}
+                onChange={(e) => setNotifyOnCrash(e.target.checked)}
+                style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+              />
+              Email alerts for container crashes (health monitor)
+            </label>
+          </div>
+
           <button className="lp-btn-primary" onClick={handleSaveProfile} disabled={saving}>
             {saving ? (
               <>

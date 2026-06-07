@@ -184,14 +184,45 @@ const deleteProject = async (req, res) => {
     
     // Clean up server resources to save storage
     try {
-      const containerName = `lp-${project._id}`;
+      const containerName = `lp-${project._id.toString().slice(-8)}`;
       const repoDir = path.join(__dirname, '../../repos', project._id.toString());
       
-      // Stop and remove docker container, remove repo files, and remove nginx config
+      // Stop and remove docker container, remove repo files
       await execPromise(`docker rm -f ${containerName} || true`);
       await execPromise(`rm -rf ${repoDir} || true`);
-      await execPromise(`sudo rm -f /etc/nginx/sites-enabled/${project.subdomain}.conf || true`);
-      await execPromise(`sudo systemctl reload nginx || true`);
+      
+      // Remove Nginx configuration
+      try {
+        const { removeNginxConfig } = require('../services/nginx.service');
+        removeNginxConfig(project.subdomain);
+      } catch (nginxErr) {
+        console.error('Failed to clean up Nginx config:', nginxErr.message);
+      }
+
+      // Remove DNS record from Cloudflare
+      try {
+        const { deleteSubdomain } = require('../services/cloudflare.service');
+        if (project.dnsRecordId) {
+          await deleteSubdomain(project.dnsRecordId);
+        }
+      } catch (dnsErr) {
+        console.error('Failed to clean up Cloudflare DNS:', dnsErr.message);
+      }
+
+      // Revoke SSL certificate
+      try {
+        const { revokeSSL } = require('../services/ssl.service');
+        revokeSSL(project.subdomain);
+      } catch (sslErr) {
+        console.error('Failed to revoke SSL:', sslErr.message);
+      }
+
+      // Delete associated EnvVar and Deployment database records
+      const EnvVar = require('../models/EnvVar.model');
+      const Deployment = require('../models/Deployment.model');
+      await EnvVar.deleteMany({ project: project._id });
+      await Deployment.deleteMany({ project: project._id });
+
     } catch (cleanupErr) {
       console.error('Failed to cleanup project resources:', cleanupErr);
     }

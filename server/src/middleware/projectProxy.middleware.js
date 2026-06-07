@@ -27,11 +27,12 @@ const lookupPort = async (identifier, isCustomDomain = false) => {
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached;
 
   const query = isCustomDomain ? { customDomain: identifier } : { subdomain: identifier };
-  const project = await Project.findOne(query, 'port status stack containerId').lean();
+  const project = await Project.findOne(query, 'port status stack containerId subdomain').lean();
   if (project && (project.port !== undefined || project.status === 'live' || project.status === 'sleeping')) {
     const data = {
       port: project.port || 0,
       projectId: project._id.toString(),
+      subdomain: project.subdomain,
       stack: project.stack || 'unknown',
       status: project.status,
       containerId: project.containerId,
@@ -45,7 +46,13 @@ const lookupPort = async (identifier, isCustomDomain = false) => {
 
 /** Call this after a successful deploy so the next request picks up the new port */
 const invalidateProjectCache = (subdomain) => {
-  portCache.clear();
+  if (!subdomain) return;
+  portCache.delete(subdomain);
+  for (const [key, value] of portCache.entries()) {
+    if (value && value.subdomain === subdomain) {
+      portCache.delete(key);
+    }
+  }
 };
 
 // ── Error page ─────────────────────────────────────────────────────────────────

@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema({
   githubAccessToken: { type: String, select: false },
   plan:              { type: String, enum: ['free', 'pro'], default: 'free' },
   appLimit:          { type: Number, default: 3 },
+  notifyOnDeploy:    { type: Boolean, default: true },
+  notifyOnCrash:     { type: Boolean, default: true },
 }, { timestamps: true }); // createdAt + updatedAt are auto-managed
 
 module.exports = mongoose.model('User', userSchema);

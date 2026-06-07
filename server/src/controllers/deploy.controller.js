@@ -7,11 +7,15 @@ const { stopContainer, runContainer, stopContainerOnly, startContainer, restartC
 // ─── POST /api/deploy/webhook ─────────────────────────────────────────────────
 const githubWebhook = async (req, res) => {
   const signature = req.headers['x-hub-signature-256'];
-  const secret    = process.env.GITHUB_WEBHOOK_SECRET || '';
+  const secret    = process.env.GITHUB_WEBHOOK_SECRET;
 
-  if (secret && signature) {
+  if (secret) {
+    if (!signature) {
+      return res.status(401).json({ message: 'Missing webhook signature' });
+    }
     const hmac     = crypto.createHmac('sha256', secret);
-    const digest   = 'sha256=' + hmac.update(JSON.stringify(req.body)).digest('hex');
+    const bodyStr  = req.rawBody || JSON.stringify(req.body);
+    const digest   = 'sha256=' + hmac.update(bodyStr).digest('hex');
     if (signature !== digest) {
       return res.status(401).json({ message: 'Invalid webhook signature' });
     }
@@ -27,6 +31,11 @@ const githubWebhook = async (req, res) => {
     const project = await Project.findOne({ repoFullName, branch });
     if (!project) {
       return res.status(200).json({ message: 'No matching project found, ignoring' });
+    }
+
+    const running = await Deployment.findOne({ project: project._id, status: { $in: ['queued', 'building'] } });
+    if (running) {
+      return res.status(200).json({ message: 'A build is already queued or in progress for this project, ignoring webhook trigger' });
     }
 
     const deployment = await Deployment.create({
@@ -100,13 +109,29 @@ const getDeployments = async (req, res) => {
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const deployments = await Deployment.find({ project: project._id })
-      .sort({ createdAt: -1 })
-      .limit(20)
-      .populate('triggeredBy', 'username avatarUrl')
-      .select('-logs');
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
 
-    res.json({ deployments });
+    const [deployments, total] = await Promise.all([
+      Deployment.find({ project: project._id })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('triggeredBy', 'username avatarUrl')
+        .select('-logs'),
+      Deployment.countDocuments({ project: project._id }),
+    ]);
+
+    res.json({
+      deployments,
+      pagination: {
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        totalDeployments: total,
+      }
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -285,7 +310,7 @@ const getRecentActivity = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(15)
       .populate('triggeredBy', 'username avatarUrl')
-      .populate('project', 'name')
+      .populate('project', 'name subdomain customDomain')
       .select('-logs');
 
     res.json({ deployments });

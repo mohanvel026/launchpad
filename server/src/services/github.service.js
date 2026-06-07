@@ -1,13 +1,27 @@
 const axios = require('axios');
 
-const githubApi = (token) =>
-  axios.create({
+const githubApi = (token) => {
+  const instance = axios.create({
     baseURL: 'https://api.github.com',
     headers: { 
       Authorization: `Bearer ${token}`, 
       Accept: 'application/vnd.github+json' 
     },
   });
+
+  instance.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (error.response && error.response.status === 401) {
+        error.message = 'GitHub access token expired or revoked. Please log out and log in again to re-authenticate.';
+        error.status = 401;
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return instance;
+};
 
 const listUserRepos = async (accessToken) => {
   const api = githubApi(accessToken);

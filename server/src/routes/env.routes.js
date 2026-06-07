@@ -1,7 +1,7 @@
 const express     = require('express');
 const { protect } = require('../middleware/auth.middleware');
 const {
-  getEnvVars, setEnvVar, deleteEnvVar
+  getEnvVars, setEnvVar, deleteEnvVar, rotateProjectEnvKeys
 } = require('../controllers/env.controller');
 const Project = require('../models/Project.model');
 const path    = require('path');
@@ -14,6 +14,9 @@ router.get('/:projectId',           protect, getEnvVars);
 
 // POST /api/env/:projectId         — create or update an env var
 router.post('/:projectId',          protect, setEnvVar);
+
+// POST /api/env/:projectId/rotate  — rotate encryption keys for env vars
+router.post('/:projectId/rotate',   protect, rotateProjectEnvKeys);
 
 // DELETE /api/env/:projectId/:key  — delete an env var
 router.delete('/:projectId/:key',   protect, deleteEnvVar);
