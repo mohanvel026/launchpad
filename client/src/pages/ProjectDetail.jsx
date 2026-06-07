@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 
-// Advanced LaunchPad Sub-components
+// Advanced LaunchLive Sub-components
 import MetricsChart from '../components/MetricsChart';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
 import DomainManager from '../components/DomainManager';
@@ -1325,7 +1325,7 @@ Use bold headers, bullet lists, and code blocks.`;
   }, [activeTab, handleLoadPreviews, readiness, readinessLoading, vulnData, vulnLoading, missingVars, missingVarsLoading]);
 
   if (!project) return (
-    <div className="launchpad-container flex-center" style={{ minHeight: '100vh' }}>
+    <div className="launchlive-container flex-center" style={{ minHeight: '100vh' }}>
       <div className="loading-spinner" style={{ width: 40, height: 40 }} />
     </div>
   );
@@ -1344,7 +1344,7 @@ Use bold headers, bullet lists, and code blocks.`;
   const deployUrl = getDeployUrl();
 
   return (
-    <div className="launchpad-container">
+    <div className="launchlive-container">
       {/* Header */}
       <header className="lp-header" style={{ display: 'block', padding: 0 }}>
         <div style={{ height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 24px' }}>

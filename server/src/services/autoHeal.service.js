@@ -107,7 +107,7 @@ async function generateFixPatch(repoPath, logs, stack) {
       } catch {}
     }
 
-    const systemPrompt = `You are LaunchPad Auto-Healer, an expert SRE and DevOps AI.
+    const systemPrompt = `You are LaunchLive Auto-Healer, an expert SRE and DevOps AI.
 Your job is to generate a precise code patch to resolve build, dependency, packaging, config, or runtime startup errors.
 
 You must respond ONLY with a valid JSON object matching this schema:
@@ -249,24 +249,24 @@ async function commitAndPushFix(project, repoPath, strategy, parentDeploymentId)
 
   try {
     // Configure Git author credentials locally inside the repo clone
-    await execAsync(`git -C "${repoPath}" config user.name "LaunchPad AI"`);
-    await execAsync(`git -C "${repoPath}" config user.email "ai-healer@launchpad.internal"`);
+    await execAsync(`git -C "${repoPath}" config user.name "LaunchLive AI"`);
+    await execAsync(`git -C "${repoPath}" config user.email "ai-healer@launchlive.internal"`);
 
     if (strategy === 'push-on-success') {
       await execAsync(`git -C "${repoPath}" add -A`);
-      await execAsync(`git -C "${repoPath}" commit -m "chore(launchpad): auto-heal deployment failure for build ${parentDeploymentId}"`);
+      await execAsync(`git -C "${repoPath}" commit -m "chore(launchlive): auto-heal deployment failure for build ${parentDeploymentId}"`);
       await execAsync(`git -C "${repoPath}" push origin HEAD:${branchName}`);
       return `Pushed commit directly to branch ${branchName}.`;
     } else if (strategy === 'pr') {
-      const fixBranch = `launchpad-fix-${parentDeploymentId}`;
+      const fixBranch = `launchlive-fix-${parentDeploymentId}`;
       await execAsync(`git -C "${repoPath}" checkout -b ${fixBranch}`);
       await execAsync(`git -C "${repoPath}" add -A`);
-      await execAsync(`git -C "${repoPath}" commit -m "chore(launchpad): auto-heal deployment failure for build ${parentDeploymentId}"`);
+      await execAsync(`git -C "${repoPath}" commit -m "chore(launchlive): auto-heal deployment failure for build ${parentDeploymentId}"`);
       await execAsync(`git -C "${repoPath}" push origin ${fixBranch}`);
 
       const { createPullRequest, createPullRequestComment } = require('./github.service');
-      const prTitle = `chore(launchpad): AI Auto-Healing fix for build ${parentDeploymentId}`;
-      const prBody = `LaunchPad AI Auto-Healing detected a deployment failure and successfully generated/verified a patch.
+      const prTitle = `chore(launchlive): AI Auto-Healing fix for build ${parentDeploymentId}`;
+      const prBody = `LaunchLive AI Auto-Healing detected a deployment failure and successfully generated/verified a patch.
       
 ### Applied Patches:
 The container was built and verified successfully using this patch. Feel free to merge this PR.`;
@@ -274,9 +274,9 @@ The container was built and verified successfully using this patch. Feel free to
       const pr = await createPullRequest(token, project.repoFullName, prTitle, fixBranch, branchName, prBody);
 
       try {
-        const commentBody = `### 🤖 LaunchPad SRE Auto-Healing Report
+        const commentBody = `### 🤖 LaunchLive SRE Auto-Healing Report
         
-LaunchPad successfully resolved a deployment failure in build **#${parentDeploymentId}**.
+LaunchLive successfully resolved a deployment failure in build **#${parentDeploymentId}**.
 
 | Component | Status | Details |
 | --- | --- | --- |

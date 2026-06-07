@@ -48,13 +48,13 @@ const initSocket = (server) => {
         const Project = require('../models/Project.model');
         const project = await Project.findById(projectId);
         if (!project || !project.containerId) {
-          socket.emit('runtime-log', { line: `[LaunchPad SRE] No active container found for this project.` });
+          socket.emit('runtime-log', { line: `[LaunchLive SRE] No active container found for this project.` });
           return;
         }
 
         const isWindows = process.platform === 'win32';
         if (isWindows) {
-          socket.emit('runtime-log', { line: `[LaunchPad SRE] Docker container logs are only streamable on Linux servers.` });
+          socket.emit('runtime-log', { line: `[LaunchLive SRE] Docker container logs are only streamable on Linux servers.` });
           return;
         }
 
@@ -76,15 +76,15 @@ const initSocket = (server) => {
         proc.stderr.on('data', handleLogData);
 
         proc.on('close', () => {
-          socket.emit('runtime-log', { line: `[LaunchPad SRE] Log stream closed.` });
+          socket.emit('runtime-log', { line: `[LaunchLive SRE] Log stream closed.` });
         });
 
         proc.on('error', (err) => {
-          socket.emit('runtime-log', { line: `[LaunchPad SRE] Log stream error: ${err.message}` });
+          socket.emit('runtime-log', { line: `[LaunchLive SRE] Log stream error: ${err.message}` });
         });
 
       } catch (err) {
-        socket.emit('runtime-log', { line: `[LaunchPad SRE] Error initializing log stream: ${err.message}` });
+        socket.emit('runtime-log', { line: `[LaunchLive SRE] Error initializing log stream: ${err.message}` });
       }
     });
 

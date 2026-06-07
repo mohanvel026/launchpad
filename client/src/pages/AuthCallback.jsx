@@ -18,7 +18,7 @@ export default function AuthCallback() {
   }, [navigate]);
 
   return (
-    <div className="launchpad-container flex-center" style={{ minHeight: '100vh', flexDirection: 'column', gap: 16 }}>
+    <div className="launchlive-container flex-center" style={{ minHeight: '100vh', flexDirection: 'column', gap: 16 }}>
       <div className="loading-spinner" style={{ width: 40, height: 40 }} />
       <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Signing you in…</p>
     </div>

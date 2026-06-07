@@ -15,7 +15,7 @@ const inviteCollaborator = async (req, res) => {
     // Find the user by GitHub username
     const invitee = await User.findOne({ username });
     if (!invitee) {
-      return res.status(404).json({ message: `User "${username}" not found. They must log in to LaunchPad first.` });
+      return res.status(404).json({ message: `User "${username}" not found. They must log in to LaunchLive first.` });
     }
 
     // Check if already a collaborator

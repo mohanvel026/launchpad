@@ -5,7 +5,7 @@ export default function Login() {
   };
 
   return (
-    <div className="launchpad-container flex-center" style={{ minHeight: '100vh', padding: 20 }}>
+    <div className="launchlive-container flex-center" style={{ minHeight: '100vh', padding: 20 }}>
       {/* Background grid */}
       <div style={{
         position: 'fixed', inset: 0, zIndex: 0,

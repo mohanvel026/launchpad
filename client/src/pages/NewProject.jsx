@@ -166,7 +166,7 @@ export default function NewProject() {
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="launchpad-container" style={{ minHeight: '100vh' }}>
+    <div className="launchlive-container" style={{ minHeight: '100vh' }}>
       {/* Header */}
       <header className="lp-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>

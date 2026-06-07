@@ -73,7 +73,7 @@ export default function Dashboard() {
     : 100;
 
   return (
-    <div className="launchpad-container">
+    <div className="launchlive-container">
       {/* Header */}
       <header className="lp-header" style={{ display: 'block', padding: 0 }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px' }}>

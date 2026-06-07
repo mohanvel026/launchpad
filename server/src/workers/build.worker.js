@@ -98,7 +98,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
   if (/process\.env\.|env.*undefined|missing.*env|required.*variable/i.test(output)) {
     return {
       cause: 'A required environment variable is missing at build/runtime.',
-      fix: 'Go to the Environment tab in your LaunchPad project and add the missing variable(s), then redeploy.',
+      fix: 'Go to the Environment tab in your LaunchLive project and add the missing variable(s), then redeploy.',
       commands: [],
     };
   }
@@ -150,7 +150,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
 // Detect what port the app actually exposes inside the container
 // Priority: 1) User env var PORT, 2) App's own .env file PORT, 3) Stack default
 const detectContainerPort = (repoDir, stack, runtimeEnv) => {
-  // If user explicitly set PORT in LaunchPad env vars, respect it
+  // If user explicitly set PORT in LaunchLive env vars, respect it
   if (runtimeEnv.PORT && runtimeEnv.PORT !== '3000') {
     return parseInt(runtimeEnv.PORT);
   }
@@ -398,7 +398,7 @@ buildQueue.process(1, async (job) => {
   await Project.findByIdAndUpdate(projectId, { status: 'building' });
 
   const repoDir   = path.join(REPOS_DIR, projectId);
-  const imageTag  = `launchpad-${projectId}:${deploymentId}`;
+  const imageTag  = `launchlive-${projectId}:${deploymentId}`;
   const startedAt = new Date();
 
   // Inject GitHub token for private repos
@@ -617,7 +617,7 @@ buildQueue.process(1, async (job) => {
         for (const leak of leaks) {
           await log(`   ↳ ⚠️ WARNING: Hardcoded ${leak.type} found (${leak.leakedValue}).`);
         }
-        await log(`   💡 SRE Suggestion: Instantly remove this hardcoded secret and save it inside your LaunchPad Dashboard Env panel instead!`);
+        await log(`   💡 SRE Suggestion: Instantly remove this hardcoded secret and save it inside your LaunchLive Dashboard Env panel instead!`);
       } else {
         await log(`✅ [SECURITY AUDIT] Pre-flight secrets check passed. No leaked keys found.`);
       }
@@ -1215,7 +1215,7 @@ buildQueue.process(1, async (job) => {
 
     if (deployment.isAutoHeal) {
       try {
-        await log(`🤖 LaunchPad AI Auto-Healing is executing Git updates (${project.autoHealStrategy || 'push-on-success'})...`);
+        await log(`🤖 LaunchLive AI Auto-Healing is executing Git updates (${project.autoHealStrategy || 'push-on-success'})...`);
         await pushAuditStep(deployment.parentDeployment, 'Verifying Build', 'success', 'Health check passed. Container is online and healthy!');
         await pushAuditStep(deployment._id, 'Verifying Build', 'success', 'Health check passed. Container is online and healthy!');
 
@@ -1227,7 +1227,7 @@ buildQueue.process(1, async (job) => {
         await pushAuditStep(deployment._id, 'Git Push', 'success', gitMessage);
 
         try {
-          await execAsync(`git -C "${repoDir}" tag -d launchpad-checkpoint-${deployment.parentDeployment}`);
+          await execAsync(`git -C "${repoDir}" tag -d launchlive-checkpoint-${deployment.parentDeployment}`);
         } catch {}
       } catch (gitErr) {
         await log(`⚠️ Git push failed: ${gitErr.message}`);
@@ -1271,7 +1271,7 @@ buildQueue.process(1, async (job) => {
     // AI Auto-Healing Section
     if (project.autoHeal && !deployment.isAutoHeal) {
       try {
-        await log(`\n🤖 LaunchPad AI Auto-Healing is analyzing repository for a fix...`);
+        await log(`\n🤖 LaunchLive AI Auto-Healing is analyzing repository for a fix...`);
         await pushAuditStep(deploymentId, 'Analyzing logs', 'info', 'Parsing error logs to identify relevant files...');
 
         const { generateFixPatch, applyPatchLocally } = require('../services/autoHeal.service');
@@ -1281,7 +1281,7 @@ buildQueue.process(1, async (job) => {
           await log(`🤖 Auto-Healing patch generated: ${fixPatch.description}`);
           await pushAuditStep(deploymentId, 'Generating Code Fix', 'success', `DevOps AI generated code fix: ${fixPatch.description}`);
 
-          const checkpointTag = `launchpad-checkpoint-${deploymentId}`;
+          const checkpointTag = `launchlive-checkpoint-${deploymentId}`;
           try {
             await execAsync(`git -C "${repoDir}" tag -f "${checkpointTag}"`);
             await pushAuditStep(deploymentId, 'Applying Patch', 'info', `Created git checkpoint: ${checkpointTag}`);
@@ -1366,9 +1366,9 @@ buildQueue.process(1, async (job) => {
         await pushAuditStep(deployment._id, 'Verifying Build', 'failure', 'Container health check failed. Reverting changes.');
 
         try {
-          await execAsync(`git -C "${repoDir}" reset --hard launchpad-checkpoint-${deployment.parentDeployment}`);
+          await execAsync(`git -C "${repoDir}" reset --hard launchlive-checkpoint-${deployment.parentDeployment}`);
           await execAsync(`git -C "${repoDir}" clean -fd`);
-          await execAsync(`git -C "${repoDir}" tag -d launchpad-checkpoint-${deployment.parentDeployment}`);
+          await execAsync(`git -C "${repoDir}" tag -d launchlive-checkpoint-${deployment.parentDeployment}`);
           await log(`❌ Auto-healing attempt failed. Reverted local file changes using git checkpoint tag.`);
         } catch {
           await execAsync(`git -C "${repoDir}" reset --hard HEAD`);

@@ -418,13 +418,13 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
     }
 }`;
 
-    // LaunchPad fallback landing page shown when the repo has no HTML files
+    // LaunchLive fallback landing page shown when the repo has no HTML files
     const fallbackHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to LaunchPad</title>
+    <title>Welcome to LaunchLive</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
         *{box-sizing:border-box;margin:0;padding:0}
@@ -443,13 +443,13 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
 <body>
     <div class="container">
         <div class="rocket">&#x1F680;</div>
-        <h1>Your Site is Live on LaunchPad!</h1>
+        <h1>Your Site is Live on LaunchLive!</h1>
         <p>Your container deployed successfully. Add an <code>index.html</code> to your repo and redeploy to publish your content.</p>
         <div class="instructions">
             <h3>How to publish your content:</h3>
-            <p style="font-size:0.95rem;margin-bottom:0">Add an <code>index.html</code> file to the root of your repository and trigger a redeploy from your LaunchPad dashboard.</p>
+            <p style="font-size:0.95rem;margin-bottom:0">Add an <code>index.html</code> file to the root of your repository and trigger a redeploy from your LaunchLive dashboard.</p>
         </div>
-        <div class="footer">Powered by LaunchPad Serverless Containers</div>
+        <div class="footer">Powered by LaunchLive Serverless Containers</div>
     </div>
 </body>
 </html>`;

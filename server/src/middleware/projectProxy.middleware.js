@@ -1,15 +1,15 @@
 /**
  * projectProxy.middleware.js
  *
- * LaunchPad acts as its own reverse proxy.
+ * LaunchLive acts as its own reverse proxy.
  * Intercepts requests for project subdomains at the Node level:
  *
- *   stockflow-abc.launchpad.is-a.dev     →  container on port 4002
- *   myapp.launchpad.duckdns.org           →  container on port 4004
- *   129.159.22.142.nip.io                 →  LaunchPad dashboard
+ *   stockflow-abc.launchlive.is-a.dev     →  container on port 4002
+ *   myapp.launchlive.duckdns.org           →  container on port 4004
+ *   129.159.22.142.nip.io                 →  LaunchLive dashboard
  *
  * Works with ANY domain configured via CLOUDFLARE_DOMAIN env var.
- * Also supports custom domains (CNAME pointing to LaunchPad).
+ * Also supports custom domains (CNAME pointing to LaunchLive).
  */
 
 const http    = require('http');
@@ -133,7 +133,7 @@ const selfHealingPage = (host) => `<!DOCTYPE html>
 const extractSubdomain = (host) => {
   const h = host.toLowerCase().split(':')[0]; // strip port
 
-  // Root domain — LaunchPad dashboard itself
+  // Root domain — LaunchLive dashboard itself
   if (h === DOMAIN) return { subdomain: null, isCustomDomain: false, isRoot: true };
 
   // Project subdomain: host ends with .DOMAIN
@@ -157,7 +157,7 @@ const projectProxyMiddleware = async (req, res, next) => {
   const host = (req.headers.host || '').toLowerCase().split(':')[0];
   const { subdomain, isCustomDomain, isRoot } = extractSubdomain(host);
 
-  // Root domain → LaunchPad dashboard
+  // Root domain → LaunchLive dashboard
   if (isRoot) return next();
   // Unresolvable — pass through to Express app
   if (!subdomain && !isCustomDomain) return next();
@@ -178,7 +178,7 @@ const projectProxyMiddleware = async (req, res, next) => {
         .send(errorPage(
           'Not Deployed Yet',
           `No active deployment found for <code style="color:#38bdf8">${subdomain}</code>.<br>
-           Deploy your project from the LaunchPad dashboard first.`
+           Deploy your project from the LaunchLive dashboard first.`
         ));
     }
 
