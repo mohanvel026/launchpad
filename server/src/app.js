@@ -26,6 +26,9 @@ const abuseRoutes     = require('./routes/abuse.routes');
 const { projectProxyMiddleware } = require('./middleware/projectProxy.middleware');
 
 const app = express();
+// Trust Nginx reverse proxy — required for express-rate-limit to correctly
+// read the real client IP from the X-Forwarded-For header
+app.set('trust proxy', 1);
 connectDB().then(() => {
   const Project = require('./models/Project.model');
   const { startMonitoring } = require('./services/healthMonitor.service');

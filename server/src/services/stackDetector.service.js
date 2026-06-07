@@ -345,14 +345,20 @@ CMD ["nginx", "-g", "daemon off;"]`;
 
       const bePkg = readPkg(path.join(repoPath, beDir));
       const hasPrisma = hasDep(bePkg, 'prisma') || hasDep(bePkg, '@prisma/client');
-      const prismaGen = hasPrisma ? `\nRUN npx prisma generate || true` : '';
+      const prismaGen = hasPrisma ? `\nCOPY ${beDir}/prisma* ./prisma/\nRUN npx prisma generate || true` : '';
 
       const start = getStartCommand(path.join(repoPath, beDir), pm.name);
       const backendCmd = start.isScript
         ? `pm2 start ${pm.name} --name backend -- start`
         : `pm2 start ${start.args[0]} --name backend`;
 
-      return `# ── Stage 1: Build Frontend ──
+      // Backend cache mount — matches pm cache dir
+      const beCacheMount = pm.name === 'npm' ? '--mount=type=cache,target=/root/.npm' :
+                           pm.name === 'pnpm' ? '--mount=type=cache,target=/root/.local/share/pnpm/store' :
+                           pm.name === 'yarn' ? '--mount=type=cache,target=/root/.yarn' : '';
+      const beInstallCmd = `RUN ${beCacheMount} npm install --only=production --legacy-peer-deps 2>/dev/null || npm install --only=production || ${installCmd}`;
+
+      return `# ── Stage 1: Build Frontend (runs in PARALLEL with Stage 2) ──
 FROM node:20-alpine AS fe-builder
 WORKDIR /app/frontend
 ${pmSetup}
@@ -362,16 +368,23 @@ COPY ${feDir}/ .
 ${envArgs}
 RUN ${buildCmd} 2>/dev/null || npx vite build || true
 
-# ── Stage 2: Final SRE dual-process container ──
+# ── Stage 2: Install Backend Dependencies (runs in PARALLEL with Stage 1) ──
+FROM node:20-alpine AS be-builder
+WORKDIR /app
+${pmSetup}
+COPY ${beDir}/package*.json${beLockStr} ./
+${beInstallCmd}
+COPY ${beDir}/ .${prismaGen}
+
+# ── Stage 3: Final SRE container — assembles from both parallel stages ──
 FROM node:20-alpine
 RUN apk add --no-cache curl nginx tini
 RUN npm install -g pm2 --silent
 
 WORKDIR /app
-COPY ${beDir}/package*.json${beLockStr} ./
-RUN npm install --only=production --legacy-peer-deps 2>/dev/null || npm install --only=production || ${installCmd}
-COPY ${beDir}/ .${prismaGen}
-# Copy built frontend to Nginx default html directory
+# Pull in pre-built backend (deps + source + prisma client)
+COPY --from=be-builder /app ./
+# Copy built frontend into Nginx html directory
 COPY --from=fe-builder /app/frontend/${feOut} /usr/share/nginx/html
 
 # Write Nginx configuration with reverse proxy enabled for /api and /socket.io
