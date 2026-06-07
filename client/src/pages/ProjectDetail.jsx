@@ -3192,6 +3192,8 @@ Use bold headers, bullet lists, and code blocks.`;
                 </div>
               </div>
             )}
+          </div>
+          );
         })()}
 
         {/* ── Domains ── */}
