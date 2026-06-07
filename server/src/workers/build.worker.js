@@ -207,6 +207,98 @@ const detectContainerPort = (repoDir, stack, runtimeEnv) => {
   return 3000;
 };
 
+// ─── Smart Dynamic ETA Estimator ─────────────────────────────────────────────
+// Analyses the real project to compute a personalised build time estimate.
+// Called right after stack detection so we have full context.
+const estimateBuildTime = (repoDir, stack, hasCache, skipBuild) => {
+  if (skipBuild) return { low: 0, high: 0, breakdown: [], skip: true };
+
+  const breakdown = [];
+
+  // 1. Base time by stack
+  const stackBase = {
+    'static':          { low: 20,  high: 40  },
+    'react':           { low: 90,  high: 150 },
+    'vue':             { low: 90,  high: 150 },
+    'svelte':          { low: 60,  high: 120 },
+    'angular':         { low: 120, high: 200 },
+    'node':            { low: 60,  high: 100 },
+    'next':            { low: 120, high: 210 },
+    'nuxt':            { low: 120, high: 210 },
+    'mern':            { low: 180, high: 300 },
+    'fullstack-split': { low: 180, high: 300 },
+    'unknown':         { low: 120, high: 240 },
+  };
+  const base = stackBase[stack] || stackBase['unknown'];
+  let low = base.low, high = base.high;
+  breakdown.push(`${stack.toUpperCase()} stack (~${Math.round(base.low/60)}-${Math.round(base.high/60)} min base)`);
+
+  // 2. Count total dependencies (frontend + backend)
+  let totalDeps = 0;
+  const pkgFiles = [
+    path.join(repoDir, 'package.json'),
+    path.join(repoDir, 'client', 'package.json'),
+    path.join(repoDir, 'frontend', 'package.json'),
+    path.join(repoDir, 'server', 'package.json'),
+    path.join(repoDir, 'backend', 'package.json'),
+  ];
+  for (const pkgFile of pkgFiles) {
+    try {
+      if (fs.existsSync(pkgFile)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
+        const deps = Object.keys({ ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) }).length;
+        totalDeps += deps;
+      }
+    } catch {}
+  }
+  if (totalDeps > 0) {
+    // Every 30 deps adds ~15-25s
+    const depAdd = Math.floor(totalDeps / 30) * 20;
+    low += depAdd; high += depAdd + 10;
+    breakdown.push(`${totalDeps} dependencies (+${Math.round(depAdd)}s)`);
+  }
+
+  // 3. Prisma detection (adds generate step)
+  const hasPrisma = ['server', 'backend', ''].some(sub => {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(repoDir, sub, 'package.json'), 'utf8'));
+      return 'prisma' in (pkg.dependencies || {}) || '@prisma/client' in (pkg.dependencies || {});
+    } catch { return false; }
+  });
+  if (hasPrisma) { low += 25; high += 40; breakdown.push('Prisma ORM (+25-40s)'); }
+
+  // 4. Repo file count (rough complexity signal)
+  let fileCount = 0;
+  try {
+    const countFiles = (dir, depth = 0) => {
+      if (depth > 4) return;
+      for (const f of fs.readdirSync(dir)) {
+        if (f === 'node_modules' || f === '.git' || f === 'dist' || f === 'build') continue;
+        const full = path.join(dir, f);
+        if (fs.statSync(full).isDirectory()) countFiles(full, depth + 1);
+        else fileCount++;
+      }
+    };
+    countFiles(repoDir);
+  } catch {}
+  if (fileCount > 200) { low += 20; high += 40; breakdown.push(`Large repo (${fileCount} files, +20-40s)`); }
+
+  // 5. Warm layer cache discount (--cache-from available)
+  if (hasCache) {
+    const discount = Math.round((low + high) / 2 * 0.55);
+    low  = Math.max(20, low  - discount);
+    high = Math.max(40, high - discount);
+    breakdown.push('Layer cache available (-55% time)');
+  }
+
+  return {
+    low: Math.round(low),
+    high: Math.round(high),
+    breakdown,
+    skip: false,
+  };
+};
+
 // ─── Build Process ────────────────────────────────────────────────────────────
 buildQueue.process(1, async (job) => {
   const { deploymentId, projectId } = job.data;
@@ -314,6 +406,18 @@ buildQueue.process(1, async (job) => {
     
     await log(`   ↳ Detected Stack: ${stack.toUpperCase()}`);
     await Project.findByIdAndUpdate(projectId, { stack });
+
+    // ── Dynamic ETA: Analyse the real project and tell the user how long to expect ──
+    const hasWarmCache = !!(project.lastImageTag && !skipDockerBuild);
+    const eta = estimateBuildTime(repoDir, stack, hasWarmCache, skipDockerBuild);
+    if (eta.skip) {
+      await log(`⚡ ETA: Instant — code unchanged, reusing cached image. No rebuild needed!`);
+    } else {
+      const etaLow  = eta.low  < 60 ? `${eta.low}s`  : `${Math.floor(eta.low/60)}m ${eta.low%60 > 0 ? (eta.low%60)+'s' : ''}`.trim();
+      const etaHigh = eta.high < 60 ? `${eta.high}s` : `${Math.floor(eta.high/60)}m ${eta.high%60 > 0 ? (eta.high%60)+'s' : ''}`.trim();
+      await log(`⏱️  Estimated build time: ${etaLow} – ${etaHigh}`);
+      await log(`   └─ Factors: ${eta.breakdown.join(' • ')}`);
+    }
 
     let rawEnvs = await EnvVar.find({ project: projectId });
 
