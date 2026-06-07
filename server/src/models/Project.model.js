@@ -23,6 +23,8 @@ const projectSchema = new mongoose.Schema({
   status:        { type: String, enum: ['idle', 'building', 'live', 'failed', 'stopped'], default: 'idle' },
   webhookId:     { type: String },
   lastDeployedAt: { type: Date },
+  lastImageTag:  { type: String },   // last successful image — used for --cache-from on next build
+  lastCommitSha: { type: String },   // last deployed git SHA — used to skip rebuild if unchanged
   buildCount:    { type: Number, default: 0 },
   cpuLimit:      { type: Number, default: 0.5 },
   ramLimitMB:    { type: Number, default: 512 },

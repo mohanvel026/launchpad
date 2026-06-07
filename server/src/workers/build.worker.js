@@ -277,6 +277,27 @@ buildQueue.process(1, async (job) => {
       await log('   ✅ Fresh clone completed.');
     }
 
+    // ── SPEED OPT: Skip rebuild if code is unchanged ──────────────────────────
+    let currentCommitSha = '';
+    let skipDockerBuild  = false;
+    try {
+      const { stdout: shaOut } = await execAsync(`git -C "${repoDir}" rev-parse HEAD`);
+      currentCommitSha = shaOut.trim();
+    } catch {}
+
+    if (
+      currentCommitSha &&
+      project.lastCommitSha === currentCommitSha &&
+      project.lastImageTag
+    ) {
+      // Verify the old image still exists on this host
+      try {
+        execSync(`docker image inspect ${project.lastImageTag}`, { stdio: 'pipe' });
+        skipDockerBuild = true;
+        await log(`⚡ SPEED BOOST: No code changes detected (commit: ${currentCommitSha.slice(0,7)}). Reusing cached image!`);
+      } catch { /* image was pruned — rebuild */ }
+    }
+
     // ── PHASE 2: Analyze ──
     await log(`🔍 PHASE 2: Analyzing project architecture…`);
     let stack = project.framework;
@@ -462,11 +483,28 @@ buildQueue.process(1, async (job) => {
       let dockerBuildFailed = false;
       let dockerBuildOutput = [];
 
-      await new Promise((resolve, reject) => {
+      // ── SPEED OPT: Reuse previous image layers via --cache-from ─────────────
+      const cacheFromArgs = [];
+      if (!skipDockerBuild && project.lastImageTag) {
+        try {
+          execSync(`docker image inspect ${project.lastImageTag}`, { stdio: 'pipe' });
+          cacheFromArgs.push('--cache-from', project.lastImageTag);
+          await log(`   🗃️  Using layer cache from previous build (${project.lastImageTag.split(':')[1]?.slice(0,8)})`);
+        } catch { /* previous image not available */ }
+      }
+
+      // ── SPEED OPT: Skip docker build if code unchanged ───────────────────────
+      if (skipDockerBuild) {
+        // Just re-tag the old image with the new deploymentId for tracking
+        try { execSync(`docker tag ${project.lastImageTag} ${imageTag}`, { stdio: 'pipe' }); } catch {}
+        await log('   ✅ Image ready (reused from cache — skipped full rebuild).');
+      }
+
+      if (!skipDockerBuild) await new Promise((resolve, reject) => {
         const { spawn } = require('child_process');
         const buildProc = spawn(
           'docker',
-          ['build', '--progress=plain', ...buildArgParts, '-t', imageTag, repoDir],
+          ['build', '--progress=plain', ...cacheFromArgs, ...buildArgParts, '-t', imageTag, repoDir],
           {
             stdio: ['ignore', 'pipe', 'pipe'],
             env: { ...process.env, DOCKER_BUILDKIT: '1' }
@@ -512,6 +550,8 @@ buildQueue.process(1, async (job) => {
         buildProc.on('error', (err) => reject(err));
       }).then(async () => {
         await log('   ✅ Build successful. Image tagged and ready for deployment.');
+        // ── Auto-prune dangling images to free disk space ───────────────────────
+        try { execSync('docker image prune -f', { stdio: 'pipe' }); } catch {}
       }).catch(async (buildErr) => {
         // ── Always show the raw error output FIRST so users see what went wrong ──
         await log(`   ❌ Build failed! (${buildErr.message})`);
@@ -932,6 +972,8 @@ buildQueue.process(1, async (job) => {
     await Project.findByIdAndUpdate(projectId, {
       status:         'live',
       lastDeployedAt: finishedAt,
+      lastImageTag:   imageTag,
+      lastCommitSha:  currentCommitSha || '',
       $inc:           { buildCount: 1 },
     });
 
