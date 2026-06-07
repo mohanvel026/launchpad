@@ -144,6 +144,129 @@ function formatMessageContent(content) {
   });
 }
 
+const SIMULATION_SCENARIOS = {
+  'app-crash': {
+    name: '💥 App Crash (OOM)',
+    steps: [
+      '🩺 [00:00] Telemetry worker detected HTTP 502 Bad Gateway / Connection Refused.',
+      '🚨 [00:02] Docker container exited with code 137 (OOMKilled).',
+      '🧠 [00:03] AI Healing System initiated: Analyzing the last 50 lines of crash logs...',
+      '🔍 [00:05] Diagnostic: JavaScript heap out of memory. Detected active leaks during heavy loads.',
+      '🛠️ [00:06] AI Fix Applied: Generating custom Dockerfile optimized with --max-old-space-size=450 flag, scaling container memory limit.',
+      '🚀 [00:08] Deploying hot-swap container container-v3-healed...',
+      '🌐 [00:09] Health checks passed! Swapping Nginx reverse proxy routes. Old container terminated.',
+      '✅ [00:10] System fully restored. Zero-downtime recovery completed in 10 seconds.'
+    ],
+    prompt: (projectName, stack) => `You are the LaunchLive SRE AI Architect.
+The user just simulated a DevOps/SRE incident: "Application container crash / Out of Memory" on this project: "${projectName}" (Stack: "${stack}").
+Provide a clear, detailed 3-paragraph explanation of:
+1. Exactly what LaunchLive did in the simulation logs.
+2. How LaunchLive prevents this problem or heals it in the real production environment for their specific stack ("${stack}").
+3. Give recommendations on how the developer can configure their settings (like auto-heal, memory bounds, webhooks) to optimize this.
+Use bold headers, bullet lists, and code blocks for code snippets. Keep it highly technical, SRE-expert-toned, and encouraging.`
+  },
+  'ssl-expired': {
+    name: '🔒 SSL Expiry & Renewal',
+    steps: [
+      '⏰ [00:00] Let\'s Encrypt cron job scheduled run (Weekly Monday 3:00 AM).',
+      `🔒 [00:02] Checking certificate validity for domain {{DOMAIN}}...`,
+      '⚠️ [00:03] Alert: SSL certificate expires in 6 days. Renewing via DNS challenge.',
+      '🌐 [00:05] DNS verification check passed against Cloudflare API.',
+      '🔑 [00:06] Certbot requested new certificate pair from Let\'s Encrypt CA.',
+      `💾 [00:08] Saving new certs to /etc/letsencrypt/live/{{DOMAIN}}/`,
+      '⚙️ [00:09] Executing: nginx -s reload',
+      '✅ [00:10] SSL cert successfully renewed for 90 days. Zero-downtime cert reload complete.'
+    ],
+    prompt: (projectName, stack) => `You are the LaunchLive SRE AI Architect.
+The user just simulated a DevOps/SRE incident: "SSL certificate expiry & Certbot renew" on this project: "${projectName}" (Stack: "${stack}").
+Provide a clear, detailed 3-paragraph explanation of:
+1. Exactly what LaunchLive did in the simulation logs.
+2. How LaunchLive prevents this problem or heals it in the real production environment.
+3. Give recommendations on how the developer can configure their settings to optimize this.
+Use bold headers, bullet lists, and code blocks for code snippets. Keep it highly technical, SRE-expert-toned, and encouraging.`
+  },
+  'build-fail': {
+    name: '🛑 Build Failure & Code Healing',
+    steps: [
+      '🐙 [00:00] Webhook received: Push on \'main\' branch of github.com/user/project',
+      '🛠️ [00:02] Starting compilation pipeline for application.',
+      '❌ [00:04] Error: Build failed with exit code 1. Missing module or compilation error detected.',
+      '🚨 [00:05] Build stage failed. Activating AI build repair worker...',
+      '🔍 [00:07] AI analysis: Discovered missing runtime modules and syntax error in configuration.',
+      '🛠️ [00:08] AI repair: Injecting package dependency and repairing configs.',
+      '📦 [00:09] Retrying build with repaired files... Success!',
+      '🔀 [00:10] Generating GitHub Pull Request with verification patch...',
+      '✅ [00:11] Build completed successfully. App deployed to production staging.'
+    ],
+    prompt: (projectName, stack) => `You are the LaunchLive SRE AI Architect.
+The user just simulated a DevOps/SRE incident: "Git webhook build failure & code healing" on this project: "${projectName}" (Stack: "${stack}").
+Provide a clear, detailed 3-paragraph explanation of:
+1. Exactly what LaunchLive did in the simulation logs.
+2. How LaunchLive prevents this problem or heals it in the real production environment for their specific stack ("${stack}").
+3. Give recommendations on how the developer can configure their settings (like auto-heal, memory bounds, webhooks) to optimize this.
+Use bold headers, bullet lists, and code blocks for code snippets. Keep it highly technical, SRE-expert-toned, and encouraging.`
+  }
+};
+
+const NODE_DESCRIPTIONS = {
+  'Dev': {
+    title: '💻 Developer Push',
+    role: 'Source Code & Deployment Ingestion',
+    why: 'Manual deployments require server access, shell scripts, and complex configuration files, leading to human errors and server outages.',
+    works: 'When you push new commits to your connected GitHub branch, a Git webhook is securely fired to LaunchLive.',
+    value: 'Saves developer time and removes human error from the deployment pipeline.',
+    how: 'Connect your GitHub repository and select your branch under the Settings tab.'
+  },
+  'Webhook': {
+    title: '🔗 Webhook Router',
+    role: 'Automated Trigger & Payload Validation',
+    why: 'Polling repositories periodically for changes creates massive network overhead and delays deployment times.',
+    works: 'Validates GitHub requests using HMAC-SHA256 signature verification with your secret token, preventing spoofing, and checks for concurrent builds.',
+    value: 'Ensures immediate, secure, and authenticated building of code changes.',
+    how: 'Automatically configured when you connect your project. You can copy the webhook URL from the Settings tab.'
+  },
+  'Build': {
+    title: '⚙️ Build Engine',
+    role: 'Isolated Asset Compilation & Test Sandbox',
+    why: 'Running build commands directly on your production server can exhaust memory and crash running web apps.',
+    works: 'Runs your custom setup and compilation commands inside a sandboxed environment, capping output logs and verifying compiler success.',
+    value: 'Prevents resource exhaustion on production services during deployments.',
+    how: 'Define your Install, Build, and Output directory options in the Settings tab.'
+  },
+  'Proxy': {
+    title: '🌐 Nginx Gateway & SSL Router',
+    role: 'Reverse Proxy, SSL termination & Zero-Downtime Hot-Swapping',
+    why: 'Configuring web servers, renewing SSL certs, and swapping server ports usually drops active websocket connections.',
+    works: 'Proxies domain traffic to container ports. Integrates with Let\'s Encrypt for auto-renewal and holds traffic during hot-swaps.',
+    value: 'Ensures zero-downtime container updates and fully automated HTTPS security.',
+    how: 'Configure subdomains or add custom CNAME domains in the Domains tab.'
+  },
+  'App': {
+    title: '📦 App Container',
+    role: 'Dockerized Runtime Sandbox',
+    why: 'Shared process environments allow buggy applications to compromise server security or crash neighboring services.',
+    works: 'Spins up your application in a dedicated Docker sandbox with custom kernel namespaces and CPU/RAM limit limits.',
+    value: 'Guarantees process isolation, security, and strict resource allocation.',
+    how: 'Adjust CPU core bounds and RAM memory limits dynamically in the Settings tab.'
+  },
+  'Monitor': {
+    title: '📈 Telemetry Monitor',
+    role: 'Redis-backed Sliding Window performance metrics',
+    why: 'Standard APM monitoring agents (like Datadog/NewRelic) are heavy, expensive, and delay warning notifications.',
+    works: 'Streams request metadata and container memory metrics into a high-performance Redis database to monitor real-time health.',
+    value: 'Detects memory leaks, connection drops, and HTTP 502/504 gateways instantly.',
+    how: 'View live request throughput, response times, and system metrics under the Live Metrics tab.'
+  },
+  'AI': {
+    title: '🧠 AI SRE Agent',
+    role: 'Self-Healing Engine & Automated Repair',
+    why: 'When production servers crash in the middle of the night, someone has to log in, read logs, write a fix, and redeploy.',
+    works: 'Monitors crash reports, parses syntax errors, creates a temporary branch with targeted code fixes, validates them, and pushes patches.',
+    value: 'Achieves self-healing infrastructure, resolving simple bugs autonomously without human intervention.',
+    how: 'Check the Auto-Heal checkbox and select your preferred healing strategy under the Settings tab.'
+  }
+};
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -228,6 +351,29 @@ export default function ProjectDetail() {
   const [deepDiveResponse, setDeepDiveResponse] = useState('');
   const [deepDiveLoading, setDeepDiveLoading] = useState(false);
 
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [stepMode, setStepMode] = useState('auto');
+  const [currentStep, setCurrentStep] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [simulationSpeed, setSimulationSpeed] = useState(1);
+  
+  const isPausedRef = useRef(isPaused);
+  const speedRef = useRef(simulationSpeed);
+  const activeSimulationRef = useRef(activeSimulation);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
+  useEffect(() => {
+    speedRef.current = simulationSpeed;
+  }, [simulationSpeed]);
+
+  useEffect(() => {
+    activeSimulationRef.current = activeSimulation;
+  }, [activeSimulation]);
+
+
   // 🔐 Env Vault — AI missing variable scanner
   const [missingVars, setMissingVars] = useState(null); // null = not scanned, [] = none found
   const [missingVarsLoading, setMissingVarsLoading] = useState(false);
@@ -286,64 +432,84 @@ Use bold headers, lists, code blocks, or tables to format your response.`;
     }
   };
 
-  const handleRunSimulation = async (scenarioKey) => {
-    if (simulationLoading) return;
+  const handleRunSimulation = async (scenarioKey, mode = 'auto') => {
+    if (simulationLoading && mode === 'auto') return;
+
     setActiveSimulation(scenarioKey);
+    setStepMode(mode);
     setSimulationResponse('');
     setSimulationSteps([]);
+    setCurrentStep(0);
+    setIsPaused(false);
     setSimulationLoading(true);
 
-    const stepsMap = {
-      'app-crash': [
-        '🩺 [00:00] Telemetry worker detected HTTP 502 Bad Gateway / Connection Refused.',
-        '🚨 [00:02] Docker container exited with code 137 (OOMKilled).',
-        '🧠 [00:03] AI Healing System initiated: Analyzing the last 50 lines of crash logs...',
-        '🔍 [00:05] Diagnostic: JavaScript heap out of memory. Detected active leaks during heavy loads.',
-        '🛠️ [00:06] AI Fix Applied: Generating custom Dockerfile optimized with --max-old-space-size=450 flag, scaling container memory limit.',
-        '🚀 [00:08] Deploying hot-swap container container-v3-healed...',
-        '🌐 [00:09] Health checks passed! Swapping Nginx reverse proxy routes. Old container terminated.',
-        '✅ [00:10] System fully restored. Zero-downtime recovery completed in 10 seconds.'
-      ],
-      'ssl-expired': [
-        '⏰ [00:00] Let\'s Encrypt cron job scheduled run (Weekly Monday 3:00 AM).',
-        `🔒 [00:02] Checking certificate validity for domain ${project?.subdomain || 'app'}.launchlive.in...`,
-        '⚠️ [00:03] Alert: SSL certificate expires in 6 days. Renewing via DNS challenge.',
-        '🌐 [00:05] DNS verification check passed against Cloudflare API.',
-        '🔑 [00:06] Certbot requested new certificate pair from Let\'s Encrypt CA.',
-        `💾 [00:08] Saving new certs to /etc/letsencrypt/live/${project?.subdomain || 'app'}.launchlive.in/`,
-        '⚙️ [00:09] Executing: nginx -s reload',
-        '✅ [00:10] SSL cert successfully renewed for 90 days. Zero-downtime cert reload complete.'
-      ],
-      'build-fail': [
-        '🐙 [00:00] Webhook received: Push on \'main\' branch of github.com/user/project',
-        '🛠️ [00:02] Starting compilation pipeline for application.',
-        '❌ [00:04] Error: Build failed with exit code 1. Missing module or compilation error detected.',
-        '🚨 [00:05] Build stage failed. Activating AI build repair worker...',
-        '🔍 [00:07] AI analysis: Discovered missing runtime modules and syntax error in configuration.',
-        '🛠️ [00:08] AI repair: Injecting package dependency and repairing configs.',
-        '📦 [00:09] Retrying build with repaired files... Success!',
-        '🔀 [00:10] Generating GitHub Pull Request with verification patch...',
-        '✅ [00:11] Build completed successfully. App deployed to production staging.'
-      ]
-    };
+    const domain = project?.subdomain ? `${project.subdomain}.launchlive.in` : 'app.launchlive.in';
+    const rawSteps = SIMULATION_SCENARIOS[scenarioKey].steps;
+    const steps = rawSteps.map(s => s.replace(/\{\{DOMAIN\}\}/g, domain));
 
-    const steps = stepsMap[scenarioKey] || [];
-    for (let i = 0; i < steps.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      setSimulationSteps(prev => [...prev, steps[i]]);
+    if (mode === 'auto') {
+      for (let i = 0; i < steps.length; i++) {
+        while (isPausedRef.current) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          if (activeSimulationRef.current !== scenarioKey) return;
+        }
+
+        if (activeSimulationRef.current !== scenarioKey) return;
+
+        setCurrentStep(i);
+        setSimulationSteps(steps.slice(0, i + 1));
+        
+        const delay = 850 / speedRef.current;
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        if (activeSimulationRef.current !== scenarioKey) return;
+      }
+      
+      while (isPausedRef.current) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (activeSimulationRef.current !== scenarioKey) return;
+      }
+      
+      await finishSimulation(scenarioKey);
+    } else {
+      setCurrentStep(0);
+      setSimulationSteps([steps[0]]);
+      setSimulationLoading(false);
     }
+  };
 
+  const handleResetSimulation = () => {
+    setActiveSimulation(null);
+    setSimulationSteps([]);
+    setSimulationResponse('');
+    setSimulationLoading(false);
+    setIsPaused(false);
+    setCurrentStep(0);
+  };
+
+  const handleNextSimulationStep = async () => {
+    if (!activeSimulation || simulationLoading) return;
+    const domain = project?.subdomain ? `${project.subdomain}.launchlive.in` : 'app.launchlive.in';
+    const rawSteps = SIMULATION_SCENARIOS[activeSimulation].steps;
+    const steps = rawSteps.map(s => s.replace(/\{\{DOMAIN\}\}/g, domain));
+    const nextIndex = currentStep + 1;
+
+    if (nextIndex < steps.length) {
+      setCurrentStep(nextIndex);
+      setSimulationSteps(steps.slice(0, nextIndex + 1));
+      if (nextIndex === steps.length - 1) {
+        setSimulationLoading(true);
+        await finishSimulation(activeSimulation);
+      }
+    }
+  };
+
+  const finishSimulation = async (scenarioKey) => {
     try {
-      const prompt = `You are the LaunchLive SRE AI Architect.
-The user just simulated a DevOps/SRE incident: "${scenarioKey === 'app-crash' ? 'Application container crash / Out of Memory' : scenarioKey === 'ssl-expired' ? 'SSL certificate expiry & Certbot renew' : 'Git webhook build failure & code healing'}" on this project: "${project.name}" (Stack: "${project.stack}").
-Provide a clear, detailed 3-paragraph explanation of:
-1. Exactly what LaunchLive did in the simulation logs above.
-2. How LaunchLive prevents this problem or heals it in the real production environment for their specific stack ("${project.stack}").
-3. Give recommendations on how the developer can configure their settings (like auto-heal, memory bounds, webhooks) to optimize this.
-Use bold headers, bullet lists, and code blocks for code snippets. Keep it highly technical, SRE-expert-toned, and encouraging.`;
-
+      const promptGen = SIMULATION_SCENARIOS[scenarioKey].prompt;
+      const prompt = promptGen(project?.name || 'this project', project?.stack || 'current');
       const res = await api.post(`/ai/${id}/chat`, { message: prompt });
-      const reply = res.data.reply || res.data.response || res.data.message || 'Simulation completed.';
+      const reply = res.data.reply || res.data.response || res.data.message || 'Simulation completed successfully.';
       setSimulationResponse(reply);
     } catch (err) {
       setSimulationResponse(`❌ **Simulation Error:** ${err.response?.data?.message || err.message}`);
@@ -351,6 +517,14 @@ Use bold headers, bullet lists, and code blocks for code snippets. Keep it highl
       setSimulationLoading(false);
     }
   };
+
+  const handleAskAboutNode = (nodeName) => {
+    const desc = NODE_DESCRIPTIONS[nodeName];
+    if (!desc) return;
+    setGuideSubTab('chat');
+    handleAskArchitect(`Explain the role, internal mechanics, and configuration of the "${desc.title}" component in the context of my project.`);
+  };
+
 
   const handleGenerateArchitecture = async () => {
     if (archDiagramLoading) return;
@@ -1807,7 +1981,6 @@ Use bold headers, bullet lists, and code blocks.`;
         )}
 
         {/* ── Automation Guide ── */}
-        {/* ── Automation Guide ── */}
         {activeTab === 'guide' && (() => {
           const getNodeState = (nodeName) => {
             if (!activeSimulation) return 'idle';
@@ -1885,60 +2058,18 @@ Use bold headers, bullet lists, and code blocks.`;
             return 'idle';
           };
 
-          const getNodeStyle = (state) => {
-            const base = {
-              padding: '10px 16px',
-              borderRadius: '12px',
-              fontSize: '13px',
-              fontWeight: '600',
-              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              border: '1px solid var(--border)',
-              background: 'rgba(30, 41, 59, 0.4)',
-              color: 'var(--text-muted)'
-            };
+          const getNodeClass = (nodeName) => {
+            const state = getNodeState(nodeName);
+            const isSelected = selectedNode === nodeName;
             
-            if (state === 'active') {
-              return {
-                ...base,
-                borderColor: 'var(--accent-primary)',
-                background: 'rgba(56, 189, 248, 0.15)',
-                color: '#fff',
-                boxShadow: '0 0 15px rgba(56, 189, 248, 0.4)',
-                transform: 'scale(1.05)'
-              };
-            }
-            if (state === 'success') {
-              return {
-                ...base,
-                borderColor: 'var(--accent-success)',
-                background: 'rgba(16, 185, 129, 0.15)',
-                color: '#fff',
-                boxShadow: '0 0 15px rgba(16, 185, 129, 0.3)'
-              };
-            }
-            if (state === 'warning') {
-              return {
-                ...base,
-                borderColor: 'var(--accent-warning)',
-                background: 'rgba(245, 158, 11, 0.15)',
-                color: '#fff',
-                boxShadow: '0 0 15px rgba(245, 158, 11, 0.3)'
-              };
-            }
-            if (state === 'failed') {
-              return {
-                ...base,
-                borderColor: 'var(--accent-danger)',
-                background: 'rgba(239, 68, 68, 0.15)',
-                color: '#fff',
-                boxShadow: '0 0 15px rgba(239, 68, 68, 0.4)',
-                transform: 'scale(1.05)'
-              };
-            }
-            return base;
+            let classes = ['sre-node'];
+            if (isSelected) classes.push('selected');
+            if (state === 'active') classes.push('active-state');
+            else if (state === 'success') classes.push('success-state');
+            else if (state === 'warning') classes.push('warning-state');
+            else if (state === 'failed') classes.push('failed-state');
+            
+            return classes.join(' ');
           };
 
           return (
@@ -1988,31 +2119,39 @@ Use bold headers, bullet lists, and code blocks.`;
 
               {/* Sub-tab 1: Systems Guide */}
               {guideSubTab === 'systems' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 24 }}>
                   {[
                     {
                       title: '🤖 AI Auto-Healing & Self-Correction',
+                      icon: '🤖',
+                      schema: 'Crash ➔ Capture Logs ➔ AI Diagnose ➔ Test Fix ➔ Auto-Deploy ✅',
                       why: 'If your application crashes in production, it normally stays down until a developer manually reads logs and fixes the code.',
-                      works: 'When a container crashes or a build fails, LaunchLive\'s monitoring system captures the logs, passes them to the AI agent to write a targeted patch, validates it in a isolated test container, and automatically deploys the fix (creating a PR optionally).',
-                      benefits: 'Minimizes downtime by automatically resolving common runtime/build bugs.',
-                      how: 'Go to the Settings tab and enable "Auto Heal". You can also choose between Auto-Commit or PR options.',
+                      works: 'LaunchLive catches exit codes, analyzes the latest crash logs using SRE AI, tests the generated code patch in an isolated sandbox, and automatically hot-swaps traffic to the healed container.',
+                      benefits: 'Dramatically minimizes system downtime by autonomously resolving common runtime/build bugs.',
+                      how: 'Enable "Auto Heal" in the Settings tab, and customize your commit or Pull Request notifications.',
                     },
                     {
-                      title: '🔍 Ephemeral PR Preview Environments',
+                      title: '🔍 Ephemeral Pull Request Previews',
+                      icon: '🔍',
+                      schema: 'Git PR Open ➔ Build Isolated App ➔ Let\'s Encrypt SSL ➔ Share Link ✅',
                       why: 'Testing pull requests in isolation without affecting the main staging/production environments is difficult to configure and costly to host.',
-                      works: 'When a PR is opened, LaunchLive spins up an isolated, temporary replica of your app with a dedicated database and environment variables, providing a unique shareable URL.',
-                      benefits: 'Enables safe, isolated, and instant testing of new features before merging them into production.',
-                      how: 'Simply open a Pull Request in your connected GitHub repository. LaunchLive will automatically comment the preview link.',
+                      works: 'Spins up an isolated preview replica of your app (including local databases and private env vars) whenever a new PR is opened, commenting a secure link on your GitHub.',
+                      benefits: 'Allows teams to test and review code changes in isolation before merging into staging/production.',
+                      how: 'Simply open a Pull Request in your connected GitHub repository. LaunchLive will handle the rest automatically.',
                     },
                     {
                       title: '⚡ Zero-Downtime Container Scaling',
+                      icon: '⚡',
+                      schema: 'Scale Trigger ➔ Spawn Container ➔ Health Check ➔ Nginx Route Swap ✅',
                       why: 'Standard server restarts or scaling resources usually disconnect active users, causing downtime.',
                       works: 'LaunchLive spins up the new container version, performs health checks to ensure it is healthy, and dynamically re-routes traffic using Nginx before shutting down the old container.',
                       benefits: 'Seamless scaling under high load with zero dropped connections.',
-                      how: 'Change the CPU or RAM limits in the "Live Metrics" or "Settings" tab. The system handles the rolling update.',
+                      how: 'Change the CPU or RAM limits in the Settings tab. The system handles the rolling update.',
                     },
                     {
                       title: '🛡️ Automated Security Patching',
+                      icon: '🛡️',
+                      schema: 'Security Scan ➔ OSV Check ➔ AI Dependency Patch ➔ Deploy PR ✅',
                       why: 'Keeping dependencies secure against newly discovered CVEs requires constant monitoring and manual upgrades.',
                       works: 'LaunchLive regularly scans your dependency tree. If a vulnerability is found, the AI calculates the safest upgrade path, tests it, and prepares a pull request with the fix.',
                       benefits: 'Protects against exploits automatically, keeping your dependencies up-to-date with minimal effort.',
@@ -2020,6 +2159,8 @@ Use bold headers, bullet lists, and code blocks.`;
                     },
                     {
                       title: '🌐 Automated SSL & DNS Routing',
+                      icon: '🌐',
+                      schema: 'New Custom Domain ➔ Cloudflare DNS Hook ➔ SSL Gen ➔ Cron Renewal ✅',
                       why: 'Setting up DNS records and securing them with SSL certificates can be a tedious process of DNS configuration and web server tuning.',
                       works: 'LaunchLive integrates with Cloudflare to set up subdomains and custom domains instantly. It configures Let\'s Encrypt certificates and automatically renews them via a weekly cron job.',
                       benefits: 'Provides instant, secure access (HTTPS) to your deployments without manually managing domain records or SSL.',
@@ -2027,26 +2168,57 @@ Use bold headers, bullet lists, and code blocks.`;
                     },
                     {
                       title: '📈 Real-time Observability & Telemetry',
+                      icon: '📈',
+                      schema: 'Inbound Request ➔ Middleware Interceptor ➔ Redis sliding window ➔ Charts ✅',
                       why: 'Identifying slow API endpoints, traffic spikes, or memory leaks requires complex monitoring setups.',
                       works: 'An Nginx/Express middleware interceptor streams live performance metrics directly to a Redis-backed sliding window, providing instant access to latency, traffic, and error rates.',
                       benefits: 'Gives you real-time performance insights and instant anomaly detection.',
-                      how: 'Monitor real-time application health under the "Live Metrics" and "Analytics" tabs.',
+                      how: 'Monitor real-time application health under the "Live Metrics" and "Analytics" tabs.'
                     }
                   ].map((g, i) => (
                     <div key={i} className="lp-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                       <div>
-                        <h4 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-main)', marginBottom: 12 }}>{g.title}</h4>
-                        <div style={{ fontSize: 13, marginBottom: 8 }}>
-                          <strong style={{ color: 'var(--accent-danger)' }}>Why it's used:</strong> <span style={{ color: 'var(--text-muted)' }}>{g.why}</span>
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                          <span style={{ fontSize: 20 }}>{g.icon}</span>
+                          <h4 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>{g.title}</h4>
                         </div>
-                        <div style={{ fontSize: 13, marginBottom: 8 }}>
-                          <strong style={{ color: 'var(--accent-primary)' }}>How it works:</strong> <span style={{ color: 'var(--text-muted)' }}>{g.works}</span>
+
+                        {/* Pipeline Monospace Schema */}
+                        <div style={{
+                          fontFamily: 'var(--font-mono, monospace)',
+                          fontSize: '11px',
+                          color: 'var(--accent-primary)',
+                          background: 'rgba(56, 189, 248, 0.04)',
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          border: '1px solid rgba(56, 189, 248, 0.1)',
+                          marginBottom: 16
+                        }}>
+                          {g.schema}
                         </div>
+
+                        {/* Side by side Problem / Solution */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, marginBottom: 12 }}>
+                          {/* Problem */}
+                          <div style={{ padding: 10, borderLeft: '3px solid var(--accent-danger)', background: 'rgba(239, 68, 68, 0.02)', borderRadius: '0 6px 6px 0' }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-danger)', textTransform: 'uppercase', marginBottom: 2 }}>❌ The Problem (Without LaunchLive)</div>
+                            <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.4 }}>{g.why}</div>
+                          </div>
+                          
+                          {/* Solution */}
+                          <div style={{ padding: 10, borderLeft: '3px solid var(--accent-success)', background: 'rgba(16, 185, 129, 0.02)', borderRadius: '0 6px 6px 0' }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-success)', textTransform: 'uppercase', marginBottom: 2 }}>✅ The Solution (With LaunchLive)</div>
+                            <div style={{ fontSize: 12.5, color: 'var(--text-main)', lineHeight: 1.4 }}>{g.works}</div>
+                          </div>
+                        </div>
+
+                        {/* Details */}
                         <div style={{ fontSize: 13, marginBottom: 8 }}>
-                          <strong style={{ color: 'var(--accent-success)' }}>How useful:</strong> <span style={{ color: 'var(--text-muted)' }}>{g.benefits}</span>
+                          <strong style={{ color: 'var(--accent-secondary)' }}>💡 Real-World Value:</strong> <span style={{ color: 'var(--text-muted)' }}>{g.benefits}</span>
                         </div>
                         <div style={{ fontSize: 13 }}>
-                          <strong style={{ color: 'var(--accent-secondary)' }}>How to use:</strong> <span style={{ color: 'var(--text-muted)' }}>{g.how}</span>
+                          <strong style={{ color: '#fff' }}>🛠️ How to use:</strong> <span style={{ color: 'var(--text-muted)' }}>{g.how}</span>
                         </div>
                       </div>
                       <div style={{ marginTop: 'auto', paddingTop: 10 }}>
@@ -2063,216 +2235,319 @@ Use bold headers, bullet lists, and code blocks.`;
                 </div>
               )}
 
-              {/* Sub-tab 2: SRE AI Chatbot */}
-              {guideSubTab === 'chat' && (
-                <div className="lp-card glass" style={{ padding: 24, display: 'flex', flexDirection: 'column', height: '550px', justifyContent: 'space-between' }}>
-                  <div>
-                    <h3 style={{ fontSize: 16, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      💬 Ask the SRE AI Architect
-                    </h3>
-                    <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
-                      Have questions about how LaunchLive manages, builds, or automates this specific project? Ask our AI Architect below.
-                    </p>
-                  </div>
-
-                  {/* Chat Message Window */}
-                  <div style={{
-                    flex: 1,
-                    overflowY: 'auto',
-                    background: 'rgba(0,0,0,0.2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 12,
-                    padding: 16,
-                    marginBottom: 16,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 12
-                  }}>
-                    {architectMessages.map((msg, index) => (
-                      <div key={index} style={{
-                        display: 'flex',
-                        justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
-                      }}>
-                        <div style={{
-                          maxWidth: '85%',
-                          padding: '10px 14px',
-                          borderRadius: 12,
-                          background: msg.role === 'user' ? 'var(--accent-primary)' : 'rgba(255,255,255,0.03)',
-                          color: msg.role === 'user' ? '#fff' : 'var(--text-main)',
-                          fontSize: '13px',
-                          lineHeight: '1.6',
-                          border: msg.role === 'user' ? 'none' : '1px solid var(--border)'
-                        }}>
-                          {msg.role === 'assistant' && (
-                            <div style={{ fontWeight: 700, color: 'var(--accent-secondary)', marginBottom: 4 }}>
-                              🤖 AI SRE Architect
-                            </div>
-                          )}
-                          <div style={{ whiteSpace: 'pre-wrap' }}>
-                            {formatMessageContent(msg.content)}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <div ref={chatEndRef} />
-                    {architectLoading && (
-                      <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                        <div style={{
-                          padding: '10px 14px',
-                          borderRadius: 12,
-                          background: 'rgba(255,255,255,0.03)',
-                          border: '1px solid var(--border)',
-                          color: 'var(--text-muted)',
-                          fontSize: '13px'
-                        }}>
-                          <div className="loading-spinner" style={{ width: 12, height: 12, display: 'inline-block', marginRight: 8 }}></div>
-                          Thinking...
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Suggestions */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                    {[
-                      `How does LaunchLive handle auto-healing for this ${project?.stack || 'current'} stack?`,
-                      'How are my environment variables secured?',
-                      'Explain the zero-downtime container swap mechanics.',
-                      'How does the weekly SSL renewal work?'
-                    ].map((q, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleAskArchitect(q)}
-                        className="lp-btn-secondary"
-                        style={{ fontSize: 11, padding: '4px 10px', cursor: 'pointer' }}
-                        disabled={architectLoading}
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Ask Input Form */}
-                  <form onSubmit={(e) => { e.preventDefault(); handleAskArchitect(customQuestion); }} style={{ display: 'flex', gap: 10 }}>
-                    <input
-                      type="text"
-                      value={customQuestion}
-                      onChange={(e) => setCustomQuestion(e.target.value)}
-                      placeholder="Ask a question about LaunchLive's automation..."
-                      className="lp-input"
-                      style={{ flex: 1, background: 'rgba(0,0,0,0.1)' }}
-                      disabled={architectLoading}
-                    />
-                    <button
-                      type="submit"
-                      className="lp-btn-primary"
-                      style={{ background: 'var(--accent-secondary)', padding: '0 20px', cursor: 'pointer' }}
-                      disabled={architectLoading || !customQuestion.trim()}
-                    >
-                      Send
-                    </button>
-                  </form>
-                </div>
-              )}
-
               {/* Sub-tab 3: DevOps Sandbox (Visual Simulation) */}
               {guideSubTab === 'sandbox' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24 }}>
+                  {/* SRE Infrastructure Flow Diagram */}
                   <div className="lp-card glass" style={{ padding: 24 }}>
-                    <h3 style={{ fontSize: 16, marginBottom: 6 }}>🎮 DevOps & SRE Incident Simulator</h3>
-                    <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
-                      Select a simulated production scenario to watch how LaunchLive automatically reacts, diagnoses, and resolves incidents in real time.
-                    </p>
-
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-                      <button
-                        onClick={() => handleRunSimulation('app-crash')}
-                        className="lp-btn-secondary"
-                        style={{ flex: '1 1 200px', padding: '10px', fontSize: 13, border: activeSimulation === 'app-crash' ? '1px solid var(--accent-danger)' : '1px solid var(--border)' }}
-                        disabled={simulationLoading}
-                      >
-                        💥 Simulate App Crash (OOM)
-                      </button>
-                      <button
-                        onClick={() => handleRunSimulation('build-fail')}
-                        className="lp-btn-secondary"
-                        style={{ flex: '1 1 200px', padding: '10px', fontSize: 13, border: activeSimulation === 'build-fail' ? '1px solid var(--accent-warning)' : '1px solid var(--border)' }}
-                        disabled={simulationLoading}
-                      >
-                        🛑 Simulate Build Failure
-                      </button>
-                      <button
-                        onClick={() => handleRunSimulation('ssl-expired')}
-                        className="lp-btn-secondary"
-                        style={{ flex: '1 1 200px', padding: '10px', fontSize: 13, border: activeSimulation === 'ssl-expired' ? '1px solid var(--accent-primary)' : '1px solid var(--border)' }}
-                        disabled={simulationLoading}
-                      >
-                        🔒 Simulate SSL Expiry
-                      </button>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                        Live SRE Infrastructure Flow Diagram
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        💡 Click any node to inspect its SRE role
+                      </span>
                     </div>
 
-                    {/* SRE Infrastructure Flow Diagram */}
-                    {activeSimulation && (
+                    <div style={{
+                      background: 'rgba(0,0,0,0.15)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      padding: 24,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 20
+                    }}>
                       <div style={{
-                        background: 'rgba(0,0,0,0.15)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 12,
-                        padding: 20,
-                        marginBottom: 20
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        gap: 16
                       }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 16, textAlign: 'center' }}>
-                          Live SRE Infrastructure Flow Diagram
+                        {/* Node: Developer */}
+                        <div 
+                          className={getNodeClass('Dev')} 
+                          onClick={() => setSelectedNode('Dev')}
+                        >
+                          💻 Developer
                         </div>
-                        <div style={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                          gap: 12
-                        }}>
-                          {/* Node: Developer */}
-                          <div style={getNodeStyle(getNodeState('Dev'))}>
-                            💻 Developer
-                          </div>
-                          <div style={{ color: 'var(--text-dim)', transform: 'rotate(0deg)' }}>➔</div>
+                        <div style={{ color: 'var(--text-dim)', fontSize: 16 }}>➔</div>
 
-                          {/* Node: Webhook */}
-                          <div style={getNodeStyle(getNodeState('Webhook'))}>
-                            🔗 Webhook Ingress
-                          </div>
-                          <div style={{ color: 'var(--text-dim)' }}>➔</div>
+                        {/* Node: Webhook */}
+                        <div 
+                          className={getNodeClass('Webhook')} 
+                          onClick={() => setSelectedNode('Webhook')}
+                        >
+                          🔗 Webhook Router
+                        </div>
+                        <div style={{ color: 'var(--text-dim)', fontSize: 16 }}>➔</div>
 
-                          {/* Node: Build Engine */}
-                          <div style={getNodeStyle(getNodeState('Build'))}>
-                            ⚙️ Build Engine
-                          </div>
-                          <div style={{ color: 'var(--text-dim)' }}>➔</div>
+                        {/* Node: Build Engine */}
+                        <div 
+                          className={getNodeClass('Build')} 
+                          onClick={() => setSelectedNode('Build')}
+                        >
+                          ⚙️ Build Engine
+                        </div>
+                        <div style={{ color: 'var(--text-dim)', fontSize: 16 }}>➔</div>
 
-                          {/* Node: Nginx Proxy */}
-                          <div style={getNodeStyle(getNodeState('Proxy'))}>
-                            🌐 Nginx Gateway
-                          </div>
-                          <div style={{ color: 'var(--text-dim)' }}>➔</div>
+                        {/* Node: Nginx Proxy */}
+                        <div 
+                          className={getNodeClass('Proxy')} 
+                          onClick={() => setSelectedNode('Proxy')}
+                        >
+                          🌐 Nginx Gateway
+                        </div>
+                        <div style={{ color: 'var(--text-dim)', fontSize: 16 }}>➔</div>
 
-                          {/* Node: App Container */}
-                          <div style={getNodeStyle(getNodeState('App'))}>
-                            📦 App Container
+                        {/* Node: App Container */}
+                        <div 
+                          className={getNodeClass('App')} 
+                          onClick={() => setSelectedNode('App')}
+                        >
+                          📦 App Container
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: 32, marginTop: 12 }}>
+                        {/* Node: Telemetry */}
+                        <div 
+                          className={getNodeClass('Monitor')} 
+                          onClick={() => setSelectedNode('Monitor')}
+                        >
+                          📈 Telemetry Monitor
+                        </div>
+
+                        <div style={{ color: 'var(--text-dim)', display: 'flex', alignItems: 'center', fontSize: 16 }}>⇄</div>
+
+                        {/* Node: AI Healer */}
+                        <div 
+                          className={getNodeClass('AI')} 
+                          onClick={() => setSelectedNode('AI')}
+                        >
+                          🧠 AI SRE Agent
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Selected Node Inspector Panel */}
+                  <div className="lp-card glass" style={{
+                    padding: 24,
+                    borderLeft: '4px solid var(--accent-secondary)',
+                    background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.05) 0%, rgba(56, 189, 248, 0.02) 100%)',
+                  }}>
+                    {(() => {
+                      const activeNode = selectedNode || 'AI';
+                      const desc = NODE_DESCRIPTIONS[activeNode];
+                      if (!desc) return null;
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                            <div>
+                              <h4 style={{ fontSize: 16, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {desc.title} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>— {desc.role}</span>
+                              </h4>
+                            </div>
+                            <button
+                              onClick={() => handleAskAboutNode(activeNode)}
+                              className="lp-btn-secondary"
+                              style={{ fontSize: 12, padding: '6px 14px', borderColor: 'var(--accent-secondary)' }}
+                            >
+                              💬 Ask SRE AI about this
+                            </button>
+                          </div>
+                          
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+                            <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.03)', borderLeft: '3px solid var(--accent-danger)', borderRadius: '4px' }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-danger)', textTransform: 'uppercase', marginBottom: 4 }}>⚠️ The Problem (Without LaunchLive)</div>
+                              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>{desc.why}</div>
+                            </div>
+                            <div style={{ padding: 12, background: 'rgba(56, 189, 248, 0.03)', borderLeft: '3px solid var(--accent-primary)', borderRadius: '4px' }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-primary)', textTransform: 'uppercase', marginBottom: 4 }}>⚙️ SRE Internal Mechanics</div>
+                              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>{desc.works}</div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+                            <div style={{ padding: 12, background: 'rgba(16, 185, 129, 0.03)', borderLeft: '3px solid var(--accent-success)', borderRadius: '4px' }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-success)', textTransform: 'uppercase', marginBottom: 4 }}>💡 Real-World Value</div>
+                              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>{desc.value}</div>
+                            </div>
+                            <div style={{ padding: 12, background: 'rgba(129, 140, 248, 0.03)', borderLeft: '3px solid var(--accent-secondary)', borderRadius: '4px' }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-secondary)', textTransform: 'uppercase', marginBottom: 4 }}>🛠️ How to Enable / Configure</div>
+                              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>{desc.how}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* DevOps Simulator & Controls */}
+                  <div className="lp-card glass" style={{ padding: 24 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+                      <div>
+                        <h3 style={{ fontSize: 16, color: '#fff' }}>🎮 DevOps & SRE Incident Simulator</h3>
+                        <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
+                          Run simulated production outages and watch LaunchLive self-heal.
+                        </p>
+                      </div>
+                      
+                      {/* Simulation Status Info */}
+                      {activeSimulation && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                            Speed: 
+                          </span>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {[0.5, 1, 2].map(speed => (
+                              <button
+                                key={speed}
+                                onClick={() => setSimulationSpeed(speed)}
+                                style={{
+                                  padding: '2px 6px',
+                                  fontSize: 10,
+                                  borderRadius: 4,
+                                  border: '1px solid ' + (simulationSpeed === speed ? 'var(--accent-primary)' : 'var(--border)'),
+                                  background: simulationSpeed === speed ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                                  color: simulationSpeed === speed ? '#fff' : 'var(--text-muted)',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {speed}x
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Control Panel / State Selector */}
+                    {!activeSimulation ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+                        {/* Mode Toggle Selector */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>Simulation Mode:</span>
+                          <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 20, overflow: 'hidden' }}>
+                            <button
+                              onClick={() => setStepMode('auto')}
+                              style={{
+                                padding: '6px 12px',
+                                fontSize: 12,
+                                border: 'none',
+                                background: stepMode === 'auto' ? 'var(--accent-primary)' : 'transparent',
+                                color: stepMode === 'auto' ? '#fff' : 'var(--text-muted)',
+                                cursor: 'pointer',
+                                fontWeight: 600
+                              }}
+                            >
+                              ⚡ Auto-Play
+                            </button>
+                            <button
+                              onClick={() => setStepMode('manual')}
+                              style={{
+                                padding: '6px 12px',
+                                fontSize: 12,
+                                border: 'none',
+                                background: stepMode === 'manual' ? 'var(--accent-primary)' : 'transparent',
+                                color: stepMode === 'manual' ? '#fff' : 'var(--text-muted)',
+                                cursor: 'pointer',
+                                fontWeight: 600
+                              }}
+                            >
+                              🛠️ Step-by-Step
+                            </button>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 12 }}>
-                          {/* Node: Telemetry */}
-                          <div style={getNodeStyle(getNodeState('Monitor'))}>
-                            📈 Telemetry Monitor
+                        {/* Trigger Buttons */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                          <button
+                            onClick={() => handleRunSimulation('app-crash', stepMode)}
+                            className="lp-btn-secondary"
+                            style={{ flex: '1 1 200px', padding: '12px', fontSize: 13, borderColor: 'var(--accent-danger)' }}
+                          >
+                            💥 Simulate App Crash (OOM)
+                          </button>
+                          <button
+                            onClick={() => handleRunSimulation('build-fail', stepMode)}
+                            className="lp-btn-secondary"
+                            style={{ flex: '1 1 200px', padding: '12px', fontSize: 13, borderColor: 'var(--accent-warning)' }}
+                          >
+                            🛑 Simulate Build Failure
+                          </button>
+                          <button
+                            onClick={() => handleRunSimulation('ssl-expired', stepMode)}
+                            className="lp-btn-secondary"
+                            style={{ flex: '1 1 200px', padding: '12px', fontSize: 13, borderColor: 'var(--accent-primary)' }}
+                          >
+                            🔒 Simulate SSL Expiry
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20, padding: 12, background: 'rgba(255, 255, 255, 0.02)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)' }}>
+                              Running: {SIMULATION_SCENARIOS[activeSimulation]?.name}
+                            </span>
+                            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: stepMode === 'auto' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(129, 140, 248, 0.15)', color: stepMode === 'auto' ? 'var(--accent-primary)' : 'var(--accent-secondary)' }}>
+                              {stepMode === 'auto' ? 'Auto-Play ⚡' : 'Step Mode 🛠️'}
+                            </span>
                           </div>
 
-                          <div style={{ color: 'var(--text-dim)', display: 'flex', alignItems: 'center' }}>⇄</div>
+                          {/* Stepper Controls */}
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {stepMode === 'auto' && (
+                              <button
+                                onClick={() => setIsPaused(!isPaused)}
+                                className="lp-btn-secondary"
+                                style={{ padding: '6px 12px', fontSize: 12 }}
+                              >
+                                {isPaused ? '▶️ Resume' : '⏸️ Pause'}
+                              </button>
+                            )}
+                            
+                            {(stepMode === 'manual' || isPaused) && (
+                              <button
+                                onClick={handleNextSimulationStep}
+                                className="lp-btn-primary"
+                                style={{ padding: '6px 12px', fontSize: 12, background: 'var(--accent-secondary)' }}
+                                disabled={currentStep >= (SIMULATION_SCENARIOS[activeSimulation]?.steps.length || 1) - 1 || simulationLoading}
+                              >
+                                Next Step ➔
+                              </button>
+                            )}
 
-                          {/* Node: AI Healer */}
-                          <div style={getNodeStyle(getNodeState('AI'))}>
-                            🧠 AI SRE Agent
+                            <button
+                              onClick={handleResetSimulation}
+                              className="lp-btn-danger"
+                              style={{ padding: '6px 12px', fontSize: 12 }}
+                            >
+                              Stop 🔄
+                            </button>
                           </div>
                         </div>
+
+                        {/* Progress bar */}
+                        {(() => {
+                          const totalSteps = SIMULATION_SCENARIOS[activeSimulation]?.steps.length || 1;
+                          const pct = ((currentStep + 1) / totalSteps) * 100;
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}>
+                                <span>Progress</span>
+                                <span>Step {currentStep + 1} of {totalSteps}</span>
+                              </div>
+                              <div style={{ width: '100%', height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                                <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent-primary)', transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
 

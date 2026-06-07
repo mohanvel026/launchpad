@@ -589,6 +589,63 @@ textarea.lp-input {
   }
 }
 
+/* ─── SRE Infrastructure Flow Nodes ─── */
+.sre-node {
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: rgba(30, 41, 59, 0.4);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.sre-node:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  background: rgba(30, 41, 59, 0.6);
+  color: var(--text-main);
+}
+.sre-node.selected {
+  border-color: var(--accent-secondary) !important;
+  box-shadow: 0 0 20px rgba(129, 140, 248, 0.5) !important;
+  background: rgba(129, 140, 248, 0.1) !important;
+  color: #fff !important;
+  transform: translateY(-2px) scale(1.03);
+}
+.sre-node.active-state {
+  border-color: var(--accent-primary) !important;
+  background: rgba(56, 189, 248, 0.15) !important;
+  color: #fff !important;
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.4) !important;
+  transform: scale(1.05);
+}
+.sre-node.success-state {
+  border-color: var(--accent-success) !important;
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #fff !important;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.3) !important;
+}
+.sre-node.warning-state {
+  border-color: var(--accent-warning) !important;
+  background: rgba(245, 158, 11, 0.15) !important;
+  color: #fff !important;
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.3) !important;
+}
+.sre-node.failed-state {
+  border-color: var(--accent-danger) !important;
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #fff !important;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.4) !important;
+  transform: scale(1.05);
+}
+
+
 
 
 
