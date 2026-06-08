@@ -55,7 +55,7 @@ export default function Settings() {
       setToken(res.data.token);
       setTokenShown(true);
     } catch (err) {
-      setError('Failed to get token');
+      setError(err.response?.data?.message || 'Failed to get token');
     }
   };
 

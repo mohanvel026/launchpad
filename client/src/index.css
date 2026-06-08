@@ -531,13 +531,20 @@ textarea.lp-input {
 }
 
 /* ─── Project Detail Sidebar Layout ─── */
+.lp-detail-layout {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
 .lp-sidebar-container {
-  width: 280px;
+  width: 260px;
   flex-shrink: 0;
-  background: rgba(15, 23, 42, 0.6);
+  background: transparent;
   border-right: 1px solid var(--border);
-  /* left padding matches page-padding-x so sidebar items align with the header logo */
-  padding: 28px 16px 28px var(--page-padding-x);
+  padding: 28px 16px 28px 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -577,8 +584,8 @@ textarea.lp-input {
 .lp-content-container {
   flex: 1;
   min-width: 0;
-  background: var(--bg-main);
-  padding: 36px var(--page-padding-x) 40px 36px;
+  background: transparent;
+  padding: 28px 0 40px 36px;
   height: 100%;
   overflow-y: auto;
 }
@@ -608,11 +615,11 @@ textarea.lp-input {
     flex-shrink: 0;
     border-right: none;
     border-bottom: 1px solid var(--border);
-    padding: 16px var(--page-padding-x);
+    padding: 16px 0;
     overflow-y: visible;
   }
   .lp-content-container {
-    padding: 24px var(--page-padding-x);
+    padding: 24px 0;
     height: auto;
     overflow-y: visible;
   }

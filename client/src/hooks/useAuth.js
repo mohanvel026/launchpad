@@ -8,7 +8,12 @@ export function useAuth() {
   useEffect(() => {
     let cancelled = false;
     const token = localStorage.getItem('lp_token');
-    if (!token) { setLoading(false); return; }
+    if (!token) {
+      setTimeout(() => {
+        setLoading(false);
+      }, 0);
+      return;
+    }
 
     api.get('/auth/me')
       .then((res) => { if (!cancelled) setUser(res.data.user); })

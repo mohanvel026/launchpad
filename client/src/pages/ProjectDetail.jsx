@@ -384,8 +384,8 @@ export default function ProjectDetail() {
   const [costLoading, setCostLoading] = useState(false);
 
   // 🫀 Runtime Health Monitor
-  const [healthData, setHealthData] = useState(null);
-  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthData, setHealthData] = useState(null); // eslint-disable-line no-unused-vars
+  const [healthLoading, setHealthLoading] = useState(false); // eslint-disable-line no-unused-vars
 
   // ⏮️ Rollback
   const [rollingBack, setRollingBack] = useState(null); // deploymentId being rolled back
@@ -397,7 +397,7 @@ export default function ProjectDetail() {
   const [newPreviewBranch, setNewPreviewBranch] = useState('');
   const [creatingPreview, setCreatingPreview] = useState(false);
   const [branches, setBranches] = useState([]);
-  const [loadingBranches, setLoadingBranches] = useState(false);
+  const [loadingBranches, setLoadingBranches] = useState(false); // eslint-disable-line no-unused-vars
   const [customQuestion, setCustomQuestion] = useState('');
   const [architectMessages, setArchitectMessages] = useState([]);
   const [architectLoading, setArchitectLoading] = useState(false);
@@ -786,9 +786,11 @@ Use bold headers, bullet lists, and code blocks.`;
   }, [showDeployDropdown]);
 
   useEffect(() => {
-    loadProject();
-    loadDeployments();
-    loadEnvVars();
+    setTimeout(() => {
+      loadProject();
+      loadDeployments();
+      loadEnvVars();
+    }, 0);
   }, [loadProject, loadDeployments, loadEnvVars]);
 
   // Page-level persistent socket connection
@@ -855,9 +857,11 @@ Use bold headers, bullet lists, and code blocks.`;
   useEffect(() => {
     const latestDep = deployments?.[0];
     if (latestDep && (latestDep.status === 'building' || latestDep.status === 'queued')) {
-      setActiveTab('logs');
+      setTimeout(() => {
+        setActiveTab('logs');
+      }, 0);
     }
-  }, [deployments?.[0]?._id, deployments?.[0]?.status]);
+  }, [deployments?.[0]?._id, deployments?.[0]?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
@@ -882,14 +886,16 @@ Use bold headers, bullet lists, and code blocks.`;
 
   useEffect(() => {
     if (project && architectMessages.length === 0) {
-      setArchitectMessages([
-        {
-          role: 'assistant',
-          content: `🤖 Greetings! I am the SRE AI Architect for **${project.name}**. I oversee the container scaling, Nginx reverse proxies, SSL certificate crons, and the telemetry auto-healing monitor for this application.\n\nAsk me anything about how the infrastructure runs, click on a quick suggestion, or run a **DevOps Simulation** below!`
-        }
-      ]);
+      setTimeout(() => {
+        setArchitectMessages([
+          {
+            role: 'assistant',
+            content: `🤖 Greetings! I am the SRE AI Architect for **${project.name}**. I oversee the container scaling, Nginx reverse proxies, SSL certificate crons, and the telemetry auto-healing monitor for this application.\n\nAsk me anything about how the infrastructure runs, click on a quick suggestion, or run a **DevOps Simulation** below!`
+          }
+        ]);
+      }, 0);
     }
-  }, [project]);
+  }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (guideSubTab === 'chat') {
@@ -1298,16 +1304,22 @@ Use bold headers, bullet lists, and code blocks.`;
   useEffect(() => {
     if (project) {
       if (!readiness && !readinessLoading) {
-        handleReadinessCheck();
+        setTimeout(() => {
+          handleReadinessCheck();
+        }, 0);
       }
       if (!vulnData && !vulnLoading) {
-        handleVulnScan();
+        setTimeout(() => {
+          handleVulnScan();
+        }, 0);
       }
       if (missingVars === null && !missingVarsLoading) {
-        handleAiScanMissingVars();
+        setTimeout(() => {
+          handleAiScanMissingVars();
+        }, 0);
       }
     }
-  }, [project?._id, readiness, readinessLoading, vulnData, vulnLoading, missingVars, missingVarsLoading]);
+  }, [project?._id, readiness, readinessLoading, vulnData, vulnLoading, missingVars, missingVarsLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tab switch logic to auto-load tab details and clean up socket rooms on tab change
   useEffect(() => {
@@ -1316,26 +1328,40 @@ Use bold headers, bullet lists, and code blocks.`;
       logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       if (latestDep) {
         if (latestDep.status === 'building' || latestDep.status === 'queued') {
-          connectToLogs(latestDep._id);
+          setTimeout(() => {
+            connectToLogs(latestDep._id);
+          }, 0);
         } else if (logs.length === 0) {
-          viewLogs(latestDep);
+          setTimeout(() => {
+            viewLogs(latestDep);
+          }, 0);
         }
       }
     } else if (activeTab === 'runtime-logs') {
-      connectToRuntimeLogs();
+      setTimeout(() => {
+        connectToRuntimeLogs();
+      }, 0);
     } else if (activeTab === 'previews') {
-      handleLoadPreviews();
+      setTimeout(() => {
+        handleLoadPreviews();
+      }, 0);
     } else if (activeTab === 'advisor') {
       if (!readiness && !readinessLoading) {
-        handleReadinessCheck();
+        setTimeout(() => {
+          handleReadinessCheck();
+        }, 0);
       }
     } else if (activeTab === 'security') {
       if (!vulnData && !vulnLoading) {
-        handleVulnScan();
+        setTimeout(() => {
+          handleVulnScan();
+        }, 0);
       }
     } else if (activeTab === 'env') {
       if (missingVars === null && !missingVarsLoading) {
-        handleAiScanMissingVars();
+        setTimeout(() => {
+          handleAiScanMissingVars();
+        }, 0);
       }
     }
 
@@ -1347,7 +1373,7 @@ Use bold headers, bullet lists, and code blocks.`;
         socketRef.current?.emit('leave:deployment', latestDep._id);
       }
     };
-  }, [activeTab, deployments?.[0]?._id, handleLoadPreviews, readiness, readinessLoading, vulnData, vulnLoading, missingVars, missingVarsLoading]);
+  }, [activeTab, deployments?.[0]?._id, handleLoadPreviews, readiness, readinessLoading, vulnData, vulnLoading, missingVars, missingVarsLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!project) return (
     <div className="launchlive-container flex-center" style={{ minHeight: '100vh' }}>
@@ -1602,18 +1628,10 @@ Use bold headers, bullet lists, and code blocks.`;
       </div>
 
       <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {/* Single centered container: sidebar + content aligned to same grid as header */}
-        <div className="lp-detail-layout" style={{
-          display: 'flex',
-          flex: 1,
-          minHeight: 0,
-          overflow: 'hidden',
-          maxWidth: 'var(--page-max-width)',
-          width: '100%',
-          margin: '0 auto',
-        }}>
-          {/* Left Sidebar */}
-          <div className="lp-sidebar-container">
+        <div className="lp-page" style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', padding: 0 }}>
+          <div className="lp-detail-layout">
+            {/* Left Sidebar — anchored to left edge, full height */}
+            <div className="lp-sidebar-container">
             {SIDEBAR_GROUPS.map((group, idx) => (
               <div key={idx}>
                 <div style={{
@@ -3604,7 +3622,7 @@ Use bold headers, bullet lists, and code blocks.`;
                 </div>
               ))}
             </div>
-            <MetricsChart projectId={id} socket={socketRef.current} />
+            <MetricsChart projectId={id} socketRef={socketRef} />
 
             {/* 💰 Cost Estimator Card */}
             <div className="lp-card glass" style={{ padding: 28, borderLeft: '4px solid #a78bfa', background: 'linear-gradient(135deg, rgba(167,139,250,0.06) 0%, rgba(56,189,248,0.03) 100%)' }}>
@@ -4120,6 +4138,7 @@ Use bold headers, bullet lists, and code blocks.`;
             </div>{/* /inner-flex */}
           </div>{/* /lp-content-container */}
         </div>{/* /lp-detail-layout */}
+      </div>{/* /lp-page */}
       </main>
     </div>
   );

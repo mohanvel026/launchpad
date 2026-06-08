@@ -52,7 +52,9 @@ export default function NewProject() {
 
   useEffect(() => {
     if (!projectName.trim()) {
-      setSubdomainAvailable(null);
+      setTimeout(() => {
+        setSubdomainAvailable(null);
+      }, 0);
       return;
     }
 

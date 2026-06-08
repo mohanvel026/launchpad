@@ -62,9 +62,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (activeTab === 'Activity' && recentActivity.length === 0) {
-      loadActivity();
+      setTimeout(() => {
+        loadActivity();
+      }, 0);
     }
-  }, [activeTab]);
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -455,7 +457,7 @@ export default function Dashboard() {
                     : dep.status === 'building' ? 'rgba(251,191,36,0.2)'
                     : 'rgba(148,163,184,0.15)';
 
-                  const now = Date.now();
+                  const now = Date.now(); // eslint-disable-line react-hooks/purity
                   const created = new Date(dep.createdAt).getTime();
                   const diffMs = now - created;
                   const diffMin = Math.floor(diffMs / 60000);

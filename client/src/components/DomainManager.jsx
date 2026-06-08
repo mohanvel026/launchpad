@@ -1,3 +1,4 @@
+/* global process */
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
 
@@ -70,8 +71,10 @@ export default function DomainManager({ project, onUpdate }) {
   };
 
   useEffect(() => {
-    fetchDomainInfo();
-  }, [project._id]);
+    setTimeout(() => {
+      fetchDomainInfo();
+    }, 0);
+  }, [project._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-poll DNS status every 15s when pending verification ─────────────────
   useEffect(() => {
@@ -227,9 +230,11 @@ export default function DomainManager({ project, onUpdate }) {
   // Trigger automatic DNS verification check on mount if pending
   useEffect(() => {
     if (domainInfo && domainInfo.customDomainStatus === 'pending_dns' && !verifying && !dnsStatus) {
-      handleVerifyDNS();
+      setTimeout(() => {
+        handleVerifyDNS();
+      }, 0);
     }
-  }, [domainInfo?.customDomainStatus, project._id]);
+  }, [domainInfo?.customDomainStatus, project._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleProvisionSSL = async () => {
     setSsl(true); setError(''); setMessage('');

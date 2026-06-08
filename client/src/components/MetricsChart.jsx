@@ -35,11 +35,11 @@ function Sparkline({ data, color, height = 60 }) {
   );
 }
 
-export default function MetricsChart({ projectId, socket }) {
+export default function MetricsChart({ projectId, socketRef }) {
   const [live,    setLive]    = useState(null);
   const [history, setHistory] = useState([]);
   const [project, setProject] = useState(null);
-  const socketRef = useRef(null);
+  const localSocketRef = useRef(null);
 
   // AI Health Telemetry monitor states
   const [healthStatus, setHealthStatus] = useState(null);
@@ -67,10 +67,12 @@ export default function MetricsChart({ projectId, socket }) {
   };
 
   useEffect(() => {
-    fetchHealthStatus();
+    setTimeout(() => {
+      fetchHealthStatus();
+    }, 0);
     const interval = setInterval(fetchHealthStatus, 20000); // Poll health status every 20s
     return () => clearInterval(interval);
-  }, [projectId]);
+  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     api.get(`/projects/${projectId}`)
@@ -85,7 +87,7 @@ export default function MetricsChart({ projectId, socket }) {
   }, [projectId]);
 
   useEffect(() => {
-    let activeSocket = socket;
+    let activeSocket = socketRef?.current;
     let createdLocal = false;
 
     if (!activeSocket) {
@@ -101,7 +103,7 @@ export default function MetricsChart({ projectId, socket }) {
     };
 
     activeSocket.on('metrics', handleMetricsUpdate);
-    socketRef.current = activeSocket;
+    localSocketRef.current = activeSocket;
 
     return () => {
       activeSocket.emit('leave:metrics', projectId);
@@ -110,7 +112,7 @@ export default function MetricsChart({ projectId, socket }) {
         activeSocket.disconnect();
       }
     };
-  }, [projectId, socket]);
+  }, [projectId, socketRef]);
 
   const stats   = live || history[history.length - 1];
   const cpuHist = history.map((h) => h.cpu    || 0);

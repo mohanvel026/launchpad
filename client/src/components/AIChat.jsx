@@ -194,7 +194,7 @@ function ConfigReportWidget({ data }) {
       el.value = optimizedDockerfile;
       el.style.position = 'fixed'; el.style.left = '-9999px';
       document.body.appendChild(el); el.focus(); el.select();
-      try { document.execCommand('copy'); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch {}
+      try { document.execCommand('copy'); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch { /* ignore copy error */ }
       document.body.removeChild(el);
     }
   };
@@ -648,6 +648,7 @@ export default function AIChat({ projectId }) {
       });
       setMessages((prev) => [...prev, { role: 'assistant', content: res.data.reply }]);
     } catch (err) {
+      console.error('[AIChat] Send message error:', err);
       setMessages((prev) => [...prev, {
         role:    'assistant',
         content: 'Neural link temporarily unstable. Please verify your system configuration or try again in a moment.',
@@ -670,6 +671,7 @@ export default function AIChat({ projectId }) {
       });
       setMessages((prev) => [...prev, { role: 'assistant', content: res.data.reply }]);
     } catch (err) {
+      console.error('[AIChat] Quick question error:', err);
       setMessages((prev) => [...prev, {
         role:    'assistant',
         content: 'Neural link temporarily unstable. Please verify your system configuration or try again in a moment.',
