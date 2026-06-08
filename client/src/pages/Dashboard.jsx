@@ -92,8 +92,8 @@ export default function Dashboard() {
   return (
     <div className="launchlive-container">
       {/* Header */}
-      <header className="lp-header" style={{ display: 'block', padding: 0 }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px' }}>
+      <header className="lp-header">
+        <div className="lp-page lp-header-inner">
           <div className="lp-logo">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="url(#grad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <defs><linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#38bdf8"/><stop offset="100%" stopColor="#818cf8"/></linearGradient></defs>
@@ -102,9 +102,9 @@ export default function Dashboard() {
             </svg>
             LaunchLive
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <img src={user.avatarUrl} alt="" style={{ width: 30, height: 30, borderRadius: '50%', border: '2px solid var(--border-strong)' }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-muted)' }}>{user.username}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <img src={user.avatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--border-strong)' }} />
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-muted)' }}>{user.username}</span>
             <button className="lp-btn-secondary" style={{ padding: '6px 16px', fontSize: 13 }} onClick={logout}>Sign Out</button>
           </div>
         </div>
@@ -112,14 +112,15 @@ export default function Dashboard() {
 
       {/* Nav */}
       <nav className="lp-nav-container">
-        <div className="lp-nav-pills">
+        <div className="lp-page lp-nav-pills">
           {NAV_TABS.map(tab => (
             <div key={tab} className={`lp-pill ${activeTab === tab ? 'active' : ''}`} onClick={() => setActiveTab(tab)}>{tab}</div>
           ))}
         </div>
       </nav>
 
-      <main className="lp-main" style={{ maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+      <main className="lp-main">
+        <div className="lp-page">
         
         {/* Projects Tab */}
         {activeTab === 'Projects' && (
@@ -591,6 +592,7 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+        </div>{/* /lp-page */}
       </main>
     </div>
   );

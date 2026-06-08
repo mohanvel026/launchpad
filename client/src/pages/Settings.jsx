@@ -135,8 +135,8 @@ export default function Settings() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-main)', fontFamily: 'var(--font-sans)' }}>
       {/* Top nav bar */}
-      <header className="lp-header" style={{ display: 'block', padding: 0 }}>
-        <div style={{ maxWidth: 780, margin: '0 auto', height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px' }}>
+      <header className="lp-header">
+        <div className="lp-page lp-header-inner" style={{ maxWidth: 780 }}>
           <button
             onClick={() => navigate('/dashboard')}
             style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 14, fontFamily: 'var(--font-sans)', fontWeight: 500, transition: 'color 0.2s', padding: 0 }}
@@ -164,7 +164,8 @@ export default function Settings() {
       </header>
 
       {/* Page body */}
-      <div style={{ maxWidth: 780, margin: '0 auto', padding: '48px 40px' }}>
+      <main className="lp-main" style={{ overflowY: 'auto' }}>
+        <div style={{ maxWidth: 780, margin: '0 auto', padding: '0 48px', paddingBottom: 60 }}>
 
         {/* Page title */}
         <div style={{ marginBottom: 40 }}>
@@ -474,7 +475,8 @@ export default function Settings() {
           </div>
         </section>
 
-      </div>
+        </div>{/* /inner-wrapper */}
+      </main>
     </div>
   );
 }

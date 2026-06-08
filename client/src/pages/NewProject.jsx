@@ -168,8 +168,8 @@ export default function NewProject() {
   return (
     <div className="launchlive-container" style={{ minHeight: '100vh' }}>
       {/* Header */}
-      <header className="lp-header" style={{ display: 'block', padding: 0 }}>
-        <div style={{ maxWidth: 820, margin: '0 auto', height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px' }}>
+      <header className="lp-header">
+        <div className="lp-page lp-header-inner" style={{ maxWidth: 820 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <button className="lp-btn-secondary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => navigate('/dashboard')}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
@@ -207,7 +207,8 @@ export default function NewProject() {
         </div>
       </header>
 
-      <main className="lp-main" style={{ maxWidth: 820, margin: '0 auto', width: '100%', paddingTop: 48 }}>
+      <main className="lp-main" style={{ overflowY: 'auto' }}>
+        <div style={{ maxWidth: 820, margin: '0 auto', padding: '0 48px', paddingBottom: 60 }}>
 
         {/* Global error */}
         {error && (
@@ -518,6 +519,7 @@ export default function NewProject() {
           </div>
         )}
 
+        </div>{/* /inner-wrapper */}
       </main>
 
       <style>{`
