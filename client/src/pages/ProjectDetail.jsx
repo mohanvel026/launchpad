@@ -1391,6 +1391,68 @@ Use bold headers, bullet lists, and code blocks.`;
     </div>
   );
 
+  const renderSidebarBadge = (itemId) => {
+    // 1. Deployments / Build Logs Tab
+    if (itemId === 'deployments' || itemId === 'logs') {
+      const activeDeploy = deployments?.some(d => d.status === 'queued' || d.status === 'building');
+      if (activeDeploy) {
+        return (
+          <span className="lp-sidebar-badge pulse-blue" title="Deployment in progress">
+            <span className="pulse-dot-blue"></span>
+            BUILDING
+          </span>
+        );
+      }
+    }
+    // 2. PR Previews Tab
+    if (itemId === 'previews') {
+      const count = project?.previews?.length || previews?.length || 0;
+      if (count > 0) {
+        return (
+          <span className="lp-sidebar-badge count-purple" title={`${count} active preview environments`}>
+            {count}
+          </span>
+        );
+      }
+    }
+    // 3. Live Metrics Tab
+    if (itemId === 'metrics') {
+      if (project?.status === 'live') {
+        return (
+          <span className="lp-sidebar-badge pulse-green" title="Systems online and responding">
+            <span className="pulse-dot-green"></span>
+            LIVE
+          </span>
+        );
+      }
+    }
+    // 4. Environment Tab
+    if (itemId === 'env') {
+      const warningCount = (envWarnings?.length || 0) + (envCollisions?.length || 0) + (missingVars?.length || 0);
+      if (warningCount > 0) {
+        return (
+          <span className="lp-sidebar-badge count-amber" title={`${warningCount} configurations to review`}>
+            ⚠️ {warningCount}
+          </span>
+        );
+      }
+    }
+    // 5. Security Tab
+    if (itemId === 'security') {
+      const critical = vulnData?.summary?.critical || 0;
+      const high = vulnData?.summary?.high || 0;
+      const totalIssues = critical + high;
+      if (totalIssues > 0) {
+        return (
+          <span className="lp-sidebar-badge count-red" title={`${totalIssues} high-severity vulnerabilities`}>
+            {totalIssues}
+          </span>
+        );
+      }
+    }
+    return null;
+  };
+
   const domain = import.meta.env.VITE_DOMAIN || 'launchlive.in';
   const getDeployUrl = () => {
     if (!project.subdomain) return null;
@@ -1643,7 +1705,7 @@ Use bold headers, bullet lists, and code blocks.`;
             {/* Left Sidebar — anchored to left edge, full height */}
             <div className="lp-sidebar-container">
             {SIDEBAR_GROUPS.map((group, idx) => (
-              <div key={idx}>
+              <div key={idx} className="lp-sidebar-group">
                 <div style={{
                   fontSize: '11px',
                   fontWeight: 700,
@@ -1666,6 +1728,7 @@ Use bold headers, bullet lists, and code blocks.`;
                         {item.icon}
                       </span>
                       <span>{item.label}</span>
+                      {renderSidebarBadge(item.id)}
                     </div>
                   ))}
                 </div>
