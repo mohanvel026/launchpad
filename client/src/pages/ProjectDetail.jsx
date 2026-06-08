@@ -428,6 +428,8 @@ export default function ProjectDetail() {
   const [missingVars, setMissingVars] = useState(null); // null = not scanned, [] = none found
   const [missingVarsLoading, setMissingVarsLoading] = useState(false);
   const [addingMissingVar, setAddingMissingVar] = useState(null); // key being added
+  const [envWarnings, setEnvWarnings] = useState([]);
+  const [envCollisions, setEnvCollisions] = useState([]);
 
   const logsEndRef = useRef(null);
   const runtimeLogsEndRef = useRef(null);
@@ -1066,10 +1068,14 @@ Use bold headers, bullet lists, and code blocks.`;
   const handleAiAutoDetect = async () => {
     setAiScanning(true);
     setError('');
+    setEnvWarnings([]);
+    setEnvCollisions([]);
     try {
       const res = await api.post(`/ai/${id}/discover-env`);
       if (res.data.detectedVars && res.data.detectedVars.length > 0) {
         loadEnvVars();
+        setEnvWarnings(res.data.securityWarnings || []);
+        setEnvCollisions(res.data.collisions || []);
         alert(`Successfully auto-detected and configured ${res.data.detectedVars.length} variables!`);
       } else {
         alert("No new environment variables detected in the codebase.");
@@ -1272,10 +1278,14 @@ Use bold headers, bullet lists, and code blocks.`;
   const handleAiScanMissingVars = async () => {
     setMissingVarsLoading(true);
     setMissingVars(null);
+    setEnvWarnings([]);
+    setEnvCollisions([]);
     try {
       const res = await api.get(`/env/${id}/ai-scan`);
       setMissingVars(res.data.missingVars || []);
-      if (res.data.missingVars?.length === 0) {
+      setEnvWarnings(res.data.securityWarnings || []);
+      setEnvCollisions(res.data.collisions || []);
+      if (res.data.missingVars?.length === 0 && (res.data.securityWarnings?.length || 0) === 0 && (res.data.collisions?.length || 0) === 0) {
         alert('✨ All environment variables referenced in code are already configured in this vault!');
       }
     } catch (err) {
@@ -2020,6 +2030,41 @@ Use bold headers, bullet lists, and code blocks.`;
                   </button>
                 </div>
               </div>
+
+              {/* Security Warnings */}
+              {envWarnings && envWarnings.length > 0 && (
+                <div className="glass fade-in" style={{ padding: '16px 20px', borderRadius: 12, border: '1px solid rgba(239, 68, 68, 0.35)', background: 'rgba(239, 68, 68, 0.03)', marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#f87171', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                    <span>⚠️</span> CRITICAL SECURITY AUDIT WARNINGS (Secrets Exposed):
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {envWarnings.map((w, idx) => (
+                      <div key={idx} style={{ fontSize: 12, color: '#f87171', background: 'rgba(239, 68, 68, 0.08)', padding: '8px 12px', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>
+                          <strong>{w.type}</strong> found in <code>{w.file}</code> (Value: <code>{w.leakedValue}</code>)
+                        </span>
+                        <span style={{ fontSize: 10, background: 'rgba(239, 68, 68, 0.2)', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>EXPOSED</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Variable Collisions */}
+              {envCollisions && envCollisions.length > 0 && (
+                <div className="glass fade-in" style={{ padding: '16px 20px', borderRadius: 12, border: '1px solid rgba(245, 158, 11, 0.35)', background: 'rgba(245, 158, 11, 0.03)', marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                    <span>⚡</span> VARIABLE REDUNDANCIES / COLLISIONS DETECTED:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {envCollisions.map((c, idx) => (
+                      <div key={idx} style={{ fontSize: 12, color: '#fbbf24', background: 'rgba(245, 158, 11, 0.08)', padding: '8px 12px', borderRadius: 6 }}>
+                        <strong>{c.type}</strong>: {c.message}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Suggestion Chips */}
               {missingVars && missingVars.length > 0 && (
