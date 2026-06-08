@@ -91,41 +91,21 @@ router.get('/:projectId/ai-scan', protect, async (req, res) => {
     const existingVars = await EnvVar.find({ project: project._id }).select('key');
     const existingKeys = new Set(existingVars.map(e => e.key));
 
-    // Scan repo files for process.env.* and import.meta.env.* references
-    const detected = new Set();
-    const scanDir = (dir, depth = 0) => {
-      if (depth > 5) return;
-      try {
-        const items = fs.readdirSync(dir);
-        for (const item of items) {
-          if (['node_modules', '.git', 'dist', 'build', '.next'].includes(item)) continue;
-          const full = path.join(dir, item);
-          const stat = fs.statSync(full);
-          if (stat.isDirectory()) { scanDir(full, depth + 1); continue; }
-          if (!/\.(js|ts|jsx|tsx|mjs|cjs|env\.example|env\.sample)$/.test(item)) continue;
-          try {
-            const content = fs.readFileSync(full, 'utf8').slice(0, 50000);
-            // Match process.env.VAR_NAME and import.meta.env.VAR_NAME
-            const matches = content.matchAll(/(?:process\.env|import\.meta\.env)\.([A-Z_][A-Z0-9_]*)/g);
-            for (const m of matches) detected.add(m[1]);
-            // Also match from .env.example KEY=value patterns
-            if (item.includes('.env.example') || item.includes('.env.sample')) {
-              const envLines = content.matchAll(/^([A-Z_][A-Z0-9_]*)\s*=/gm);
-              for (const m of envLines) detected.add(m[1]);
-            }
-          } catch {} 
-        }
-      } catch {}
-    };
-    scanDir(repoPath);
+    const { scanRepository } = require('../services/envScanner.service');
+    const { candidateKeys, securityWarnings, collisions } = scanRepository(repoPath, project.stack);
 
-    // Filter to vars not already set + skip common non-secret ones
     const SKIP_VARS = new Set(['NODE_ENV', 'PORT', 'HOST', 'PATH', 'HOME', 'PWD', 'SHELL']);
-    const missingVars = [...detected]
+    const missingVars = candidateKeys
       .filter(v => !existingKeys.has(v) && !SKIP_VARS.has(v))
       .sort();
 
-    res.json({ missingVars, totalDetected: detected.size, existing: existingKeys.size });
+    res.json({ 
+      missingVars, 
+      totalDetected: candidateKeys.length, 
+      existing: existingKeys.size,
+      securityWarnings,
+      collisions
+    });
   } catch (err) {
     console.error('[Env AI Scan]', err.message);
     res.status(500).json({ message: 'Scan failed', error: err.message });

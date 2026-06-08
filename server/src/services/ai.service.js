@@ -568,7 +568,7 @@ const findVariableCollisions = (keys = []) => {
  * Scans project files or aggregated code patterns to find and list all expected environment variables.
  * Returns a JSON array of: { key, required, description, placeholder, suggestedValue, validationPattern, validationErrorMessage }
  */
-const discoverRequiredEnvVars = async (codeSnippets = '', stack = 'unknown') => {
+const discoverRequiredEnvVars = async (codeSnippets = '', stack = 'unknown', dependenciesList = [], securityWarnings = [], collisions = []) => {
   const systemPrompt = `You are a DevOps security auditor.
 Analyze the source code snippets and list all environment variables (e.g. process.env.XYZ) that the application expects.
 
@@ -588,7 +588,10 @@ Respond ONLY with a valid JSON object matching this exact schema:
 Only return variables that are actually used in the code. Do not include markdown or extra text.`;
 
   const safeCode = (codeSnippets || '').slice(0, CONFIG.MAX_LOG_CHARS);
-  const userPrompt = `Stack: ${stack}\nSource Code Snippets:\n${safeCode}`;
+  const userPrompt = `Stack: ${stack}
+Dependencies present in project: ${dependenciesList.join(', ') || 'none'}
+Source Code Snippets:
+${safeCode}`;
 
   let detectedVars = [];
   let raw = '';
@@ -650,13 +653,16 @@ Only return variables that are actually used in the code. Do not include markdow
   }
 
   // Inject Leaked Secrets Audit & Collisions for Enterprise-grade security
-  const leakedSecrets = auditLeakedSecrets(codeSnippets);
-  const collisions = findVariableCollisions(detectedVars.map(v => v.key));
+  const localLeaks = auditLeakedSecrets(codeSnippets);
+  const localCollisions = findVariableCollisions(detectedVars.map(v => v.key));
+
+  const allWarnings = [...new Set([...securityWarnings.map(JSON.stringify), ...localLeaks.map(JSON.stringify)])].map(JSON.parse);
+  const allCollisions = [...new Set([...collisions.map(JSON.stringify), ...localCollisions.map(JSON.stringify)])].map(JSON.parse);
 
   return {
     detectedVars,
-    securityWarnings: leakedSecrets,
-    collisions
+    securityWarnings: allWarnings,
+    collisions: allCollisions
   };
 };
 

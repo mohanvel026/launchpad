@@ -208,139 +208,44 @@ const discoverEnv = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     const repoPath = path.join(__dirname, '../../repos', project._id.toString());
-    const detectedKeys = new Set();
+    const { scanRepository, generateSuggestedValue } = require('../services/envScanner.service');
 
-    if (fs.existsSync(repoPath)) {
-      const readFilesRecursively = (dir, depth = 0) => {
-        if (depth > 6) return;
-        try {
-          const files = fs.readdirSync(dir);
-          for (const file of files) {
-            const fullPath = path.join(dir, file);
-            try {
-              const stat = fs.statSync(fullPath);
-              if (stat.isDirectory()) {
-                if (!['node_modules', '.git', 'dist', 'build', '.next', '.nuxt', 'out', 'coverage', 'public'].includes(file)) {
-                  readFilesRecursively(fullPath, depth + 1);
-                }
-              } else if (/\.(js|jsx|ts|tsx|py|json|config|prisma|sql)$/i.test(file) || file.toLowerCase().includes('env')) {
-                const content = fs.readFileSync(fullPath, 'utf8');
-                
-                // 1. Extract process.env.xyz (case-insensitive for variable names)
-                const nodeMatches = content.matchAll(/process\.env\.([a-zA-Z_0-9]+)/g);
-                for (const m of nodeMatches) {
-                  if (m[1]) {
-                    const upper = m[1].toUpperCase();
-                    if (!['NODE_ENV', 'PORT', 'PATH', 'HOME'].includes(upper)) {
-                      detectedKeys.add(m[1]);
-                      detectedKeys.add(upper);
-                    }
-                  }
-                }
+    const { candidateKeys, dependenciesList, securityWarnings, collisions } = scanRepository(repoPath, project.stack);
 
-                // 2. Extract destructured process.env calls (e.g. const { MONGO, JWT } = process.env)
-                const destructureMatches = content.matchAll(/(?:const|let|var)\s*\{\s*([A-Za-z0-9_,\s\n]+)\s*\}\s*=\s*process\.env/g);
-                for (const dm of destructureMatches) {
-                  if (dm[1]) {
-                    const keys = dm[1].split(',').map(k => k.trim());
-                    keys.forEach(k => {
-                      if (k && /^[a-zA-Z_0-9]+$/.test(k)) {
-                        const upper = k.toUpperCase();
-                        if (!['NODE_ENV', 'PORT', 'PATH', 'HOME'].includes(upper)) {
-                          detectedKeys.add(k);
-                          detectedKeys.add(upper);
-                        }
-                      }
-                    });
-                  }
-                }
-
-                // 3. Extract standard .env key=value pairs (supports mixed-case and all .env.local/development files)
-                if (file.toLowerCase().includes('env')) {
-                  const lines = content.split('\n');
-                  lines.forEach(line => {
-                    const clean = line.trim();
-                    if (clean && !clean.startsWith('#') && clean.includes('=')) {
-                      const key = clean.split('=')[0].trim();
-                      if (/^[a-zA-Z_0-9]+$/.test(key)) {
-                        const upper = key.toUpperCase();
-                        if (!['NODE_ENV', 'PORT'].includes(upper)) {
-                          detectedKeys.add(key);
-                          detectedKeys.add(upper);
-                        }
-                      }
-                    }
-                  });
-                }
-
-                // 4. Extract Python os.environ.get('xyz') or os.environ["xyz"]
-                const pyMatches = content.matchAll(/os\.environ(?:\[['"]|\.get\(['"])([a-zA-Z_0-9]+)/g);
-                for (const m of pyMatches) {
-                  if (m[1]) {
-                    detectedKeys.add(m[1]);
-                    detectedKeys.add(m[1].toUpperCase());
-                  }
-                }
-
-                // 5. Fallback SRE Audit: Extract hardcoded MongoDB connections or mongoose calls
-                if (content.includes('mongodb://') || content.includes('mongodb+srv://') || /mongoose\.connect|mongodb\.connect/i.test(content)) {
-                  detectedKeys.add('MONGODB_URI');
-                  detectedKeys.add('MONGO_URI');
-                }
-
-                // 6. Prisma env("DATABASE_URL") Matcher
-                if (file.endsWith('.prisma')) {
-                  const prismaMatches = content.matchAll(/env\s*\(\s*['"]([a-zA-Z_0-9]+)['"]\s*\)/g);
-                  for (const m of prismaMatches) {
-                    if (m[1]) {
-                      detectedKeys.add(m[1]);
-                      detectedKeys.add(m[1].toUpperCase());
-                    }
-                  }
-                }
-
-                // 7. Auto-detect database driver requirements in package.json (Prisma, Postgres, SQL, MongoDB)
-                if (file === 'package.json') {
-                  try {
-                    const pkg = JSON.parse(content);
-                    const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-                    if (deps.prisma || deps['@prisma/client'] || deps.sequelize || deps.mysql2 || deps.pg || deps.mysql || deps.sqlite3 || deps.sqlite) {
-                      detectedKeys.add('DATABASE_URL');
-                    }
-                    if (deps.mongoose || deps.mongodb || deps.mongodb) {
-                      detectedKeys.add('MONGODB_URI');
-                      detectedKeys.add('MONGO_URI');
-                    }
-                  } catch {}
-                }
-              }
-            } catch (fileErr) {
-              console.warn(`[AI Env Discovery] Skipping file scan error on ${file}:`, fileErr.message);
-            }
-          }
-        } catch (dirErr) {
-          console.warn(`[AI Env Discovery] Skipping dir read error on ${dir}:`, dirErr.message);
-        }
-      };
-      readFilesRecursively(repoPath);
-    }
-
-    const aggregatedCode = Array.from(detectedKeys).map(k => `process.env.${k}`).join('\n');
+    const aggregatedCode = candidateKeys.map(k => `process.env.${k}`).join('\n');
 
     const { discoverRequiredEnvVars } = require('../services/ai.service');
-    const result = await discoverRequiredEnvVars(aggregatedCode, project.stack);
+    const result = await discoverRequiredEnvVars(aggregatedCode, project.stack, dependenciesList, securityWarnings, collisions);
 
     // Guaranteed static injection fallback: Merge statically-scanned keys directly into result.detectedVars
     const resultKeys = new Set((result.detectedVars || []).map(v => v.key.toUpperCase()));
     result.detectedVars = result.detectedVars || [];
     
-    detectedKeys.forEach(k => {
+    candidateKeys.forEach(k => {
       if (k && !resultKeys.has(k.toUpperCase())) {
+        const suggestedValue = generateSuggestedValue(k);
+        let validationPattern = '';
+        let validationErrorMessage = '';
+
+        if (k.toUpperCase().includes('MONGO')) {
+          validationPattern = '^(mongodb(?:\\+srv)?):\\/\\/.+$';
+          validationErrorMessage = 'Must be a valid MongoDB connection string starting with mongodb:// or mongodb+srv://';
+        } else if (k.toUpperCase().includes('PORT')) {
+          validationPattern = '^\\d{2,5}$';
+          validationErrorMessage = 'Must be a valid port number (e.g. 3000 to 65535)';
+        } else if (k.toUpperCase().includes('URL') || k.toUpperCase().includes('URI')) {
+          validationPattern = '^https?:\\/\\/.+$';
+          validationErrorMessage = 'Must be a valid URL starting with http:// or https://';
+        }
+
         result.detectedVars.push({
           key: k,
           required: true,
           description: 'Auto-detected via static codebase scan.',
-          placeholder: `your_${k.toLowerCase()}_here`
+          placeholder: `your_${k.toLowerCase()}_here`,
+          suggestedValue,
+          validationPattern,
+          validationErrorMessage
         });
         resultKeys.add(k.toUpperCase());
       }
