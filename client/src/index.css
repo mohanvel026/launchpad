@@ -531,20 +531,13 @@ textarea.lp-input {
 }
 
 /* ─── Project Detail Sidebar Layout ─── */
-.lp-detail-layout {
-  display: flex;
-  flex-direction: row;
-  width: 100%;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
 .lp-sidebar-container {
-  width: 260px;
+  width: 280px;
   flex-shrink: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(15, 23, 42, 0.6);
   border-right: 1px solid var(--border);
-  padding: 28px 18px;
+  /* left padding matches page-padding-x so sidebar items align with the header logo */
+  padding: 28px 16px 28px var(--page-padding-x);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -562,14 +555,14 @@ textarea.lp-input {
   gap: 10px;
   padding: 8px 12px;
   border-radius: 8px;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
   background: transparent;
-  border-left: 3px solid transparent;
+  border-left: 2px solid transparent;
   cursor: pointer;
   transition: all 0.15s ease-in-out;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 .lp-sidebar-link:hover {
   color: var(--text-main);
@@ -580,13 +573,12 @@ textarea.lp-input {
   background: rgba(56, 189, 248, 0.08);
   border-left-color: var(--accent-primary);
   font-weight: 600;
-  padding-left: 9px;
 }
 .lp-content-container {
   flex: 1;
   min-width: 0;
   background: var(--bg-main);
-  padding: 36px 0 40px 40px;
+  padding: 36px var(--page-padding-x) 40px 36px;
   height: 100%;
   overflow-y: auto;
 }
@@ -604,22 +596,25 @@ textarea.lp-input {
 
 @media (max-width: 900px) {
   :root {
-    --page-padding-x: 24px;
+    --page-padding-x: 20px;
   }
   .lp-detail-layout {
     flex-direction: column;
+    overflow-y: auto;
   }
   .lp-sidebar-container {
     width: 100%;
     height: auto;
-    position: static;
+    flex-shrink: 0;
     border-right: none;
     border-bottom: 1px solid var(--border);
-    padding: 20px 0;
+    padding: 16px var(--page-padding-x);
     overflow-y: visible;
   }
   .lp-content-container {
-    padding: 24px 0;
+    padding: 24px var(--page-padding-x);
+    height: auto;
+    overflow-y: visible;
   }
 }
 

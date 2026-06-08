@@ -1601,9 +1601,17 @@ Use bold headers, bullet lists, and code blocks.`;
         </div>
       </div>
 
-      <main className="lp-main" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: 0 }}>
-        <div className="lp-page" style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', padding: 0 }}>
-          <div className="lp-detail-layout" style={{ padding: 0 }}>
+      <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {/* Single centered container: sidebar + content aligned to same grid as header */}
+        <div className="lp-detail-layout" style={{
+          display: 'flex',
+          flex: 1,
+          minHeight: 0,
+          overflow: 'hidden',
+          maxWidth: 'var(--page-max-width)',
+          width: '100%',
+          margin: '0 auto',
+        }}>
           {/* Left Sidebar */}
           <div className="lp-sidebar-container">
             {SIDEBAR_GROUPS.map((group, idx) => (
@@ -4109,10 +4117,9 @@ Use bold headers, bullet lists, and code blocks.`;
             <AIChat projectId={id} />
           </div>
         )}
-            </div>
-          </div>
-        </div>
-        </div>  {/* /lp-page */}
+            </div>{/* /inner-flex */}
+          </div>{/* /lp-content-container */}
+        </div>{/* /lp-detail-layout */}
       </main>
     </div>
   );
