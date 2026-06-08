@@ -122,6 +122,48 @@ async function runTests() {
       console.log("✔ Test Passed: All hardcoded credentials successfully audited.");
     }
 
+    // E. Test SRE Format Validation controller logic (Without database dependency)
+    const { setEnvVar } = require('./controllers/env.controller');
+    
+    // Test Case 1: Invalid MongoDB URI
+    let statusCalled = null;
+    let jsonPayload = null;
+    const mockReq1 = {
+      body: { key: 'MONGODB_URI', value: 'invalid_mongodb_uri' },
+      params: { projectId: '69f81f043239a25487a021f4' }
+    };
+    const mockRes1 = {
+      status(code) { statusCalled = code; return this; },
+      json(payload) { jsonPayload = payload; return this; }
+    };
+
+    await setEnvVar(mockReq1, mockRes1);
+    if (statusCalled === 400 && jsonPayload?.message?.includes('Invalid MongoDB connection string')) {
+      console.log("✔ Test Passed: Invalid connection string correctly rejected with 400.");
+    } else {
+      console.error("❌ Test Failed: Invalid connection string was not rejected with 400. Status:", statusCalled, "Payload:", jsonPayload);
+      passed = false;
+    }
+
+    // Test Case 2: Valid MongoDB URI with shell placeholder
+    statusCalled = null;
+    jsonPayload = null;
+    const mockReq2 = {
+      body: { key: 'MONGODB_URI', value: 'mongodb://${DB_USER}:${DB_PASS}@localhost:27017' },
+      params: { projectId: '69f81f043239a25487a021f4' }
+    };
+    try {
+      await setEnvVar(mockReq2, mockRes1);
+    } catch (dbErr) {
+      // Expected: tries database query after passing format validation
+    }
+    if (statusCalled === 400 && jsonPayload?.message?.includes('Invalid MongoDB connection string')) {
+      console.error("❌ Test Failed: Valid connection string with placeholders was falsely rejected.");
+      passed = false;
+    } else {
+      console.log("✔ Test Passed: Valid connection string with placeholders bypassed validation.");
+    }
+
     if (passed) {
       console.log("\n==============================================");
       console.log("🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉");

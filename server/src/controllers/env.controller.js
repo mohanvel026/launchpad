@@ -38,6 +38,31 @@ const setEnvVar = async (req, res) => {
   const { key, value, isSecret = true } = req.body;
   if (!key || !value) return res.status(400).json({ message: 'key and value are required' });
 
+  const upperKey = key.trim().toUpperCase();
+  const trimmedValue = value.trim();
+
+  // SRE Connection URL Validation (Allowing placeholder patterns containing ${...} or {{...}})
+  const hasPlaceholder = trimmedValue.includes('${') || trimmedValue.includes('{{');
+  if (!hasPlaceholder) {
+    if (upperKey === 'MONGODB_URI' || upperKey === 'MONGO_URI') {
+      if (!/^(mongodb(?:\+srv)?):\/\/.+$/i.test(trimmedValue)) {
+        return res.status(400).json({ message: 'Invalid MongoDB connection string format. Must start with mongodb:// or mongodb+srv://' });
+      }
+    } else if (upperKey === 'REDIS_URL' || upperKey === 'REDIS_URI') {
+      if (!/^(rediss?):\/\/.+$/i.test(trimmedValue)) {
+        return res.status(400).json({ message: 'Invalid Redis connection string format. Must start with redis:// or rediss://' });
+      }
+    } else if (upperKey === 'DATABASE_URL' || upperKey === 'DATABASE_URI' || upperKey === 'POSTGRES_URL') {
+      if (!/^(postgres|postgresql|mysql|mariadb|sqlite|mongodb(?:\+srv)?):\/\/.+$/i.test(trimmedValue)) {
+        return res.status(400).json({ message: 'Invalid Database connection URL format. Must start with a valid database scheme (e.g. postgres://, mysql://, sqlite://)' });
+      }
+    } else if (upperKey.endsWith('_URL') || upperKey.endsWith('_URI')) {
+      if (!/^(https?|wss?):\/\/.+$/i.test(trimmedValue)) {
+        return res.status(400).json({ message: `Invalid URL format for ${key}. Must start with http://, https://, ws://, or wss://` });
+      }
+    }
+  }
+
   try {
     const project = await verifyAccess(req.params.projectId, req.user._id);
     if (!project) return res.status(404).json({ message: 'Project not found' });

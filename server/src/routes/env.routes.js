@@ -46,6 +46,36 @@ router.post('/:projectId/bulk', protect, async (req, res) => {
     let created = 0, updated = 0;
     const results = [];
 
+    // Validate all connection variables first before any database operations
+    for (const { key, value } of vars) {
+      if (!key || typeof key !== 'string') continue;
+      const trimmedKey = key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/^_+|_+$/g, '');
+      if (!trimmedKey) continue;
+      
+      const trimmedValue = (value || '').trim();
+      const hasPlaceholder = trimmedValue.includes('${') || trimmedValue.includes('{{');
+      
+      if (!hasPlaceholder) {
+        if (trimmedKey === 'MONGODB_URI' || trimmedKey === 'MONGO_URI') {
+          if (!/^(mongodb(?:\+srv)?):\/\/.+$/i.test(trimmedValue)) {
+            return res.status(400).json({ message: `Invalid MongoDB connection string for key "${key}". Must start with mongodb:// or mongodb+srv://` });
+          }
+        } else if (trimmedKey === 'REDIS_URL' || trimmedKey === 'REDIS_URI') {
+          if (!/^(rediss?):\/\/.+$/i.test(trimmedValue)) {
+            return res.status(400).json({ message: `Invalid Redis connection string for key "${key}". Must start with redis:// or rediss://` });
+          }
+        } else if (trimmedKey === 'DATABASE_URL' || trimmedKey === 'DATABASE_URI' || trimmedKey === 'POSTGRES_URL') {
+          if (!/^(postgres|postgresql|mysql|mariadb|sqlite|mongodb(?:\+srv)?):\/\/.+$/i.test(trimmedValue)) {
+            return res.status(400).json({ message: `Invalid Database connection URL for key "${key}". Must start with a valid database scheme (e.g. postgres://, mysql://, sqlite://)` });
+          }
+        } else if (trimmedKey.endsWith('_URL') || trimmedKey.endsWith('_URI')) {
+          if (!/^(https?|wss?):\/\/.+$/i.test(trimmedValue)) {
+            return res.status(400).json({ message: `Invalid URL format for key "${key}". Must start with http://, https://, ws://, or wss://` });
+          }
+        }
+      }
+    }
+
     for (const { key, value } of vars) {
       if (!key || typeof key !== 'string') continue;
       // Normalise: uppercase, only A-Z 0-9 underscore
