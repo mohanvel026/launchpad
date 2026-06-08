@@ -163,7 +163,65 @@ async function runTests() {
     } else {
       console.log("✔ Test Passed: Valid connection string with placeholders bypassed validation.");
     }
+    // F. Test SRE API Key Pooling & Circuit Breaker
+    const { getGeminiKeyPool, selectActiveKey, markKeyRateLimited } = require('./services/ai.service');
+    
+    // Save original env vars
+    const origKeys = process.env.GEMINI_API_KEYS;
+    const origKey = process.env.GEMINI_API_KEY;
+    const origKey2 = process.env.GEMINI_API_KEY_2;
+    const origKey3 = process.env.GEMINI_API_KEY_3;
 
+    try {
+      // Configure mock comma-separated list
+      process.env.GEMINI_API_KEYS = "key_dummy_alpha,key_dummy_beta,key_dummy_gamma";
+      process.env.GEMINI_API_KEY = "placeholder";
+      process.env.GEMINI_API_KEY_2 = "placeholder";
+      process.env.GEMINI_API_KEY_3 = "placeholder";
+
+      const pool = getGeminiKeyPool();
+      if (pool.length === 3 && pool.includes("key_dummy_alpha") && pool.includes("key_dummy_gamma")) {
+        console.log("✔ Test Passed: getGeminiKeyPool successfully parsed comma-separated plural keys.");
+      } else {
+        console.error("❌ Test Failed: getGeminiKeyPool failed to parse keys. Pool:", pool);
+        passed = false;
+      }
+
+      // Check active selection and rotation
+      const key1 = selectActiveKey(pool, false);
+      const key2 = selectActiveKey(pool, false);
+      if (key1 && key2 && key1 !== key2) {
+        console.log("✔ Test Passed: selectActiveKey correctly rotates between active pool keys.");
+      } else {
+        console.error("❌ Test Failed: selectActiveKey did not rotate keys. Key1:", key1, "Key2:", key2);
+        passed = false;
+      }
+
+      // Quarantine a key
+      markKeyRateLimited(key1, 10000); // 10s cooldown
+      
+      // Select keys multiple times and verify that the quarantined key is NEVER returned
+      let containsQuarantined = false;
+      for (let i = 0; i < 5; i++) {
+        const selected = selectActiveKey(pool, false);
+        if (selected === key1) {
+          containsQuarantined = true;
+        }
+      }
+      if (!containsQuarantined) {
+        console.log("✔ Test Passed: Circuit-breaker successfully quarantined and skipped rate-limited key.");
+      } else {
+        console.error("❌ Test Failed: Quarantined key was falsely selected from pool.");
+        passed = false;
+      }
+
+    } finally {
+      // Restore original env vars
+      process.env.GEMINI_API_KEYS = origKeys;
+      process.env.GEMINI_API_KEY = origKey;
+      process.env.GEMINI_API_KEY_2 = origKey2;
+      process.env.GEMINI_API_KEY_3 = origKey3;
+    }
     if (passed) {
       console.log("\n==============================================");
       console.log("🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉");

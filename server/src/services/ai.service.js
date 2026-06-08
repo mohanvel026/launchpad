@@ -67,17 +67,85 @@ const compressLogs = (raw = '', maxChars = CONFIG.MAX_LOG_CHARS) => {
     : filtered;
 };
 
-// ─── Groq Key Pool: rotates across all configured keys on rate-limit hits ──────
+// ─── Groq & Gemini Key Pool with Circuit-Breaker Cooldowns ──────────────────────
+
+// Map to track rate-limited keys: key -> cooldownExpirationTime (timestamp)
+const cooldownKeys = new Map();
+
+const getCleanKeyPool = (varsArray) => {
+  const keys = new Set();
+  varsArray.forEach(v => {
+    if (v && v !== 'placeholder') {
+      v.split(',').forEach(k => {
+        const trimmed = k.trim();
+        if (trimmed && trimmed.length > 10 && trimmed !== 'placeholder') {
+          keys.add(trimmed);
+        }
+      });
+    }
+  });
+  return Array.from(keys);
+};
+
 const getGroqKeyPool = () => {
-  const keys = [
+  return getCleanKeyPool([
     process.env.GROQ_API_KEY,
     process.env.GROQ_API_KEY_2,
     process.env.GROQ_API_KEY_3,
-  ].filter(k => k && k !== 'placeholder' && k.length > 10);
-  return keys;
+    process.env.GROQ_API_KEYS
+  ]);
 };
 
-let groqKeyIndex = 0; // Round-robin cursor across the key pool
+const getGeminiKeyPool = () => {
+  return getCleanKeyPool([
+    process.env.GEMINI_API_KEY,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3,
+    process.env.GEMINI_API_KEYS
+  ]);
+};
+
+// Round-robin counters for keys
+let groqKeyIndex = 0;
+let geminiKeyIndex = 0;
+
+const selectActiveKey = (keyPool, isGroq = true) => {
+  const now = Date.now();
+  
+  // Filter out keys in cooldown
+  const activeKeys = keyPool.filter(k => {
+    const expires = cooldownKeys.get(k);
+    return !expires || expires < now;
+  });
+
+  if (activeKeys.length > 0) {
+    const index = isGroq ? groqKeyIndex : geminiKeyIndex;
+    const chosen = activeKeys[index % activeKeys.length];
+    if (isGroq) {
+      groqKeyIndex = (groqKeyIndex + 1) % activeKeys.length;
+    } else {
+      geminiKeyIndex = (geminiKeyIndex + 1) % activeKeys.length;
+    }
+    return chosen;
+  }
+
+  // Fallback: If ALL keys are in cooldown, pick the one that expires earliest
+  let earliestKey = null;
+  let earliestTime = Infinity;
+  for (const k of keyPool) {
+    const expires = cooldownKeys.get(k) || 0;
+    if (expires < earliestTime) {
+      earliestTime = expires;
+      earliestKey = k;
+    }
+  }
+  return earliestKey || keyPool[0];
+};
+
+const markKeyRateLimited = (key, cooldownMs = 60000) => {
+  console.warn(`[AI Key Pool] Rate-limit (429) detected. Quarantining key ${key.slice(0, 8)}... for ${cooldownMs / 1000}s`);
+  cooldownKeys.set(key, Date.now() + cooldownMs);
+};
 
 const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false) => {
   const keyPool = getGroqKeyPool();
@@ -85,8 +153,8 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
 
   // Try each key in the pool before giving up
   for (let attempt = 0; attempt < keyPool.length; attempt++) {
-    const key = keyPool[groqKeyIndex % keyPool.length];
-    groqKeyIndex = (groqKeyIndex + 1) % keyPool.length; // Advance cursor for next call
+    const key = selectActiveKey(keyPool, true);
+    if (!key) throw new Error('All Groq keys exhausted or rate-limited.');
 
     try {
       const res = await httpClient.post(
@@ -109,28 +177,17 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
       return res.data.choices[0].message.content;
     } catch (err) {
       const status = err.response?.status;
-      if (status === 429 && attempt < keyPool.length - 1) {
-        // Rate limited on this key — rotate to next key immediately
-        console.warn(`[Groq] Key #${attempt + 1} rate-limited (429), rotating to next key...`);
-        continue;
+      if (status === 429) {
+        markKeyRateLimited(key, 60000);
+        if (attempt < keyPool.length - 1) {
+          continue;
+        }
       }
-      // For 5xx or last key exhausted — rethrow to trigger Gemini failover
       throw err;
     }
   }
   throw new Error('All Groq keys exhausted or rate-limited.');
 };
-
-const getGeminiKeyPool = () => {
-  const keys = [
-    process.env.GEMINI_API_KEY,
-    process.env.GEMINI_API_KEY_2,
-    process.env.GEMINI_API_KEY_3,
-  ].filter(k => k && k !== 'placeholder' && k.length > 10);
-  return keys;
-};
-
-let geminiKeyIndex = 0;
 
 const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0) => {
   const keyPool = getGeminiKeyPool();
@@ -138,8 +195,8 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
 
   try {
     for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
-      const key = keyPool[geminiKeyIndex % keyPool.length];
-      geminiKeyIndex = (geminiKeyIndex + 1) % keyPool.length;
+      const key = selectActiveKey(keyPool, false);
+      if (!key) throw new Error('All Gemini keys rate-limited.');
 
       try {
         const res = await httpClient.post(
@@ -153,14 +210,16 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
               ...(isJson && { responseMimeType: 'application/json' }),
             },
           },
-          { timeout: 10000 } // Reliable 10-second timeout for Gemini
+          { timeout: 10000 }
         );
         return res.data.candidates[0].content.parts[0].text;
       } catch (err) {
         const status = err.response?.status;
-        if (status === 429 && rotateAttempt < keyPool.length - 1) {
-          console.warn(`[Gemini] Key rate-limited (429), rotating to next pool key...`);
-          continue;
+        if (status === 429) {
+          markKeyRateLimited(key, 60000);
+          if (rotateAttempt < keyPool.length - 1) {
+            continue;
+          }
         }
         throw err;
       }
@@ -1323,4 +1382,8 @@ module.exports = {
   estimateMonthlyCost,
   analyzeBuildTrends,
   analyzeVisualPhishing,
+  // Exported for SRE unit testing
+  getGeminiKeyPool,
+  selectActiveKey,
+  markKeyRateLimited,
 };
