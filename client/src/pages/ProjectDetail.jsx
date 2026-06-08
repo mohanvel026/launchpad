@@ -1602,7 +1602,7 @@ Use bold headers, bullet lists, and code blocks.`;
       </div>
 
       <main className="lp-main" style={{ maxWidth: 1200, margin: '0 auto', width: '100%', padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-        <div className="lp-detail-layout" style={{ padding: '0 40px' }}>
+        <div className="lp-detail-layout">
           {/* Left Sidebar */}
           <div className="lp-sidebar-container">
             {SIDEBAR_GROUPS.map((group, idx) => (

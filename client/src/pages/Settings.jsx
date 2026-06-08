@@ -136,7 +136,7 @@ export default function Settings() {
     <div style={{ minHeight: '100vh', background: 'var(--bg-main)', fontFamily: 'var(--font-sans)' }}>
       {/* Top nav bar */}
       <header className="lp-header" style={{ display: 'block', padding: 0 }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px' }}>
+        <div style={{ maxWidth: 780, margin: '0 auto', height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px' }}>
           <button
             onClick={() => navigate('/dashboard')}
             style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 14, fontFamily: 'var(--font-sans)', fontWeight: 500, transition: 'color 0.2s', padding: 0 }}

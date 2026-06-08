@@ -168,41 +168,43 @@ export default function NewProject() {
   return (
     <div className="launchlive-container" style={{ minHeight: '100vh' }}>
       {/* Header */}
-      <header className="lp-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <button className="lp-btn-secondary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => navigate('/dashboard')}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-            Back
-          </button>
-          <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-          <span style={{ fontWeight: 700, fontSize: 15 }}>New Project</span>
-        </div>
+      <header className="lp-header" style={{ display: 'block', padding: 0 }}>
+        <div style={{ maxWidth: 820, margin: '0 auto', height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <button className="lp-btn-secondary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => navigate('/dashboard')}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+              Back
+            </button>
+            <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+            <span style={{ fontWeight: 700, fontSize: 15 }}>New Project</span>
+          </div>
 
-        {/* Phase progress */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {PHASES.filter(p => p.id !== 'deploying').map((p, i) => {
-            const phaseOrder = ['pick','analyze','review'];
-            const currentIdx = phaseOrder.indexOf(phase);
-            const thisIdx = phaseOrder.indexOf(p.id);
-            const done   = currentIdx > thisIdx;
-            const active = currentIdx === thisIdx;
-            return (
-              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{
-                  width: 22, height: 22, borderRadius: '50%', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700,
-                  background: done ? '#22c55e' : active ? 'linear-gradient(135deg,#38bdf8,#818cf8)' : 'var(--border)',
-                  color: (done || active) ? 'white' : 'var(--text-dim)', transition: 'all 0.3s',
-                }}>
-                  {done ? '✓' : i + 1}
+          {/* Phase progress */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {PHASES.filter(p => p.id !== 'deploying').map((p, i) => {
+              const phaseOrder = ['pick','analyze','review'];
+              const currentIdx = phaseOrder.indexOf(phase);
+              const thisIdx = phaseOrder.indexOf(p.id);
+              const done   = currentIdx > thisIdx;
+              const active = currentIdx === thisIdx;
+              return (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{
+                    width: 22, height: 22, borderRadius: '50%', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700,
+                    background: done ? '#22c55e' : active ? 'linear-gradient(135deg,#38bdf8,#818cf8)' : 'var(--border)',
+                    color: (done || active) ? 'white' : 'var(--text-dim)', transition: 'all 0.3s',
+                  }}>
+                    {done ? '✓' : i + 1}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: active ? 700 : 400, color: active ? 'var(--text-main)' : 'var(--text-dim)' }}>{p.label}</span>
+                  {i < 2 && <div style={{ width: 20, height: 1, background: 'var(--border)' }} />}
                 </div>
-                <span style={{ fontSize: 12, fontWeight: active ? 700 : 400, color: active ? 'var(--text-main)' : 'var(--text-dim)' }}>{p.label}</span>
-                {i < 2 && <div style={{ width: 20, height: 1, background: 'var(--border)' }} />}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+          <div style={{ width: 80 }} />
         </div>
-        <div style={{ width: 80 }} />
       </header>
 
       <main className="lp-main" style={{ maxWidth: 820, margin: '0 auto', width: '100%', paddingTop: 48 }}>
