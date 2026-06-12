@@ -51,11 +51,8 @@ sudo npm install -g pm2
 
 # Create app directory
 echo "[9/10] Creating app directory..."
-sudo mkdir -p /var/launchpad
-sudo chown -R $USER:$USER /var/launchpad
-
-# Create repos directory for cloned user apps
-mkdir -p /var/launchpad/repos
+mkdir -p /home/ubuntu/launchpad/logs
+mkdir -p /home/ubuntu/launchpad/repos
 
 # Configure Nginx base
 echo "[10/10] Configuring Nginx..."
@@ -105,12 +102,17 @@ echo "  Setup Complete!"
 echo "========================================="
 echo ""
 echo "Next steps:"
-echo "1. Clone your repo: git clone <your-repo-url> /var/launchpad"
-echo "2. cd /var/launchpad/server && npm install"
-echo "3. Create /var/launchpad/server/.env with your values"
-echo "4. cd /var/launchpad/client && npm install && npm run build"
-echo "5. pm2 start /var/launchpad/server/server.js --name launchpad"
+echo "1. Clone your repo: git clone https://github.com/mohanvel026/launchpad.git /home/ubuntu/launchpad"
+echo "2. cd /home/ubuntu/launchpad/server && npm install --production"
+echo "3. Create /home/ubuntu/launchpad/server/.env with your values"
+echo "4. cd /home/ubuntu/launchpad/client && npm install && npm run build"
+echo "5. pm2 start /home/ubuntu/launchpad/infra/ecosystem.config.js"
 echo "6. pm2 startup && pm2 save"
+echo "7. sudo cp /home/ubuntu/launchpad/infra/launchpad.nginx.conf /etc/nginx/sites-available/launchpad"
+echo "8. sudo ln -sf /etc/nginx/sites-available/launchpad /etc/nginx/sites-enabled/"
+echo "9. sudo rm -f /etc/nginx/sites-enabled/default"
+echo "10. sudo nginx -t && sudo systemctl reload nginx"
+echo "11. sudo certbot --nginx -d launchlive.in -d www.launchlive.in"
 echo ""
 echo "Docker version: $(docker --version)"
 echo "Node version:   $(node --version)"
