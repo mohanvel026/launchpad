@@ -900,8 +900,8 @@ CMD ["/app/start.sh"]`;
 
       const start = getStartCommand(bePath, bePm.name);
       const backendCmd = start.isScript
-        ? `pm2 start ${bePm.name} --name backend -- start`
-        : `pm2 start ${start.args[0]} --name backend`;
+        ? `pm2-runtime start ${bePm.name} --name backend -- start`
+        : `pm2-runtime start ${start.args[0]} --name backend`;
 
       const beCacheMount = bePm.name === 'npm' ? '--mount=type=cache,target=/root/.npm' :
                            bePm.name === 'pnpm' ? '--mount=type=cache,target=/root/.local/share/pnpm/store' :
@@ -957,7 +957,7 @@ ENV PORT=4000
 ENV NODE_ENV=production
 EXPOSE ${containerPort}
 ${healthCheck}
-RUN printf '#!/bin/sh\\nset -e\\n${migrationRunStr}${backendCmd}\\nnginx -g "daemon off;"\\n' > /app/start.sh && chmod +x /app/start.sh
+RUN printf '#!/bin/sh\\nset -e\\n${migrationRunStr}ln -sf /dev/stdout /var/log/nginx/access.log\\nln -sf /dev/stderr /var/log/nginx/error.log\\nnginx\\n${backendCmd}\\n' > /app/start.sh && chmod +x /app/start.sh
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/app/start.sh"]`;
     }
