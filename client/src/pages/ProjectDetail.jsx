@@ -880,11 +880,11 @@ Use bold headers, bullet lists, and code blocks.`;
 
   useEffect(() => {
     if (activeTab === 'logs') logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+  }, [logs, activeTab]);
 
   useEffect(() => {
     if (activeTab === 'runtime-logs') runtimeLogsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [runtimeLogs]);
+  }, [runtimeLogs, activeTab]);
 
   useEffect(() => {
     if (project && architectMessages.length === 0) {

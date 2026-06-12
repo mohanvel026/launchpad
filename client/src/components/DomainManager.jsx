@@ -1,5 +1,5 @@
 /* global process */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../lib/api';
 
 export default function DomainManager({ project, onUpdate }) {
@@ -25,7 +25,7 @@ export default function DomainManager({ project, onUpdate }) {
   const [copiedText,   setCopiedText]   = useState('');
   const [mockVerify,   setMockVerify]   = useState(process.env.NODE_ENV === 'development' || true); // Default true for testing convenience
 
-  const parseAndSyncDomainStates = (cd) => {
+  const parseAndSyncDomainStates = useCallback((cd) => {
     if (!cd) return;
     const wildcardSuffix = `.${domain}`;
     if (cd.endsWith(wildcardSuffix)) {
@@ -54,9 +54,9 @@ export default function DomainManager({ project, onUpdate }) {
         }
       }
     }
-  };
+  }, [domain]);
 
-  const fetchDomainInfo = async () => {
+  const fetchDomainInfo = useCallback(async () => {
     try {
       const res = await api.get(`/domains/${project._id}`);
       setDomainInfo(res.data);
@@ -68,13 +68,13 @@ export default function DomainManager({ project, onUpdate }) {
     } finally {
       setInfoLoading(false);
     }
-  };
+  }, [project._id, parseAndSyncDomainStates]);
 
   useEffect(() => {
     setTimeout(() => {
       fetchDomainInfo();
     }, 0);
-  }, [project._id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchDomainInfo]);
 
   // ── Auto-poll DNS status every 15s when pending verification ─────────────────
   useEffect(() => {
@@ -107,7 +107,7 @@ export default function DomainManager({ project, onUpdate }) {
     }, 15000); // Poll every 15 seconds
 
     return () => clearInterval(pollInterval);
-  }, [domainInfo?.customDomainStatus, project._id, mockVerify, domainSuffix, onUpdate]);
+  }, [domainInfo?.customDomainStatus, domainInfo?.customDomain, project._id, mockVerify, domainSuffix, onUpdate, fetchDomainInfo, domain]);
 
   const subUrl = `https://${project.subdomain}.${domain}`;
   const targetCname = `${project.subdomain}.${domain}`;
