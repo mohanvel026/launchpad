@@ -918,7 +918,6 @@ buildQueue.process(1, async (job) => {
         runCmd += ` -e "${k}=${safe}"`;
       }
       // Ensure PORT env var matches what the container actually listens on
-      const isMultiProcess = ['fullstack-split', 'mern'].includes(stack);
       if (!isMultiProcess) {
         runCmd += ` -e "PORT=${finalContainerPort}"`;
       }
