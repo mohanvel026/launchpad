@@ -3,7 +3,7 @@ const axios = require('axios');
 // ─── Configuration ─────────────────────────────────────────────────────────────
 const CONFIG = {
   GROQ_MODEL:    process.env.GROQ_MODEL    || 'llama-3.3-70b-versatile',
-  GEMINI_MODEL:  process.env.GEMINI_MODEL  || 'gemini-1.5-flash-latest',
+  GEMINI_MODEL:  process.env.GEMINI_MODEL  || 'gemini-2.0-flash',
   TIMEOUT_MS:    parseInt(process.env.AI_TIMEOUT_MS, 10) || 25000,
   MAX_LOG_CHARS: 5000,
   MAX_PKG_CHARS: 1200,
