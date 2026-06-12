@@ -1702,41 +1702,8 @@ Use bold headers, bullet lists, and code blocks.`;
       <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div className="lp-page" style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', padding: 0 }}>
           <div className="lp-detail-layout">
-            {/* Left Sidebar — anchored to left edge, full height */}
-            <div className="lp-sidebar-container">
-            {SIDEBAR_GROUPS.map((group, idx) => (
-              <div key={idx} className="lp-sidebar-group">
-                <div style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  color: 'var(--text-dim)',
-                  letterSpacing: '0.08em',
-                  marginBottom: '8px',
-                  paddingLeft: '12px'
-                }}>
-                  {group.title}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  {group.items.map(item => (
-                    <div
-                      key={item.id}
-                      className={`lp-sidebar-link ${activeTab === item.id ? 'active' : ''}`}
-                      onClick={() => setActiveTab(item.id)}
-                    >
-                      <span style={{ width: 20, display: 'inline-flex', justifyContent: 'center', marginRight: 8, fontSize: '15px' }}>
-                        {item.icon}
-                      </span>
-                      <span>{item.label}</span>
-                      {renderSidebarBadge(item.id)}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
 
-          {/* Right Content Area */}
+          {/* Main Content Area — LEFT */}
           <div className="lp-content-container">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {error && (
@@ -4245,6 +4212,42 @@ Use bold headers, bullet lists, and code blocks.`;
         )}
             </div>{/* /inner-flex */}
           </div>{/* /lp-content-container */}
+
+          {/* Right Sidebar */}
+          <div className="lp-sidebar-container">
+            {SIDEBAR_GROUPS.map((group, idx) => (
+              <div key={idx} className="lp-sidebar-group">
+                <div style={{
+                  fontSize: '10.5px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  color: 'var(--text-dim)',
+                  letterSpacing: '0.1em',
+                  marginBottom: '6px',
+                  paddingLeft: '12px',
+                  opacity: 0.6,
+                }}>
+                  {group.title}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {group.items.map(item => (
+                    <div
+                      key={item.id}
+                      className={`lp-sidebar-link ${activeTab === item.id ? 'active' : ''}`}
+                      onClick={() => setActiveTab(item.id)}
+                    >
+                      <span style={{ width: 18, display: 'inline-flex', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}>
+                        {item.icon}
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
+                      {renderSidebarBadge(item.id)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
         </div>{/* /lp-detail-layout */}
       </div>{/* /lp-page */}
       </main>
