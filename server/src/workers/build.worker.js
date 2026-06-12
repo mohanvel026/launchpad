@@ -34,6 +34,9 @@ const buildQueue = new Queue('builds', {
   }
 });
 
+buildQueue.on('error', (err) => console.error('[BuildQueue Error]:', err));
+buildQueue.on('ready', () => console.log('⚡ [BuildQueue] Connected and ready to process jobs.'));
+
 const REPOS_DIR = path.join(__dirname, '../../repos');
 if (!fs.existsSync(REPOS_DIR)) fs.mkdirSync(REPOS_DIR, { recursive: true });
 
