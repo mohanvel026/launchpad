@@ -1,0 +1,17 @@
+{
+  "name": "launchpad-monorepo",
+  "version": "1.0.0",
+  "description": "Monorepo configuration for LaunchPad",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && npm install --prefix client && npm install --prefix server && npm install --prefix cli",
+    "build:client": "npm run build --prefix client",
+    "start:server": "npm start --prefix server",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

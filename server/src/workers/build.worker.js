@@ -7,6 +7,7 @@ const CryptoJS     = require('crypto-js');
 const Deployment = require('../models/Deployment.model');
 const Project    = require('../models/Project.model');
 const EnvVar     = require('../models/EnvVar.model');
+const User       = require('../models/User.model');
 
 const { buildImage, runContainer, stopContainer } = require('../services/docker.service');
 const { detectStack, generateDockerfile }         = require('../services/stackDetector.service');
@@ -1191,14 +1192,14 @@ buildQueue.process(1, async (job) => {
           const runArgs = start.isScript ? start.args : start.args;
 
           const { spawn } = require('child_process');
-          const logStream = fs.createWriteStream(path.join(runCwd, 'local-server.log'), { flags: 'a' });
+          const fd = fs.openSync(path.join(runCwd, 'local-server.log'), 'a');
           
           const child = spawn(runCmd, runArgs, {
             cwd: runCwd,
             env: localEnv,
             shell: true,
             detached: true,
-            stdio: ['ignore', logStream, logStream]
+            stdio: ['ignore', fd, fd]
           });
           child.unref();
           containerId = String(child.pid);
