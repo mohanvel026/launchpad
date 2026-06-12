@@ -345,6 +345,30 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
 
   const containerPort = options.containerPort || 3000;
 
+  // SRE: Detect if Prisma ORM is present to install runtime OS packages (openssl, libc6-compat) in Alpine
+  const hasPrisma = (() => {
+    if (!repoPath) return false;
+    try {
+      const rootPkg = readPkg(repoPath);
+      if (hasDep(rootPkg, 'prisma') || hasDep(rootPkg, '@prisma/client')) return true;
+    } catch (e) {}
+    try {
+      const beDir = exists(repoPath, 'server') ? 'server' : (exists(repoPath, 'backend') ? 'backend' : '');
+      if (beDir) {
+        const bePkg = readPkg(path.join(repoPath, beDir));
+        if (hasDep(bePkg, 'prisma') || hasDep(bePkg, '@prisma/client')) return true;
+      }
+    } catch (e) {}
+    try {
+      const feDir = exists(repoPath, 'client') ? 'client' : (exists(repoPath, 'frontend') ? 'frontend' : '');
+      if (feDir) {
+        const fePkg = readPkg(path.join(repoPath, feDir));
+        if (hasDep(fePkg, 'prisma') || hasDep(fePkg, '@prisma/client')) return true;
+      }
+    } catch (e) {}
+    return false;
+  })();
+
   const installCmd = options.installCommand || pm.install;
   const buildCmd = options.buildCommand || `${pm.run} build`;
 
@@ -524,7 +548,7 @@ ${envArgs}${feCodeGenSteps}
 RUN --mount=type=cache,target=/app/.next/cache ${buildCmd}
 
 FROM node:20-alpine
-RUN apk add --no-cache curl tini
+RUN apk add --no-cache curl tini${hasPrisma ? ' openssl libc6-compat' : ''}
 WORKDIR /app
 ENV PORT=${containerPort}
 COPY --from=builder /app/package*.json ./
@@ -922,7 +946,7 @@ COPY ${beDir}/ .${codeGenSteps}
 ${beBuildStep}${bePruneStep}
 # ── Stage 3: Final SRE container ──
 FROM node:20-alpine
-RUN apk add --no-cache curl nginx tini
+RUN apk add --no-cache curl nginx tini${hasPrisma ? ' openssl libc6-compat' : ''}
 RUN npm install -g pm2 --silent
 
 WORKDIR /app
@@ -957,7 +981,7 @@ ${envArgs}${feCodeGenSteps}
 RUN ${buildCmd} 2>/dev/null || npx nuxt build || true
 
 FROM node:20-alpine
-RUN apk add --no-cache curl tini
+RUN apk add --no-cache curl tini${hasPrisma ? ' openssl libc6-compat' : ''}
 WORKDIR /app
 COPY --from=builder /app/.output ./.output
 COPY --from=builder /app/package*.json ./
@@ -1231,7 +1255,7 @@ CMD ["dotnet", "${appName}.dll"]`;
       const pruneStep = `RUN ${pruneCmd} || true\n`;
 
       return `FROM node:20-alpine
-RUN apk add --no-cache curl tini
+RUN apk add --no-cache curl tini${hasPrisma ? ' openssl libc6-compat' : ''}
 WORKDIR /app
 COPY package*.json ./
 ${lockFileCopy}
