@@ -520,6 +520,7 @@ buildQueue.process(1, async (job) => {
     
     await log(`   ↳ Detected Stack: ${stack.toUpperCase()}`);
     await Project.findByIdAndUpdate(projectId, { stack });
+    const isMultiProcess = ['fullstack-split', 'mern'].includes(stack);
 
     // ── Dynamic ETA: Analyse the real project and tell the user how long to expect ──
     const hasWarmCache = !!(project.lastImageTag && !skipDockerBuild);
@@ -706,7 +707,6 @@ buildQueue.process(1, async (job) => {
         buildArgs[e.key] = e.value;
       }
       // Ensure runtime env PORT reflects what container actually listens on
-      const isMultiProcess = ['fullstack-split', 'mern'].includes(stack);
       runtimeEnv.PORT = isMultiProcess ? '4000' : String(containerPort);
 
       // Elite SRE addition: Auto-write a secure build-time .env file so client-side builders (Vite, Next, etc.) can compile constants correctly

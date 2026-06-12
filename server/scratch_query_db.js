@@ -14,7 +14,7 @@ mongoose.connect(MONGO_URI)
     const projects = await Project.find({});
     console.log('=== ALL PROJECTS ===');
     for (const p of projects) {
-      console.log(`- ID: ${p._id}, Name: "${p.get('name')}", Subdomain: "${p.get('subdomain')}", Status: "${p.get('status')}", ContainerID: "${p.get('containerId')}", Port: ${p.get('port')}`);
+      console.log(`- ID: ${p._id}, Name: "${p.get('name')}", Stack: "${p.get('stack')}", Subdomain: "${p.get('subdomain')}", Status: "${p.get('status')}", ContainerID: "${p.get('containerId')}", Port: ${p.get('port')}`);
     }
     
     const deployments = await Deployment.find({}).sort({ createdAt: -1 }).limit(10);
