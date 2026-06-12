@@ -629,7 +629,7 @@ const findVariableCollisions = (keys = []) => {
  */
 const discoverRequiredEnvVars = async (codeSnippets = '', stack = 'unknown', dependenciesList = [], securityWarnings = [], collisions = []) => {
   const systemPrompt = `You are a DevOps security auditor.
-Analyze the source code snippets and list all environment variables (e.g. process.env.XYZ) that the application expects.
+Analyze the source code snippets and list all environment variables (e.g. process.env.XYZ or env("XYZ") in Prisma schemas) that the application expects.
 
 Respond ONLY with a valid JSON object matching this exact schema:
 {

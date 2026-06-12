@@ -556,7 +556,7 @@ buildQueue.process(1, async (job) => {
               if (file !== 'node_modules' && file !== '.git' && file !== 'dist') {
                 scanForEnv(fullPath, depth + 1);
               }
-            } else if (/\.(js|ts|py|json|config|yaml|yml)$/i.test(file) || file.includes('.env')) {
+            } else if (/\.(js|ts|py|json|config|yaml|yml|prisma)$/i.test(file) || file.includes('.env') || file.includes('schema')) {
               if (aggregatedCode.length < 25000) {
                 aggregatedCode += fs.readFileSync(fullPath, 'utf8').slice(0, 2000) + '\n';
               }

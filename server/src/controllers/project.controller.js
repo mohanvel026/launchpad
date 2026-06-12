@@ -58,6 +58,24 @@ const analyzeRepo = async (req, res) => {
       } catch { /* file not found */ }
     }
 
+    // Scan files list for prisma schema to extract DATABASE_URL
+    const prismaFile = files.find(f => f.endsWith('schema.prisma'));
+    if (prismaFile) {
+      try {
+        const prismaRes = await axios.get(`https://api.github.com/repos/${repoFullName}/contents/${prismaFile}`, { headers });
+        const content = Buffer.from(prismaRes.data.content, 'base64').toString('utf-8');
+        const prismaEnvMatches = content.match(/env\(\s*["']([^"']+)["']\s*\)/g);
+        if (prismaEnvMatches) {
+          for (const m of prismaEnvMatches) {
+            const varName = m.match(/["']([^"']+)["']/)[1];
+            if (!envExampleVars.some(e => e.key === varName)) {
+              envExampleVars.push({ key: varName, placeholder: 'Required — database connection string' });
+            }
+          }
+        }
+      } catch (err) { /* ignore */ }
+    }
+
     // AI-powered stack detection
     const { detectStackWithAI } = require('../services/ai.service');
     const { detectStack } = require('../services/stackDetector.service');
