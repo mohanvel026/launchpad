@@ -548,7 +548,7 @@ ${envArgs}${feCodeGenSteps}
 RUN --mount=type=cache,target=/app/.next/cache ${buildCmd}
 
 FROM node:20-alpine
-RUN apk add --no-cache curl tini${hasPrisma ? ' openssl libc6-compat' : ''}
+RUN apk add --no-cache curl tini ca-certificates${hasPrisma ? ' openssl libc6-compat' : ''}
 WORKDIR /app
 ENV PORT=${containerPort}
 COPY --from=builder /app/package*.json ./
@@ -946,7 +946,7 @@ COPY ${beDir}/ .${codeGenSteps}
 ${beBuildStep}${bePruneStep}
 # ── Stage 3: Final SRE container ──
 FROM node:20-alpine
-RUN apk add --no-cache curl nginx tini${hasPrisma ? ' openssl libc6-compat' : ''}
+RUN apk add --no-cache curl nginx tini ca-certificates${hasPrisma ? ' openssl libc6-compat' : ''}
 RUN npm install -g pm2 --silent
 
 WORKDIR /app
@@ -981,7 +981,7 @@ ${envArgs}${feCodeGenSteps}
 RUN ${buildCmd} 2>/dev/null || npx nuxt build || true
 
 FROM node:20-alpine
-RUN apk add --no-cache curl tini${hasPrisma ? ' openssl libc6-compat' : ''}
+RUN apk add --no-cache curl tini ca-certificates${hasPrisma ? ' openssl libc6-compat' : ''}
 WORKDIR /app
 COPY --from=builder /app/.output ./.output
 COPY --from=builder /app/package*.json ./
@@ -1255,7 +1255,7 @@ CMD ["dotnet", "${appName}.dll"]`;
       const pruneStep = `RUN ${pruneCmd} || true\n`;
 
       return `FROM node:20-alpine
-RUN apk add --no-cache curl tini${hasPrisma ? ' openssl libc6-compat' : ''}
+RUN apk add --no-cache curl tini ca-certificates${hasPrisma ? ' openssl libc6-compat' : ''}
 WORKDIR /app
 COPY package*.json ./
 ${lockFileCopy}
