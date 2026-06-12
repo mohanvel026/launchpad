@@ -109,7 +109,7 @@ const triggerDeploy = async (req, res) => {
     const settingsStr = `${project.installCommand || ''}|${project.buildCommand || ''}|${project.outputDir || ''}|${project.branch || ''}|${project.cpuLimit || ''}|${project.ramLimitMB || ''}`;
     const settingsHash = crypto.createHash('md5').update(settingsStr).digest('hex');
 
-    const forceRebuild = req.body.forceRebuild === true;
+    const forceRebuild = req.body?.forceRebuild === true;
 
     const deployment = await Deployment.create({
       project:       project._id,
