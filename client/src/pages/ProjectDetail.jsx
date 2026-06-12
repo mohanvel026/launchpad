@@ -1700,7 +1700,7 @@ Use bold headers, bullet lists, and code blocks.`;
       </div>
 
       <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <div className="lp-page" style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', padding: 0 }}>
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', width: '100%' }}>
           <div className="lp-detail-layout">
 
           {/* Left Sidebar */}
