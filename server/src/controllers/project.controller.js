@@ -206,7 +206,10 @@ const deleteProject = async (req, res) => {
       const repoDir = path.join(__dirname, '../../repos', project._id.toString());
       
       // Stop and remove docker container, remove repo files
+      const targetContainer = project.containerId || containerName;
+      await execPromise(`docker rm -f ${targetContainer} || true`);
       await execPromise(`docker rm -f ${containerName} || true`);
+      await execPromise(`docker ps -a --filter "name=${containerName}-" --format "{{.ID}}" | xargs -r docker rm -f || true`);
       await execPromise(`rm -rf ${repoDir} || true`);
       
       // Remove Nginx configuration

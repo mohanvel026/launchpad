@@ -391,9 +391,10 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
   if (pm.name === 'pnpm') pmSetup = 'RUN corepack enable && corepack prepare pnpm@latest --activate';
   if (pm.name === 'bun')  pmSetup = 'RUN npm install -g bun';
 
-  // Dynamically generate ARG and ENV blocks for all user-defined variables
+  // Dynamically generate ARG and ENV blocks for all user-defined variables (excluding secrets)
   const envVars = options.envVars || [];
   const envArgs = envVars
+    .filter(e => !e.isSecret)
     .map(e => `ARG ${e.key}=""\nENV ${e.key}=$${e.key}`)
     .join('\n');
 

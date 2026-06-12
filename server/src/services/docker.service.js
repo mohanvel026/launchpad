@@ -30,7 +30,7 @@ const buildImage = (contextDir, imageTag, deploymentId) => {
     proc.stdout.on('data', handleLine);
     proc.stderr.on('data', handleLine);
 
-    proc.on('close', (code) => {
+    proc.on('exit', (code) => {
       if (code === 0) {
         resolve(imageTag);
       } else {

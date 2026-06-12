@@ -321,14 +321,24 @@ const inspectLogs = async (req, res) => {
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    // Grab live docker container logs
     const containerName = `lp-${project._id.toString().slice(-8)}`;
     const { execSync } = require('child_process');
     let runtimeLogs = '';
     try {
-      runtimeLogs = execSync(`docker logs --tail 100 ${containerName} 2>&1`, { timeout: 15000 }).toString();
+      const target = project.containerId || containerName;
+      runtimeLogs = execSync(`docker logs --tail 100 ${target} 2>&1`, { timeout: 15000 }).toString();
     } catch (e) {
-      runtimeLogs = 'No active container is running or logs are unavailable.';
+      try {
+        // Fallback: try finding container by wildcard name if containerId was missing/stale
+        const containerIdFromDocker = execSync(`docker ps -a --filter "name=${containerName}" --format "{{.ID}}" | head -n 1`, { timeout: 5000 }).toString().trim();
+        if (containerIdFromDocker) {
+          runtimeLogs = execSync(`docker logs --tail 100 ${containerIdFromDocker} 2>&1`, { timeout: 15000 }).toString();
+        } else {
+          throw e;
+        }
+      } catch (e2) {
+        runtimeLogs = 'No active container is running or logs are unavailable.';
+      }
     }
 
     const { inspectRuntimeLogs } = require('../services/ai.service');

@@ -90,7 +90,10 @@ const deleteAccount = async (req, res) => {
         const repoDir = path.join(__dirname, '../../repos', project._id.toString());
 
         // Stop and remove docker container
+        const targetContainer = project.containerId || containerName;
+        await execPromise(`docker rm -f ${targetContainer} || true`);
         await execPromise(`docker rm -f ${containerName} || true`);
+        await execPromise(`docker ps -a --filter "name=${containerName}-" --format "{{.ID}}" | xargs -r docker rm -f || true`);
         // Remove repo files
         await execPromise(`rm -rf ${repoDir} || true`);
 

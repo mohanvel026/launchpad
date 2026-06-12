@@ -706,7 +706,8 @@ buildQueue.process(1, async (job) => {
         buildArgs[e.key] = e.value;
       }
       // Ensure runtime env PORT reflects what container actually listens on
-      runtimeEnv.PORT = String(containerPort);
+      const isMultiProcess = ['fullstack-split', 'mern'].includes(stack);
+      runtimeEnv.PORT = isMultiProcess ? '4000' : String(containerPort);
 
       // Elite SRE addition: Auto-write a secure build-time .env file so client-side builders (Vite, Next, etc.) can compile constants correctly
       if (envVarsList.length > 0) {
@@ -812,7 +813,7 @@ buildQueue.process(1, async (job) => {
           lines.forEach(l => handleLine(l).catch(() => {}));
         });
 
-        buildProc.on('close', (code) => {
+        buildProc.on('exit', (code) => {
           clearTimeout(buildTimeout);
           if (stdoutBuf.trim()) handleLine(stdoutBuf).catch(() => {});
           if (stderrBuf.trim()) handleLine(stderrBuf).catch(() => {});
