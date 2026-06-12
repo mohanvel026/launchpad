@@ -33,11 +33,11 @@ const getHtmlFiles = (dir) => {
 
 // ─── Tooling Detection (Package Manager & Build) ──────────────────────────────
 const detectPackageManager = (dir) => {
-  if (!dir || typeof dir !== 'string') return { name: 'npm', install: 'npm install', run: 'npm run', lockfile: 'package-lock.json' };
-  if (exists(dir, 'pnpm-lock.yaml')) return { name: 'pnpm', install: 'pnpm install', run: 'pnpm run', lockfile: 'pnpm-lock.yaml' };
-  if (exists(dir, 'yarn.lock')) return { name: 'yarn', install: 'yarn install', run: 'yarn', lockfile: 'yarn.lock' };
-  if (exists(dir, 'bun.lockb')) return { name: 'bun', install: 'bun install', run: 'bun run', lockfile: 'bun.lockb' };
-  return { name: 'npm', install: 'npm ci --legacy-peer-deps || npm install --legacy-peer-deps || npm install', run: 'npm run', lockfile: 'package-lock.json' };
+  if (!dir || typeof dir !== 'string') return { name: 'npm', install: 'npm install --no-audit --no-fund --loglevel error', run: 'npm run', lockfile: 'package-lock.json' };
+  if (exists(dir, 'pnpm-lock.yaml')) return { name: 'pnpm', install: 'pnpm install --no-audit --no-fund', run: 'pnpm run', lockfile: 'pnpm-lock.yaml' };
+  if (exists(dir, 'yarn.lock')) return { name: 'yarn', install: 'yarn install --no-audit --no-fund --prefer-offline', run: 'yarn', lockfile: 'yarn.lock' };
+  if (exists(dir, 'bun.lockb')) return { name: 'bun', install: 'bun install --no-audit --no-fund', run: 'bun run', lockfile: 'bun.lockb' };
+  return { name: 'npm', install: 'npm ci --legacy-peer-deps --no-audit --no-fund --loglevel error || npm install --legacy-peer-deps --no-audit --no-fund --loglevel error || npm install --no-audit --no-fund --loglevel error', run: 'npm run', lockfile: 'package-lock.json' };
 };
 
 const getStartCommand = (dir, pmName = 'npm') => {
@@ -891,18 +891,18 @@ CMD ["/app/start.sh"]`;
 
       let beInstallAllCmd = `RUN ${beCacheMount} ${bePm.install}`;
       if (bePm.name === 'npm') {
-        beInstallAllCmd = `RUN ${beCacheMount} npm install --legacy-peer-deps 2>/dev/null || npm install`;
+        beInstallAllCmd = `RUN ${beCacheMount} npm install --legacy-peer-deps --no-audit --no-fund --loglevel error 2>/dev/null || npm install --no-audit --no-fund --loglevel error`;
       }
 
       const beBuildStep = (bePkg && bePkg.scripts && bePkg.scripts.build)
         ? `RUN ${bePm.run} build || true\n`
         : '';
 
-      let bePruneCmd = 'npm prune --production';
+      let bePruneCmd = 'npm prune --production --no-audit --no-fund --loglevel error';
       if (bePm.name === 'pnpm') {
         bePruneCmd = 'pnpm prune --prod';
       } else if (bePm.name === 'yarn') {
-        bePruneCmd = 'yarn install --production --ignore-scripts --prefer-offline 2>/dev/null || yarn install --production';
+        bePruneCmd = 'yarn install --production --ignore-scripts --prefer-offline --no-audit --no-fund 2>/dev/null || yarn install --production';
       } else if (bePm.name === 'bun') {
         bePruneCmd = 'bun install --production';
       }
@@ -913,6 +913,8 @@ CMD ["/app/start.sh"]`;
 # ── Stage 2: Install & Build Backend (runs in PARALLEL with Stage 1) ──
 FROM node:20-alpine AS be-builder
 WORKDIR /app
+# SRE Optimization: Force sequential execution under memory limits by copying from fe-builder stage
+COPY --from=fe-builder /app/frontend/package*.json /tmp/dummy-fe-pkg.json
 ${bePmSetup}
 COPY ${beDir}/package*.json${beLockStr} ./
 ${beInstallAllCmd}

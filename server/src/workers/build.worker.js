@@ -778,6 +778,14 @@ buildQueue.process(1, async (job) => {
           }
         );
 
+        // SRE Safety Limit: Kill process if docker build hangs/thrashes for over 25 minutes
+        const buildTimeout = setTimeout(() => {
+          try {
+            buildProc.kill('SIGKILL');
+          } catch {}
+          reject(new Error('Docker build timed out after 25 minutes due to memory/disk limits'));
+        }, 25 * 60 * 1000);
+
         const handleLine = async (line) => {
           line = line.trimEnd();
           if (!line) return;
@@ -804,6 +812,7 @@ buildQueue.process(1, async (job) => {
         });
 
         buildProc.on('close', (code) => {
+          clearTimeout(buildTimeout);
           if (stdoutBuf.trim()) handleLine(stdoutBuf).catch(() => {});
           if (stderrBuf.trim()) handleLine(stderrBuf).catch(() => {});
           if (code === 0) {
@@ -814,7 +823,10 @@ buildQueue.process(1, async (job) => {
           }
         });
 
-        buildProc.on('error', (err) => reject(err));
+        buildProc.on('error', (err) => {
+          clearTimeout(buildTimeout);
+          reject(err);
+        });
       }).then(async () => {
         await log('   ✅ Build successful. Image tagged and ready for deployment.');
         // ── Auto-prune dangling images to free disk space ───────────────────────
