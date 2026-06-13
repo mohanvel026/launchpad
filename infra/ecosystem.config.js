@@ -12,7 +12,7 @@ module.exports = {
       env_file:     '/home/ubuntu/launchpad/server/.env',
       env: {
         NODE_ENV: 'production',
-        PORT:     5005,
+        PORT:     5000,
       },
       error_file:  '/home/ubuntu/launchpad/logs/server-error.log',
       out_file:    '/home/ubuntu/launchpad/logs/server-out.log',

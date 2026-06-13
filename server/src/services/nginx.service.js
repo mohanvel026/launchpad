@@ -86,7 +86,7 @@ server {
 const createNginxConfig = (subdomain, port, useSSL = false, customDomain = null) => {
   // Always route traffic through LaunchPad Node.js edge proxy on the configured port
   // to ensure full SRE observability, telemetry, analytics and auto-remediation!
-  const proxyPort = parseInt(process.env.PORT) || 5005;
+  const proxyPort = parseInt(process.env.PORT) || 5000;
 
   // Prevent duplicate domain values in nginx config (such as when custom domain == default subdomain)
   let actualCustomDomain = customDomain;

@@ -15,7 +15,7 @@ const { startMetricsWorker }              = require('./src/workers/metrics.worke
 const { startHealthChecker }              = require('./src/workers/health.worker');
 const { handleWsUpgrade }                 = require('./src/middleware/projectProxy.middleware');
 
-const PORT   = process.env.PORT || 5005;
+const PORT   = process.env.PORT || 5000;
 const server = http.createServer(app);
 
 initSocket(server);
