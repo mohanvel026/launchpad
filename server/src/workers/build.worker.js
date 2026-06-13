@@ -52,10 +52,17 @@ const notifyUpdate = async (projectId) => {
 };
 
 const decryptValue = (encrypted) => {
+  if (!process.env.ENCRYPTION_KEY) {
+    throw new Error('ENCRYPTION_KEY is not set — cannot decrypt env vars. Check PM2 env config.');
+  }
   try {
     const bytes = CryptoJS.AES.decrypt(encrypted, process.env.ENCRYPTION_KEY);
-    return bytes.toString(CryptoJS.enc.Utf8) || encrypted;
-  } catch { return encrypted; }
+    const result = bytes.toString(CryptoJS.enc.Utf8);
+    if (!result) throw new Error('Decryption returned empty string (wrong ENCRYPTION_KEY?)');
+    return result;
+  } catch (e) {
+    throw new Error(`Failed to decrypt env var: ${e.message}`);
+  }
 };
 
 const util         = require('util');
@@ -165,7 +172,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
 // Priority: 1) User env var PORT, 2) App's own .env file PORT, 3) Stack default
 const detectContainerPort = (repoDir, stack, runtimeEnv) => {
   // If user explicitly set PORT in LaunchLive env vars, respect it
-  if (runtimeEnv.PORT && runtimeEnv.PORT !== '3000') {
+  if (runtimeEnv.PORT) {
     return parseInt(runtimeEnv.PORT);
   }
   // Check backend/.env or root .env for PORT
@@ -545,69 +552,87 @@ buildQueue.process(1, async (job) => {
 
     let rawEnvs = await EnvVar.find({ project: projectId });
 
-    // Zero-Touch Autonomous AI Auto-Config: If project has no environment variables, discover and save them automatically on first deploy!
-    if (rawEnvs.length === 0) {
-      await log(`🔍 [AI Auto-Config] No environment variables set. Automatically scanning codebase for requirements…`);
-      let aggregatedCode = '';
-      
-      try {
-        const scanForEnv = (dir, depth = 0) => {
-          if (depth > 3) return;
-          const files = fs.readdirSync(dir);
-          for (const file of files) {
-            const fullPath = path.join(dir, file);
-            if (fs.statSync(fullPath).isDirectory()) {
-              if (file !== 'node_modules' && file !== '.git' && file !== 'dist') {
-                scanForEnv(fullPath, depth + 1);
-              }
-            } else if (/\.(js|ts|py|json|config|yaml|yml|prisma)$/i.test(file) || file.includes('.env') || file.includes('schema')) {
-              if (aggregatedCode.length < 25000) {
-                aggregatedCode += fs.readFileSync(fullPath, 'utf8').slice(0, 2000) + '\n';
-              }
-            }
+    // Zero-Touch Autonomous AI Auto-Config: Scan repository for env vars on every deploy, discover and save missing ones automatically!
+    await log(`🔍 PHASE 3: Scanning repository for environment variables…`);
+    const { scanRepository, generateSuggestedValue } = require('../services/envScanner.service');
+    const crypto = require('crypto');
+    
+    let scanResult;
+    try {
+      scanResult = scanRepository(repoDir, stack);
+    } catch (scanErr) {
+      await log(`   ⚠️  Scan failed: ${scanErr.message}`);
+      scanResult = { candidateKeys: [], securityWarnings: [] };
+    }
+    const candidateKeys = scanResult.candidateKeys || [];
+    await log(`   ↳ Discovered ${candidateKeys.length} potential env var refs in codebase.`);
+
+    const existingKeys = new Set(rawEnvs.map(e => e.key.toUpperCase()));
+    const ALWAYS_SKIP = new Set(['NODE_ENV', 'PORT', 'HOST', 'PATH', 'HOME', 'USER', 'PWD', 'SHELL', 'HOSTNAME']);
+    let autoFilledCount = 0;
+
+    for (const key of candidateKeys) {
+      const upperKey = key.toUpperCase();
+      if (existingKeys.has(upperKey) || ALWAYS_SKIP.has(upperKey)) {
+        continue;
+      }
+
+      let defaultValue = '';
+      let isSecret = true;
+
+      if (['VITE_API_URL', 'REACT_APP_API_URL', 'NEXT_PUBLIC_API_URL'].includes(upperKey)) {
+        defaultValue = liveUrl;
+        isSecret = false;
+      } else if (['DATABASE_URL', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT'].includes(upperKey)) {
+        await log(`   ⚠️  Missing critical DB variable: ${key} (No value is configured in dashboard)`);
+        continue;
+      } else {
+        defaultValue = generateSuggestedValue(key);
+        if (!defaultValue) {
+          if (upperKey.includes('SECRET') || upperKey.includes('TOKEN') || upperKey.includes('KEY') || upperKey.includes('PASSWORD') || upperKey.includes('AUTH_SALT')) {
+            defaultValue = crypto.randomBytes(32).toString('hex');
+          } else {
+            defaultValue = `your_${key.toLowerCase()}_placeholder`;
+            isSecret = false;
           }
-        };
-        
-        scanForEnv(repoDir);
-        
-        const { discoverRequiredEnvVars } = require('../services/ai.service');
-        const discovery = await discoverRequiredEnvVars(aggregatedCode, stack);
-        
-        if (discovery.detectedVars && discovery.detectedVars.length > 0) {
-          for (const v of discovery.detectedVars) {
-            const defaultValue = v.suggestedValue || v.placeholder || `your_${v.key.toLowerCase()}_placeholder`;
-            const encryptedValue = CryptoJS.AES.encrypt(defaultValue, process.env.ENCRYPTION_KEY).toString();
-            
-            await EnvVar.create({
-              project: projectId,
-              key: v.key,
-              value: encryptedValue,
-              isSecret: true
-            });
-          }
-          await log(`   ✅ [AI Auto-Config] Successfully discovered and securely configured ${discovery.detectedVars.length} variables!`);
-          
-          // Reload newly created variables to continue build seamlessly
-          rawEnvs = await EnvVar.find({ project: projectId });
-        } else {
-          await log(`   ℹ️ [AI Auto-Config] Scan complete: No environment variable references found.`);
         }
-      } catch (discoverErr) {
-        await log(`   ⚠️ [AI Auto-Config] Automatic configuration skipped: ${discoverErr.message}`);
+      }
+
+      if (defaultValue) {
+        const encryptedValue = CryptoJS.AES.encrypt(defaultValue, process.env.ENCRYPTION_KEY).toString();
+        await EnvVar.findOneAndUpdate(
+          { project: projectId, key: key },
+          { value: encryptedValue, isSecret },
+          { upsert: true, new: true }
+        );
+        autoFilledCount++;
       }
     }
 
-    const runtimeEnv = { PORT: '3000', NODE_ENV: 'production' };
+    if (autoFilledCount > 0) {
+      await log(`   ✅ [AI Auto-Config] Auto-filled and saved ${autoFilledCount} missing variables to DB.`);
+      rawEnvs = await EnvVar.find({ project: projectId });
+    }
+
+    const runtimeEnv = { NODE_ENV: 'production' };
+    const decryptErrors = [];
     for (const e of rawEnvs) {
       try {
         runtimeEnv[e.key] = decryptValue(e.value);
-      } catch {}
+      } catch (decErr) {
+        decryptErrors.push(e.key);
+        console.warn(`[Build Worker] Failed to decrypt env var "${e.key}": ${decErr.message}`);
+      }
+    }
+    if (decryptErrors.length > 0) {
+      await log(`⚠️  [ENV] Failed to decrypt ${decryptErrors.length} variable(s): ${decryptErrors.join(', ')} — check ENCRYPTION_KEY.`);
     }
 
-    // Convert rawEnvs to a mutable list of decrypted environment variables
     const envVarsList = rawEnvs.map(e => {
       let val = '';
-      try { val = decryptValue(e.value); } catch {}
+      try { val = decryptValue(e.value); } catch (decErr) {
+        console.warn(`[Build Worker] Failed to decrypt env var "${e.key}" for envVarsList: ${decErr.message}`);
+      }
       return {
         key: e.key,
         value: val,
@@ -615,11 +640,8 @@ buildQueue.process(1, async (job) => {
       };
     });
 
-    // Auto-detect and inject frontend API URLs for fullstack/MERN applications to prevent localhost hardcoding errors
     const isFullstack = ['fullstack-split', 'mern'].includes(stack);
     if (isFullstack) {
-      const domain = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
-      const liveUrl = `https://${project.subdomain}.${domain}`;
       const commonFrontendVars = ['VITE_API_URL', 'REACT_APP_API_URL', 'NEXT_PUBLIC_API_URL'];
       for (const key of commonFrontendVars) {
         if (!envVarsList.some(e => e.key === key)) {
@@ -629,11 +651,21 @@ buildQueue.process(1, async (job) => {
             isSecret: false
           });
           runtimeEnv[key] = liveUrl;
+          
+          const encryptedValue = CryptoJS.AES.encrypt(liveUrl, process.env.ENCRYPTION_KEY).toString();
+          await EnvVar.findOneAndUpdate(
+            { project: projectId, key },
+            { value: encryptedValue, isSecret: false },
+            { upsert: true }
+          );
         }
       }
     }
 
     const containerPort = detectContainerPort(repoDir, stack, runtimeEnv);
+    if (!runtimeEnv.PORT) {
+      runtimeEnv.PORT = String(containerPort);
+    }
 
     // ── Pre-flight Leaked Secrets Shield ──
     try {

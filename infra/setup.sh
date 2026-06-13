@@ -23,7 +23,10 @@ echo "[3/10] Installing Docker..."
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 sudo usermod -aG docker $USER
-newgrp docker
+if ! grep -q "DOCKER_BUILDKIT" /etc/environment; then
+  echo "DOCKER_BUILDKIT=1" | sudo tee -a /etc/environment
+fi
+export DOCKER_BUILDKIT=1
 
 # Install Nginx
 echo "[4/10] Installing Nginx..."
@@ -31,11 +34,21 @@ sudo apt install -y nginx
 sudo systemctl enable nginx
 sudo systemctl start nginx
 
+# Create launchpad-nginx directory
+mkdir -p /home/ubuntu/launchpad-nginx
+sudo chown -R ubuntu:ubuntu /home/ubuntu/launchpad-nginx
+
+# Include launchpad-nginx in main nginx.conf
+if ! grep -q "launchpad-nginx" /etc/nginx/nginx.conf; then
+  sudo sed -i '/http {/a \    include /home/ubuntu/launchpad-nginx/*.conf;' /etc/nginx/nginx.conf
+fi
+
 # Install Redis
 echo "[5/10] Installing Redis..."
 sudo apt install -y redis-server
 sudo systemctl enable redis-server
-sudo systemctl start redis-server
+sudo sed -i 's/^bind .*/bind 127.0.0.1/' /etc/redis/redis.conf
+sudo systemctl restart redis-server
 
 # Install Git
 echo "[6/10] Installing Git..."
@@ -48,6 +61,19 @@ sudo apt install -y certbot python3-certbot-nginx
 # Install PM2 for process management
 echo "[8/10] Installing PM2..."
 sudo npm install -g pm2
+
+# Configure passwordless sudo for Nginx and Certbot
+echo "ubuntu ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /usr/bin/certbot" | sudo tee /etc/sudoers.d/launchpad
+sudo chmod 0440 /etc/sudoers.d/launchpad
+
+# Certbot auto-renewal cron (weekly)
+(crontab -l 2>/dev/null; echo "0 3 * * 1 /usr/bin/certbot renew --post-hook 'systemctl reload nginx' > /dev/null 2>&1") | crontab -
+
+# PM2 startup on reboot and log rotation
+sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u ubuntu --hp /home/ubuntu
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 10M
+pm2 set pm2-logrotate:retain 7
 
 # Create app directory
 echo "[9/10] Creating app directory..."
@@ -65,7 +91,7 @@ server {
 
     # Socket.io needs special handling
     location /socket.io/ {
-        proxy_pass         http://127.0.0.1:5000;
+        proxy_pass         http://127.0.0.1:5005;
         proxy_http_version 1.1;
         proxy_set_header   Upgrade    $http_upgrade;
         proxy_set_header   Connection "upgrade";
@@ -78,7 +104,7 @@ server {
 
     # Everything else → Node.js
     location / {
-        proxy_pass         http://127.0.0.1:5000;
+        proxy_pass         http://127.0.0.1:5005;
         proxy_http_version 1.1;
         proxy_set_header   Upgrade    $http_upgrade;
         proxy_set_header   Connection "upgrade";
@@ -95,6 +121,15 @@ NGINX
 sudo ln -sf /etc/nginx/sites-available/launchpad /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
+
+# Configure UFW firewall
+echo "Configuring firewall..."
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw --force enable
 
 echo ""
 echo "========================================="
@@ -114,6 +149,5 @@ echo "9. sudo rm -f /etc/nginx/sites-enabled/default"
 echo "10. sudo nginx -t && sudo systemctl reload nginx"
 echo "11. sudo certbot --nginx -d launchlive.in -d www.launchlive.in"
 echo ""
-echo "Docker version: $(docker --version)"
-echo "Node version:   $(node --version)"
-echo "Redis status:   $(redis-cli ping)"
+echo "Docker version: $(docker --version 2>/dev/null || echo 'not installed yet')"
+echo "Node version:   $(node --version 2>/dev/null || echo 'not installed yet')"

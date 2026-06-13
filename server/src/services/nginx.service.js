@@ -84,9 +84,9 @@ server {
 
 // ─── Core function ─────────────────────────────────────────────────────────────
 const createNginxConfig = (subdomain, port, useSSL = false, customDomain = null) => {
-  // Always route traffic through LaunchPad Node.js edge proxy on port 5000
+  // Always route traffic through LaunchPad Node.js edge proxy on the configured port
   // to ensure full SRE observability, telemetry, analytics and auto-remediation!
-  const proxyPort = 5000;
+  const proxyPort = parseInt(process.env.PORT) || 5005;
 
   // Prevent duplicate domain values in nginx config (such as when custom domain == default subdomain)
   let actualCustomDomain = customDomain;

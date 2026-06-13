@@ -246,7 +246,7 @@ function scanRepository(repoPath, stack = 'unknown') {
             }
 
             // 2. Process Env Templates (.env.example, .env.sample, etc.)
-            const isEnvTemplate = lowerFile.includes('env.example') || lowerFile.includes('env.sample') || (lowerFile.startsWith('.env.') && !lowerFile.endsWith('.local') && !lowerFile.endsWith('.development') && !lowerFile.endsWith('.production'));
+            const isEnvTemplate = lowerFile.includes('env.example') || lowerFile.includes('env.sample') || lowerFile.includes('env.template') || (lowerFile.startsWith('.env.') && !lowerFile.endsWith('.js') && !lowerFile.endsWith('.ts') && !lowerFile.endsWith('.map'));
             const isDotEnv = file === '.env'; // Skip parsing local actual secrets if committed (but scan for warnings)
 
             if (isEnvTemplate || isDotEnv) {
@@ -273,7 +273,7 @@ function scanRepository(repoPath, stack = 'unknown') {
             }
 
             // 3. Process Source Code Files
-            const isSourceFile = /\.(js|jsx|ts|tsx|py|go|rs|java|rb|php|cs|sh|prisma|sql|json)$/i.test(file);
+            const isSourceFile = /\.(js|jsx|ts|tsx|py|go|rs|java|rb|php|cs|sh|prisma|sql|json|yml|yaml)$/i.test(file);
             if (isSourceFile) {
               const content = fs.readFileSync(fullPath, 'utf8').slice(0, 102400); // 100KB limit
               
@@ -283,7 +283,13 @@ function scanRepository(repoPath, stack = 'unknown') {
                 if (m[1]) candidateKeys.add(m[1]);
               }
 
-              // B. Node destructured process.env calls
+              // B. Node bracket notation process.env['XYZ'] or process.env["XYZ"]
+              const bracketMatches = content.matchAll(/(?:process\.env|import\.meta\.env)\[['"]([a-zA-Z_0-9]+)['"]\]/g);
+              for (const m of bracketMatches) {
+                if (m[1]) candidateKeys.add(m[1]);
+              }
+
+              // C. Node destructured process.env calls
               const destructureMatches = content.matchAll(/(?:const|let|var)\s*\{\s*([A-Za-z0-9_,\s\n]+)\s*\}\s*=\s*process\.env/g);
               for (const dm of destructureMatches) {
                 if (dm[1]) {
@@ -295,19 +301,39 @@ function scanRepository(repoPath, stack = 'unknown') {
                 }
               }
 
-              // C. Python os.environ.get('XYZ') or os.environ["XYZ"]
+              // D. Python os.environ.get('XYZ') or os.environ["XYZ"]
               const pyMatches = content.matchAll(/os\.environ(?:\[['"]|\.get\(['"])([a-zA-Z_0-9]+)/g);
               for (const m of pyMatches) {
                 if (m[1]) candidateKeys.add(m[1]);
               }
 
-              // D. Prisma env("XYZ")
+              // E. Prisma env("XYZ")
               const prismaMatches = content.matchAll(/env\s*\(\s*['"]([a-zA-Z_0-9]+)['"]\s*\)/g);
               for (const m of prismaMatches) {
                 if (m[1]) candidateKeys.add(m[1]);
               }
 
-              // E. Fallback SRE scans (Only on Source files, NEVER templates)
+              // F. YAML/Docker Compose env vars
+              const isYaml = /\.(yml|yaml)$/i.test(file);
+              if (isYaml) {
+                // Matches "KEY: value" or "KEY: ${KEY}"
+                const yamlMatches = content.matchAll(/\b([A-Z_][A-Z0-9_]{2,})\b\s*:/g);
+                for (const m of yamlMatches) {
+                  if (m[1]) candidateKeys.add(m[1]);
+                }
+                // Matches "- KEY=value" or "- KEY"
+                const listMatches = content.matchAll(/-\s*\b([A-Z_][A-Z0-9_]{2,})\b/g);
+                for (const m of listMatches) {
+                  if (m[1]) candidateKeys.add(m[1]);
+                }
+                // Matches "${KEY}"
+                const envVarRefMatches = content.matchAll(/\$\{([A-Z_][A-Z0-9_]{2,})\}/g);
+                for (const m of envVarRefMatches) {
+                  if (m[1]) candidateKeys.add(m[1]);
+                }
+              }
+
+              // G. Fallback SRE scans (Only on Source files, NEVER templates)
               if (content.includes('mongodb://') || content.includes('mongodb+srv://') || /mongoose\.connect|mongodb\.connect/i.test(content)) {
                 candidateKeys.add('MONGODB_URI');
                 candidateKeys.add('MONGO_URI');
@@ -319,7 +345,7 @@ function scanRepository(repoPath, stack = 'unknown') {
                 candidateKeys.add('REDIS_URL');
               }
 
-              // F. Secret Leaks audit in source code
+              // H. Secret Leaks audit in source code
               const leaks = auditLeakedSecrets(content, file);
               securityWarnings.push(...leaks);
             }

@@ -177,8 +177,12 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
       return res.data.choices[0].message.content;
     } catch (err) {
       const status = err.response?.status;
-      if (status === 429) {
-        markKeyRateLimited(key, 60000);
+      const errMessage = err.response?.data?.error?.message || err.message || '';
+      console.warn(`[Groq API Error] Key ${key.slice(0, 8)}... failed. Status: ${status}. Error: ${errMessage}`);
+
+      if (status === 429 || status === 401 || status === 403 || status === 400) {
+        // Quarantine 429 for 1 minute, and auth/bad request errors for 1 hour
+        markKeyRateLimited(key, status === 429 ? 60000 : 3600000);
         if (attempt < keyPool.length - 1) {
           continue;
         }
@@ -215,8 +219,12 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
         return res.data.candidates[0].content.parts[0].text;
       } catch (err) {
         const status = err.response?.status;
-        if (status === 429) {
-          markKeyRateLimited(key, 60000);
+        const errMessage = err.response?.data?.error?.message || err.message || '';
+        console.warn(`[Gemini API Error] Key ${key.slice(0, 8)}... failed. Status: ${status}. Error: ${errMessage}`);
+
+        if (status === 429 || status === 400 || status === 403) {
+          // Quarantine 429 for 1 minute, and auth/bad request errors for 1 hour
+          markKeyRateLimited(key, status === 429 ? 60000 : 3600000);
           if (rotateAttempt < keyPool.length - 1) {
             continue;
           }
@@ -1322,8 +1330,8 @@ Respond ONLY with a valid JSON object matching this schema:
 
   try {
     for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
-      const key = keyPool[geminiKeyIndex % keyPool.length];
-      geminiKeyIndex = (geminiKeyIndex + 1) % keyPool.length;
+      const key = selectActiveKey(keyPool, false);
+      if (!key) throw new Error('All Gemini keys rate-limited.');
 
       try {
         const res = await httpClient.post(
@@ -1346,8 +1354,14 @@ Respond ONLY with a valid JSON object matching this schema:
         return JSON.parse(raw);
       } catch (err) {
         const status = err.response?.status;
-        if (status === 429 && rotateAttempt < keyPool.length - 1) {
-          continue;
+        const errMessage = err.response?.data?.error?.message || err.message || '';
+        console.warn(`[Gemini Vision Error] Key ${key.slice(0, 8)}... failed. Status: ${status}. Error: ${errMessage}`);
+
+        if (status === 429 || status === 400 || status === 403) {
+          markKeyRateLimited(key, status === 429 ? 60000 : 3600000);
+          if (rotateAttempt < keyPool.length - 1) {
+            continue;
+          }
         }
         throw err;
       }
@@ -1384,6 +1398,7 @@ module.exports = {
   analyzeVisualPhishing,
   // Exported for SRE unit testing
   getGeminiKeyPool,
+  getGroqKeyPool,
   selectActiveKey,
   markKeyRateLimited,
 };

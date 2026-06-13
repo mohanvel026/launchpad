@@ -2,14 +2,14 @@ const fs         = require('fs');
 const path       = require('path');
 const Project    = require('../models/Project.model');
 const Deployment = require('../models/Deployment.model');
-const { callAI, generateOptimizationAdvice } = require('../services/ai.service');
+const { callAI, generateOptimizationAdvice, getGeminiKeyPool, getGroqKeyPool } = require('../services/ai.service');
 
 /**
  * Standard API error responder if keys are missing
  */
 const checkApiKeys = () => {
-  const hasGemini = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'placeholder';
-  const hasGroq   = process.env.GROQ_API_KEY   && process.env.GROQ_API_KEY   !== 'placeholder';
+  const hasGemini = getGeminiKeyPool().length > 0;
+  const hasGroq   = getGroqKeyPool().length > 0;
   if (!hasGemini && !hasGroq) {
     throw new Error('No valid API keys found. Please add GEMINI_API_KEY or GROQ_API_KEY to your .env');
   }

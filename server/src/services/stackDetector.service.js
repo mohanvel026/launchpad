@@ -194,7 +194,7 @@ const detectCodeGenSteps = (pkgDir, prismaSchemaPrefix = '', side = 'both') => {
     // 1. Prisma ORM — must generate typed DB client before server starts
     if (hasDep(pkg, 'prisma') || hasDep(pkg, '@prisma/client')) {
       if (prismaSchemaPrefix) steps.push(`COPY ${prismaSchemaPrefix}prisma* ./prisma/`);
-      steps.push('RUN npx prisma generate || true');
+      steps.push('RUN DATABASE_URL="mysql://localhost:3306/db" npx prisma generate || true');
     }
 
     // 2. Drizzle ORM — generates schema types
@@ -391,11 +391,12 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
   if (pm.name === 'pnpm') pmSetup = 'RUN corepack enable && corepack prepare pnpm@latest --activate';
   if (pm.name === 'bun')  pmSetup = 'RUN npm install -g bun';
 
-  // Dynamically generate ARG and ENV blocks for all user-defined variables (excluding secrets)
+  // Dynamically generate ARG and ENV blocks for all user-defined variables
   const envVars = options.envVars || [];
   const envArgs = envVars
-    .filter(e => !e.isSecret)
-    .map(e => `ARG ${e.key}=""\nENV ${e.key}=$${e.key}`)
+    .map(e => e.isSecret
+      ? `ARG ${e.key}\nENV ${e.key}=$${e.key}`
+      : `ARG ${e.key}=""\nENV ${e.key}=$${e.key}`)
     .join('\n');
 
   // ── Nginx Config Builder (base64-encoded — no heredocs, works with all Docker versions) ──

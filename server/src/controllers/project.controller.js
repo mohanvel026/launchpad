@@ -261,7 +261,7 @@ const registerWebhook = async (req, res) => {
     const project = await Project.findOne({ _id: req.params.id, owner: req.user._id });
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const callbackUrl = `${process.env.SERVER_URL || 'http://localhost:5000'}/api/deploy/webhook`;
+    const callbackUrl = `${process.env.SERVER_URL || 'http://localhost:5005'}/api/deploy/webhook`;
 
     const webhookId = await createWebhook(
       req.user.githubAccessToken,

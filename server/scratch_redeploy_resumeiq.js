@@ -13,12 +13,15 @@ mongoose.connect(MONGO_URI)
     const EnvVar = require('./src/models/EnvVar.model');
     const buildQueue = require('./src/workers/build.worker');
 
-    const projectId = '6a2525915208d637adab2c6b';
-    const project = await Project.findById(projectId);
+    const project = await Project.findOne({ subdomain: 'resumeiq' });
     if (!project) {
       console.error('Project not found');
       process.exit(1);
     }
+    const projectId = project._id;
+    project.repoUrl = 'https://github.com/mohanvel026/resumeiq.git';
+    await project.save();
+    console.log('Updated repoUrl to: ' + project.repoUrl);
 
     // Clear any stuck build statuses first
     await Project.findByIdAndUpdate(projectId, { status: 'idle' });

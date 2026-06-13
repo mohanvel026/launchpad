@@ -8,9 +8,11 @@ module.exports = {
       autorestart:  true,
       watch:        false,
       max_memory_restart: '500M',
+      node_args:    '--max-old-space-size=460',
+      env_file:     '/home/ubuntu/launchpad/server/.env',
       env: {
         NODE_ENV: 'production',
-        PORT:     5000,
+        PORT:     5005,
       },
       error_file:  '/home/ubuntu/launchpad/logs/server-error.log',
       out_file:    '/home/ubuntu/launchpad/logs/server-out.log',
