@@ -349,6 +349,7 @@ export default function ProjectDetail() {
   const [bulkEnv,  setBulkEnv]  = useState('');
   const [bulkImporting, setBulkImporting] = useState(false);
   const [showVal,  setShowVal]  = useState({});
+  const [decryptedVals, setDecryptedVals] = useState({});
   const [aiScanning, setAiScanning] = useState(false);
 
   // Settings
@@ -1101,6 +1102,21 @@ Use bold headers, bullet lists, and code blocks.`;
     if (!window.confirm(`Delete ${key}?`)) return;
     await api.delete(`/env/${id}/${key}`);
     setEnvVars(prev => prev.filter(e => e.key !== key));
+  };
+
+  const handleShowClick = async (key, envId) => {
+    if (showVal[envId]) {
+      setShowVal(prev => ({ ...prev, [envId]: false }));
+    } else {
+      try {
+        const res = await api.get(`/env/${id}/${key}/reveal`);
+        setDecryptedVals(prev => ({ ...prev, [envId]: res.data.value }));
+        setShowVal(prev => ({ ...prev, [envId]: true }));
+      } catch (err) {
+        console.error('Failed to reveal secret:', err.message);
+        alert('Failed to decrypt secret value. Please check your ENCRYPTION_KEY on the server.');
+      }
+    }
   };
 
   const handleDeleteProject = async () => {
@@ -2191,9 +2207,9 @@ Use bold headers, bullet lists, and code blocks.`;
                   <div key={e._id} className="lp-env-row">
                     <span className="mono" style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: 13, flex: 1 }}>{e.key}</span>
                     <span style={{ flex: 2, fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-dim)', letterSpacing: showVal[e._id] ? 0 : 4 }}>
-                      {showVal[e._id] ? '(value hidden)' : '••••••••••••'}
+                      {showVal[e._id] ? (decryptedVals[e._id] || '') : '••••••••••••'}
                     </span>
-                    <button onClick={() => setShowVal(prev => ({ ...prev, [e._id]: !prev[e._id] }))} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 12, marginRight: 8 }}>
+                    <button onClick={() => handleShowClick(e.key, e._id)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 12, marginRight: 8 }}>
                       {showVal[e._id] ? 'Hide' : 'Show'}
                     </button>
                     <button onClick={() => handleEditClick(e.key)} style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, marginRight: 8 }}>Edit</button>

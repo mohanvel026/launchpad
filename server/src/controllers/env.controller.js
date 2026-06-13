@@ -135,4 +135,20 @@ const rotateProjectEnvKeys = async (req, res) => {
   }
 };
 
-module.exports = { getEnvVars, setEnvVar, deleteEnvVar, rotateProjectEnvKeys };
+// GET /api/env/:projectId/:key/reveal — decrypt and return a single env var value
+const revealEnvVar = async (req, res) => {
+  try {
+    const project = await verifyAccess(req.params.projectId, req.user._id);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const envVar = await EnvVar.findOne({ project: project._id, key: req.params.key });
+    if (!envVar) return res.status(404).json({ message: 'Variable not found' });
+
+    const decryptedValue = decrypt(envVar.value);
+    res.json({ value: decryptedValue });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { getEnvVars, setEnvVar, deleteEnvVar, rotateProjectEnvKeys, revealEnvVar };

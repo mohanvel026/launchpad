@@ -1,7 +1,7 @@
 const express     = require('express');
 const { protect } = require('../middleware/auth.middleware');
 const {
-  getEnvVars, setEnvVar, deleteEnvVar, rotateProjectEnvKeys
+  getEnvVars, setEnvVar, deleteEnvVar, rotateProjectEnvKeys, revealEnvVar
 } = require('../controllers/env.controller');
 const Project = require('../models/Project.model');
 const path    = require('path');
@@ -11,6 +11,9 @@ const router = express.Router();
 
 // GET  /api/env/:projectId         — list all env var keys (values masked)
 router.get('/:projectId',           protect, getEnvVars);
+
+// GET  /api/env/:projectId/:key/reveal — decrypt and reveal a single env var value
+router.get('/:projectId/:key/reveal', protect, revealEnvVar);
 
 // POST /api/env/:projectId         — create or update an env var
 router.post('/:projectId',          protect, setEnvVar);

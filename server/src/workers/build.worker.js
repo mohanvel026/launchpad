@@ -92,6 +92,182 @@ const pushAuditStep = async (deploymentId, step, status, details) => {
   }
 };
 
+const detectDatabaseType = (repoDir) => {
+  // 1. Search for schema.prisma recursively or in common directories
+  const prismaPaths = [
+    path.join(repoDir, 'schema.prisma'),
+    path.join(repoDir, 'prisma', 'schema.prisma'),
+    path.join(repoDir, 'server', 'prisma', 'schema.prisma'),
+    path.join(repoDir, 'backend', 'prisma', 'schema.prisma'),
+  ];
+  
+  let foundPrismaPath = prismaPaths.find(p => fs.existsSync(p));
+  if (!foundPrismaPath) {
+    const findPrismaFile = (dir) => {
+      try {
+        const files = fs.readdirSync(dir, { withFileTypes: true });
+        for (const file of files) {
+          if (file.isDirectory()) {
+            if (file.name === 'node_modules' || file.name === '.git') continue;
+            const res = findPrismaFile(path.join(dir, file.name));
+            if (res) return res;
+          } else if (file.name === 'schema.prisma') {
+            return path.join(dir, file.name);
+          }
+        }
+      } catch (e) {}
+      return null;
+    };
+    try {
+      foundPrismaPath = findPrismaFile(repoDir);
+    } catch (err) {}
+  }
+
+  if (foundPrismaPath) {
+    try {
+      const content = fs.readFileSync(foundPrismaPath, 'utf8');
+      const providerMatch = content.match(/provider\s*=\s*["']([^"']+)["']/);
+      if (providerMatch) {
+        const provider = providerMatch[1].toLowerCase();
+        if (provider === 'postgresql' || provider === 'postgres') return 'postgres';
+        if (provider === 'mysql') return 'mysql';
+        if (provider === 'mongodb') return 'mongodb';
+        if (provider === 'sqlite') return 'sqlite';
+      }
+    } catch (err) {}
+  }
+
+  // 2. Scan package.json for database drivers
+  const packageJsonPaths = [
+    path.join(repoDir, 'package.json'),
+    path.join(repoDir, 'server', 'package.json'),
+    path.join(repoDir, 'backend', 'package.json'),
+  ];
+  
+  for (const p of packageJsonPaths) {
+    if (fs.existsSync(p)) {
+      try {
+        const content = fs.readFileSync(p, 'utf8');
+        const pkg = JSON.parse(content);
+        const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+        if (deps['pg'] || deps['pg-promise'] || deps['sequelize'] && deps['pg']) return 'postgres';
+        if (deps['mysql2'] || deps['mysql'] || deps['sequelize'] && (deps['mysql'] || deps['mysql2'])) return 'mysql';
+        if (deps['mongodb'] || deps['mongoose']) return 'mongodb';
+        if (deps['redis'] || deps['ioredis']) return 'redis';
+      } catch (err) {}
+    }
+  }
+
+  return 'mysql'; // Default fallback
+};
+
+const provisionDatabaseContainer = async (projectId, dbType, log) => {
+  const containerName = `launchlive-db-${dbType}-${projectId}`;
+  await log(`ℹ️ Checking database container: ${containerName}`);
+  
+  let exists = false;
+  let isRunning = false;
+  let existingPort = null;
+  let existingPassword = null;
+  
+  try {
+    const inspectRes = execSync(`docker inspect ${containerName}`, { encoding: 'utf8', stdio: 'pipe' });
+    const inspectData = JSON.parse(inspectRes)[0];
+    exists = true;
+    isRunning = inspectData.State.Running;
+    
+    const ports = inspectData.NetworkSettings.Ports || {};
+    const internalPorts = Object.keys(ports);
+    if (internalPorts.length > 0) {
+      const mapping = ports[internalPorts[0]];
+      if (mapping && mapping.length > 0) {
+        existingPort = parseInt(mapping[0].HostPort);
+      }
+    }
+    
+    const envs = inspectData.Config.Env || [];
+    for (const env of envs) {
+      const [k, val] = env.split('=');
+      if (['MYSQL_PASSWORD', 'POSTGRES_PASSWORD', 'MONGO_INITDB_ROOT_PASSWORD'].includes(k)) {
+        existingPassword = val;
+      }
+    }
+  } catch (err) {
+    // Container doesn't exist
+  }
+
+  if (exists) {
+    if (!isRunning) {
+      await log(`   ↳ Database container exists but is not running. Starting it…`);
+      try {
+        execSync(`docker start ${containerName}`);
+        await log(`   ✅ Successfully started ${containerName}.`);
+      } catch (startErr) {
+        await log(`   ❌ Failed to start container ${containerName}: ${startErr.message}. Recreation will be attempted.`);
+        exists = false;
+      }
+    } else {
+      await log(`   ✅ Database container is already running.`);
+    }
+  }
+
+  if (exists && existingPort) {
+    const password = existingPassword || 'launchpass123';
+    return { port: existingPort, password };
+  }
+
+  await log(`   ↳ Provisioning a new ${dbType} container…`);
+  try {
+    execSync(`docker rm -f ${containerName}`, { stdio: 'ignore' });
+  } catch (err) {}
+
+  const hostPort = await getNextFreePort(12000);
+  const crypto = require('crypto');
+  const password = crypto.randomBytes(12).toString('hex');
+  
+  let dockerCmd = '';
+  if (dbType === 'mysql') {
+    dockerCmd = `docker run -d --name ${containerName} \
+      -e MYSQL_ROOT_PASSWORD=${password} \
+      -e MYSQL_DATABASE=defaultdb \
+      -e MYSQL_USER=launchlive \
+      -e MYSQL_PASSWORD=${password} \
+      -p ${hostPort}:3306 \
+      mysql:8.0 --default-authentication-plugin=mysql_native_password`;
+  } else if (dbType === 'postgres') {
+    dockerCmd = `docker run -d --name ${containerName} \
+      -e POSTGRES_PASSWORD=${password} \
+      -e POSTGRES_USER=launchlive \
+      -e POSTGRES_DB=defaultdb \
+      -p ${hostPort}:5432 \
+      postgres:15-alpine`;
+  } else if (dbType === 'mongodb') {
+    dockerCmd = `docker run -d --name ${containerName} \
+      -e MONGO_INITDB_ROOT_USERNAME=launchlive \
+      -e MONGO_INITDB_ROOT_PASSWORD=${password} \
+      -p ${hostPort}:27017 \
+      mongo:6.0`;
+  } else if (dbType === 'redis') {
+    dockerCmd = `docker run -d --name ${containerName} \
+      -p ${hostPort}:6379 \
+      redis:7-alpine \
+      redis-server --requirepass ${password}`;
+  } else {
+    throw new Error(`Unsupported database type for auto-provisioning: ${dbType}`);
+  }
+
+  try {
+    execSync(dockerCmd);
+    await log(`   ✅ Container ${containerName} created on host port ${hostPort}.`);
+    await log(`   ↳ Waiting for database initialization (4.5s)…`);
+    await new Promise(resolve => setTimeout(resolve, 4500));
+    return { port: hostPort, password };
+  } catch (err) {
+    await log(`   ❌ Failed to run database container: ${err.message}`);
+    throw err;
+  }
+};
+
 // ─── Local Pattern-Based Error Diagnosis (no AI needed) ────────────────────────
 // Provides instant, useful diagnosis even when the AI service is unavailable.
 const localDiagnoseError = (output = '', stack = 'unknown') => {
@@ -584,8 +760,46 @@ buildQueue.process(1, async (job) => {
         defaultValue = liveUrl;
         isSecret = false;
       } else if (['DATABASE_URL', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT'].includes(upperKey)) {
-        await log(`   ⚠️  Missing critical DB variable: ${key} (No value is configured in dashboard)`);
-        continue;
+        await log(`   ⚠️  Missing critical DB variable: ${key} (Auto-provisioning database container...)`);
+        
+        let dbType = 'mysql';
+        if (upperKey.includes('MONGO')) {
+          dbType = 'mongodb';
+        } else if (upperKey.includes('REDIS')) {
+          dbType = 'redis';
+        } else {
+          dbType = detectDatabaseType(repoDir);
+        }
+        
+        try {
+          const { port, password } = await provisionDatabaseContainer(projectId, dbType, log);
+          const dbHost = process.env.SERVER_IP || '172.17.0.1';
+          
+          if (upperKey === 'DATABASE_URL' || upperKey === 'DATABASE_URI') {
+            if (dbType === 'mysql') {
+              defaultValue = `mysql://launchlive:${password}@${dbHost}:${port}/defaultdb`;
+            } else if (dbType === 'postgres') {
+              defaultValue = `postgresql://launchlive:${password}@${dbHost}:${port}/defaultdb?sslmode=disable`;
+            } else if (dbType === 'mongodb') {
+              defaultValue = `mongodb://launchlive:${password}@${dbHost}:${port}/defaultdb?authSource=admin`;
+            } else {
+              defaultValue = `mysql://launchlive:${password}@${dbHost}:${port}/defaultdb`;
+            }
+          } else if (upperKey === 'MONGODB_URI' || upperKey === 'MONGO_URI') {
+            defaultValue = `mongodb://launchlive:${password}@${dbHost}:${port}/defaultdb?authSource=admin`;
+          } else if (upperKey === 'REDIS_URL') {
+            defaultValue = `redis://:${password}@${dbHost}:${port}`;
+          } else if (upperKey === 'REDIS_HOST') {
+            defaultValue = dbHost;
+          } else if (upperKey === 'REDIS_PORT') {
+            defaultValue = String(port);
+          }
+          
+          await log(`   ✅ [Auto-Provision] Created ${dbType} database. Setting ${key} connection string.`);
+        } catch (dbErr) {
+          await log(`   ❌ [Auto-Provision] Database provisioning failed: ${dbErr.message}`);
+          continue;
+        }
       } else {
         defaultValue = generateSuggestedValue(key);
         if (!defaultValue) {
@@ -618,7 +832,61 @@ buildQueue.process(1, async (job) => {
     const decryptErrors = [];
     for (const e of rawEnvs) {
       try {
-        runtimeEnv[e.key] = decryptValue(e.value);
+        let val = decryptValue(e.value);
+        const upperKey = e.key.toUpperCase();
+        
+        // Detect database key and placeholder patterns
+        const isDbKey = ['DATABASE_URL', 'DATABASE_URI', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT'].includes(upperKey);
+        const isPlaceholder = val.includes('placeholder') || val.includes('your_') || val.includes('${') || val.includes('{{') || val.trim() === '';
+        
+        if (isDbKey && isPlaceholder) {
+          await log(`   ⚠️  Placeholder detected in ${e.key}: "${val}" (Auto-provisioning database container...)`);
+          
+          let dbType = 'mysql';
+          if (upperKey.includes('MONGO')) {
+            dbType = 'mongodb';
+          } else if (upperKey.includes('REDIS')) {
+            dbType = 'redis';
+          } else {
+            dbType = detectDatabaseType(repoDir);
+          }
+          
+          try {
+            const { port, password } = await provisionDatabaseContainer(projectId, dbType, log);
+            const dbHost = process.env.SERVER_IP || '172.17.0.1';
+            
+            if (upperKey === 'DATABASE_URL' || upperKey === 'DATABASE_URI') {
+              if (dbType === 'mysql') {
+                val = `mysql://launchlive:${password}@${dbHost}:${port}/defaultdb`;
+              } else if (dbType === 'postgres') {
+                val = `postgresql://launchlive:${password}@${dbHost}:${port}/defaultdb?sslmode=disable`;
+              } else if (dbType === 'mongodb') {
+                val = `mongodb://launchlive:${password}@${dbHost}:${port}/defaultdb?authSource=admin`;
+              } else {
+                val = `mysql://launchlive:${password}@${dbHost}:${port}/defaultdb`;
+              }
+            } else if (upperKey === 'MONGODB_URI' || upperKey === 'MONGO_URI') {
+              val = `mongodb://launchlive:${password}@${dbHost}:${port}/defaultdb?authSource=admin`;
+            } else if (upperKey === 'REDIS_URL') {
+              val = `redis://:${password}@${dbHost}:${port}`;
+            } else if (upperKey === 'REDIS_HOST') {
+              val = dbHost;
+            } else if (upperKey === 'REDIS_PORT') {
+              val = String(port);
+            }
+            
+            // Encrypt and update in MongoDB
+            const encryptedValue = CryptoJS.AES.encrypt(val, process.env.ENCRYPTION_KEY).toString();
+            await EnvVar.findByIdAndUpdate(e._id, { value: encryptedValue });
+            e.value = encryptedValue; // Update in-memory for the rest of build steps
+            
+            await log(`   ✅ [Auto-Provision] Created ${dbType} database. Updated ${e.key} in database.`);
+          } catch (dbErr) {
+            await log(`   ❌ [Auto-Provision] Database provisioning failed: ${dbErr.message}`);
+          }
+        }
+        
+        runtimeEnv[e.key] = val;
       } catch (decErr) {
         decryptErrors.push(e.key);
         console.warn(`[Build Worker] Failed to decrypt env var "${e.key}": ${decErr.message}`);
