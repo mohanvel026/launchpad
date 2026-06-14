@@ -14,7 +14,8 @@ const deploymentSchema = new mongoose.Schema({
     summary:  { type: String },
     cause:    { type: String },
     fix:      { type: String },
-    commands: [{ type: String }]
+    commands: [{ type: String }],
+    missingEnvVar: { type: String }
   },
   startedAt:      { type: Date },
   finishedAt:     { type: Date },

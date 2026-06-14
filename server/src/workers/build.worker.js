@@ -408,12 +408,39 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
   }
 
   // Missing environment variable
-  if (/process\.env\.|env.*undefined|missing.*env|required.*variable/i.test(output)) {
+  const envMissingRegexes = [
+    /missing(?: required)? env(?:ironment)? var(?:iable)?:?\s*['"]?([a-zA-Z0-9_]+)['"]?/i,
+    /env(?:ironment)? var(?:iable)?\s*['"]?([a-zA-Z0-9_]+)['"]?\s*is required/i,
+    /env(?:ironment)? var(?:iable)?\s*['"]?([a-zA-Z0-9_]+)['"]?\s*is missing/i,
+    /env(?:ironment)? var(?:iable)?\s*['"]?([a-zA-Z0-9_]+)['"]?\s*is not set/i,
+    /process\.env\.([a-zA-Z0-9_]+)/i
+  ];
+  
+  let missingEnvVar = null;
+  for (const rx of envMissingRegexes) {
+    const m = output.match(rx);
+    if (m && m[1]) {
+      const name = m[1].trim();
+      // Ignore false positives
+      if (name.length > 2 && !['env', 'key', 'variable', 'object', 'undefined', 'null', 'process'].includes(name.toLowerCase())) {
+        missingEnvVar = name;
+        break;
+      }
+    }
+  }
+
+  if (missingEnvVar || /process\.env\.|env.*undefined|missing.*env|required.*variable/i.test(output)) {
+    const varName = missingEnvVar || 'unspecified variable';
     return {
-      summary: 'Missing environment variable.',
-      cause: 'A required environment variable is missing at build/runtime.',
-      fix: 'Go to the Environment tab in your LaunchLive project and add the missing variable(s), then redeploy.',
+      summary: missingEnvVar ? `Missing Env Variable: ${missingEnvVar}` : 'Missing environment variable.',
+      cause: missingEnvVar 
+        ? `The environment variable "${missingEnvVar}" is referenced in your code or config but is not configured on LaunchLive.`
+        : 'A required environment variable is missing at build/runtime.',
+      fix: missingEnvVar
+        ? `Enter the value for "${missingEnvVar}" in the quick input form below, or go to the Environment tab in project settings.`
+        : 'Go to the Environment tab in your LaunchLive project and add the missing variable(s), then redeploy.',
       commands: [],
+      missingEnvVar: missingEnvVar || undefined
     };
   }
 
@@ -1776,7 +1803,8 @@ buildQueue.process(1, async (job) => {
           summary: finalDiagnosis.summary || finalDiagnosis.cause || 'Deployment failed.',
           cause: finalDiagnosis.cause || 'Unknown.',
           fix: finalDiagnosis.fix || 'Check logs for details.',
-          commands: finalDiagnosis.commands || []
+          commands: finalDiagnosis.commands || [],
+          missingEnvVar: finalDiagnosis.missingEnvVar || null
         }
       });
       await log(`🤖 Diagnosis:\n${formattedSummary}`);

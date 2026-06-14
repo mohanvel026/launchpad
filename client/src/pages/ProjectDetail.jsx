@@ -386,6 +386,8 @@ export default function ProjectDetail() {
   const [settings, setSettings] = useState({ installCommand: '', buildCommand: '', outputDir: '', branch: '', autoHeal: false, autoHealStrategy: 'push-on-success' });
   const [activeDeployment, setActiveDeployment] = useState(null);
   const [showDiff, setShowDiff] = useState(false);
+  const [quickEnvValue, setQuickEnvValue] = useState('');
+  const [quickEnvLoading, setQuickEnvLoading] = useState(false);
 
   // SRE Container Limits
   const [cpuLimit, setCpuLimit] = useState(0.5);
@@ -1038,6 +1040,25 @@ Use bold headers, bullet lists, and code blocks.`;
       setEnvChanged(true);
       loadEnvVars();
     } catch (err) { setError(err.response?.data?.message || 'Failed to add variable'); }
+  };
+
+  const handleQuickAddEnv = async () => {
+    if (!activeDeployment?.aiDiagnosis?.missingEnvVar || !quickEnvValue.trim()) return;
+    const key = activeDeployment.aiDiagnosis.missingEnvVar.trim();
+    const value = quickEnvValue.trim();
+    setQuickEnvLoading(true);
+    setError('');
+    try {
+      await api.post(`/env/${id}`, { key, value });
+      setQuickEnvValue('');
+      setEnvChanged(true);
+      await loadEnvVars();
+      handleDeploy(false);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to add environment variable');
+    } finally {
+      setQuickEnvLoading(false);
+    }
   };
 
   const handleBulkImport = async () => {
@@ -2057,6 +2078,54 @@ Use bold headers, bullet lists, and code blocks.`;
                   </div>
                 </div>
 
+                {activeDeployment.aiDiagnosis.missingEnvVar && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '16px',
+                    background: 'rgba(56, 189, 248, 0.03)',
+                    border: '1px solid rgba(56, 189, 248, 0.1)',
+                    borderRadius: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px'
+                  }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      ⚡ Configure <code style={{ color: 'var(--accent-primary)', fontSize: '13px', background: 'rgba(56, 189, 248, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>{activeDeployment.aiDiagnosis.missingEnvVar}</code> directly:
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <input
+                        type="text"
+                        value={quickEnvValue}
+                        onChange={(e) => setQuickEnvValue(e.target.value)}
+                        placeholder={`Enter value for ${activeDeployment.aiDiagnosis.missingEnvVar}`}
+                        style={{
+                          flex: 1,
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '8px',
+                          padding: '8px 12px',
+                          color: '#fff',
+                          fontSize: '13px'
+                        }}
+                      />
+                      <button
+                        onClick={handleQuickAddEnv}
+                        disabled={quickEnvLoading || !quickEnvValue.trim()}
+                        className="lp-btn-primary"
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        {quickEnvLoading ? 'Adding...' : 'Add & Redeploy'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {activeDeployment.aiDiagnosis.commands && activeDeployment.aiDiagnosis.commands.length > 0 && (
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -2133,6 +2202,33 @@ Use bold headers, bullet lists, and code blocks.`;
                     </div>
                   </div>
                 )}
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px' }}>
+                  <button
+                    onClick={() => handleDeploy(false)}
+                    className="lp-btn-primary"
+                    style={{
+                      padding: '8px 16px',
+                      fontSize: '13px',
+                      background: 'rgba(255,255,255,0.1)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      color: '#fff'
+                    }}
+                  >
+                    🔄 Retry Build
+                  </button>
+                  <button
+                    onClick={() => handleDeploy(true)}
+                    className="lp-btn-secondary"
+                    style={{
+                      padding: '8px 16px',
+                      fontSize: '13px',
+                      border: '1px solid rgba(255,255,255,0.1)'
+                    }}
+                  >
+                    🧼 Clean Cache & Rebuild
+                  </button>
+                </div>
               </div>
             )}
 
