@@ -213,6 +213,7 @@ function scanRepository(repoPath, stack = 'unknown') {
   const candidateKeys = new Set();
   const dependencies = new Set();
   const securityWarnings = [];
+  const defaultValues = {};
   let manifestScanned = false;
 
   if (!fs.existsSync(repoPath)) {
@@ -252,14 +253,28 @@ function scanRepository(repoPath, stack = 'unknown') {
             if (isEnvTemplate || isDotEnv) {
               const content = fs.readFileSync(fullPath, 'utf8').slice(0, 50000); // 50KB limit
               
-              // Extract defined env keys
+              // Extract defined env keys and values
               const lines = content.split('\n');
               lines.forEach(line => {
                 const clean = line.trim();
                 if (clean && !clean.startsWith('#') && clean.includes('=')) {
-                  const key = clean.split('=')[0].trim();
+                  const parts = clean.split('=');
+                  const key = parts[0].trim();
+                  let val = parts.slice(1).join('=').trim();
+                  
+                  // Strip quotes if any, e.g. "value" or 'value'
+                  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                    val = val.slice(1, -1);
+                  }
+                  
                   if (/^[a-zA-Z_0-9]+$/.test(key)) {
                     candidateKeys.add(key);
+                    const upperKey = key.toUpperCase();
+                    const lowerVal = val.toLowerCase();
+                    const isPlaceholderVal = !val || lowerVal.includes('placeholder') || lowerVal.includes('your_') || lowerVal.includes('<your') || lowerVal.includes('insert_here') || lowerVal.includes('localhost') || lowerVal.includes('127.0.0.1');
+                    if (!isPlaceholderVal) {
+                      defaultValues[upperKey] = val;
+                    }
                   }
                 }
               });
@@ -395,7 +410,8 @@ function scanRepository(repoPath, stack = 'unknown') {
     candidateKeys: cleanKeys,
     dependenciesList: Array.from(dependencies),
     securityWarnings,
-    collisions: findVariableCollisions(cleanKeys)
+    collisions: findVariableCollisions(cleanKeys),
+    defaultValues
   };
 }
 

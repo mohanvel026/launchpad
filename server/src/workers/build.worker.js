@@ -741,6 +741,7 @@ buildQueue.process(1, async (job) => {
       scanResult = { candidateKeys: [], securityWarnings: [] };
     }
     const candidateKeys = scanResult.candidateKeys || [];
+    const defaultValues = scanResult.defaultValues || {};
     await log(`   ↳ Discovered ${candidateKeys.length} potential env var refs in codebase.`);
 
     const existingKeys = new Set(rawEnvs.map(e => e.key.toUpperCase()));
@@ -753,10 +754,16 @@ buildQueue.process(1, async (job) => {
         continue;
       }
 
-      let defaultValue = '';
+      let defaultValue = defaultValues[upperKey] || '';
       let isSecret = true;
 
-      if (['VITE_API_URL', 'REACT_APP_API_URL', 'NEXT_PUBLIC_API_URL'].includes(upperKey)) {
+      if (defaultValues[upperKey]) {
+        if (upperKey.includes('SECRET') || upperKey.includes('TOKEN') || upperKey.includes('KEY') || upperKey.includes('PASSWORD') || upperKey.includes('AUTH_SALT')) {
+          isSecret = true;
+        } else {
+          isSecret = false;
+        }
+      } else if (['VITE_API_URL', 'REACT_APP_API_URL', 'NEXT_PUBLIC_API_URL'].includes(upperKey)) {
         defaultValue = liveUrl;
         isSecret = false;
       } else if (['DATABASE_URL', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT'].includes(upperKey)) {
