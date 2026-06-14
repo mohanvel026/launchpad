@@ -1388,9 +1388,10 @@ Use bold headers, bullet lists, and code blocks.`;
     } catch (err) { setError(err.response?.data?.message || 'Failed to add variable'); }
   };
 
-  const handleQuickAddEnv = async () => {
-    if (!activeDeployment?.aiDiagnosis?.missingEnvVar || !quickEnvValue.trim()) return;
-    const key = activeDeployment.aiDiagnosis.missingEnvVar.trim();
+  const handleQuickAddEnv = async (dep = activeDeployment) => {
+    const missingVar = dep?.aiDiagnosis?.missingEnvVar;
+    if (!missingVar || !quickEnvValue.trim()) return;
+    const key = missingVar.trim();
     const value = quickEnvValue.trim();
     setQuickEnvLoading(true);
     setError('');
@@ -1957,6 +1958,243 @@ Use bold headers, bullet lists, and code blocks.`;
       return `${scheme}://${project.customDomain}`;
     }
     return `https://${project.subdomain}.${domain}`;
+  };
+  const renderAiDiagnosis = (dep) => {
+    if (!dep || dep.status !== 'failed' || !dep.aiDiagnosis) return null;
+    
+    // Determine if we can jump to error
+    const hasErrors = dep.logs && dep.logs.some(line => isErrorLine(line));
+    
+    return (
+      <div className="lp-card glass fade-in" style={{
+        padding: '24px',
+        borderLeft: '4px solid #ef4444',
+        background: 'rgba(239, 68, 68, 0.02)',
+        borderRadius: 16,
+        border: '1px solid rgba(239, 68, 68, 0.1)',
+        borderLeftWidth: 4,
+        display: 'grid',
+        gap: 16,
+        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 20 }}>🤖</span>
+            <div>
+              <h4 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-main)', margin: 0, letterSpacing: '0.02em' }}>
+                SRE Build Diagnosis
+              </h4>
+              <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                ACTION REQUIRED
+              </div>
+            </div>
+          </div>
+          <span style={{
+            fontSize: 11,
+            background: 'rgba(239, 68, 68, 0.1)',
+            color: '#ef4444',
+            padding: '4px 10px',
+            borderRadius: 20,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}>
+            {dep.aiDiagnosis.summary?.split(':')[0] || 'Build Error'}
+          </span>
+        </div>
+
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
+
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+            Root Cause
+          </div>
+          <p style={{ color: '#f1f5f9', fontSize: 13, lineHeight: 1.6, margin: 0, fontWeight: 500 }}>
+            {dep.aiDiagnosis.cause}
+          </p>
+        </div>
+
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+            Resolution Steps
+          </div>
+          <div style={{
+            background: 'rgba(255,255,255,0.01)',
+            border: '1px solid rgba(255,255,255,0.04)',
+            borderRadius: 12,
+            padding: '16px 20px',
+            fontSize: 13,
+            lineHeight: 1.7,
+            color: '#cbd5e1'
+          }}>
+            {formatMessageContent(dep.aiDiagnosis.fix)}
+          </div>
+        </div>
+
+        {dep.aiDiagnosis.missingEnvVar && (
+          <div style={{
+            marginTop: '8px',
+            padding: '16px',
+            background: 'rgba(56, 189, 248, 0.03)',
+            border: '1px solid rgba(56, 189, 248, 0.1)',
+            borderRadius: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+          }}>
+            <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              ⚡ Configure <code style={{ color: 'var(--accent-primary)', fontSize: '13px', background: 'rgba(56, 189, 248, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>{dep.aiDiagnosis.missingEnvVar}</code> directly:
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input
+                type="text"
+                value={quickEnvValue}
+                onChange={(e) => setQuickEnvValue(e.target.value)}
+                placeholder={`Enter value for ${dep.aiDiagnosis.missingEnvVar}`}
+                style={{
+                  flex: 1,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  color: '#fff',
+                  fontSize: '13px'
+                }}
+              />
+              <button
+                onClick={handleQuickAddEnv}
+                disabled={quickEnvLoading || !quickEnvValue.trim()}
+                className="lp-btn-primary"
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {quickEnvLoading ? 'Adding...' : 'Add & Redeploy'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {dep.aiDiagnosis.commands && dep.aiDiagnosis.commands.length > 0 && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Copy-Paste Commands
+              </div>
+              <button
+                onClick={() => {
+                  const allCmds = dep.aiDiagnosis.commands.join('\n');
+                  navigator.clipboard.writeText(allCmds);
+                  const btn = document.getElementById('copy-all-btn-diag');
+                  if (btn) {
+                    btn.innerText = 'Copied All!';
+                    setTimeout(() => { btn.innerText = 'Copy All'; }, 2000);
+                  }
+                }}
+                id="copy-all-btn-diag"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--accent-primary)',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                Copy All
+              </button>
+            </div>
+            
+            <div style={{ display: 'grid', gap: 8 }}>
+              {dep.aiDiagnosis.commands.map((cmd, idx) => (
+                <div key={idx} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: '#040406',
+                  border: '1px solid rgba(255,255,255,0.03)',
+                  borderRadius: 8,
+                  padding: '10px 14px',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  fontSize: 12
+                }}>
+                  <span style={{ color: '#38bdf8', overflowX: 'auto', whiteSpace: 'nowrap', marginRight: 16 }}>
+                    <span style={{ color: '#64748b', marginRight: 8, userSelect: 'none' }}>$</span>
+                    {cmd}
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(cmd);
+                      const btn = document.getElementById(`copy-btn-diag-${idx}`);
+                      if (btn) {
+                        btn.innerText = 'Copied';
+                        setTimeout(() => { btn.innerText = 'Copy'; }, 2000);
+                      }
+                    }}
+                    id={`copy-btn-diag-${idx}`}
+                    style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.05)',
+                      borderRadius: 4,
+                      color: 'var(--text-dim)',
+                      fontSize: 10,
+                      padding: '3px 8px',
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '12px', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px', flexWrap: 'wrap' }}>
+          {hasErrors && (
+            <button
+              onClick={() => {
+                setActiveTab('logs');
+                viewLogs(dep);
+                setTimeout(() => {
+                  jumpToFirstError();
+                }, 250);
+              }}
+              className="lp-btn-primary"
+              style={{
+                padding: '8px 16px',
+                fontSize: '13px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                color: '#f87171'
+              }}
+            >
+              🚨 Jump to Error
+            </button>
+          )}
+          <button
+            onClick={() => handleDeploy(false)}
+            className="lp-btn-primary"
+            style={{
+              padding: '8px 16px',
+              fontSize: '13px',
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              color: '#fff'
+            }}
+          >
+            🔄 Redeploy App
+          </button>
+        </div>
+      </div>
+    );
   };
   const renderAiDocsTab = () => {
     return (
@@ -2574,6 +2812,8 @@ Use bold headers, bullet lists, and code blocks.`;
                 </div>
               </div>
             </div>
+
+            {deployments?.[0]?.status === 'failed' && renderAiDiagnosis(deployments[0])}
 
             <div className="lp-card" style={{ padding: 0 }}>
               <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
