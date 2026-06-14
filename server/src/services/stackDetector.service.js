@@ -343,6 +343,42 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
   // Detect package manager directly here instead of relying on detectStack
   const pm = detectPackageManager(repoPath);
 
+  // Detect node version from package.json engines field (default to 20)
+  let nodeVersion = '20';
+  if (repoPath) {
+    try {
+      const rootPkg = readPkg(repoPath);
+      let enginesNode = rootPkg.engines?.node;
+      
+      if (!enginesNode) {
+        const subDirs = ['server', 'backend', 'client', 'frontend'];
+        for (const dir of subDirs) {
+          if (exists(repoPath, dir)) {
+            try {
+              const subPkg = readPkg(path.join(repoPath, dir));
+              if (subPkg.engines?.node) {
+                enginesNode = subPkg.engines.node;
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      if (enginesNode) {
+        const match = enginesNode.match(/(\d+)/);
+        if (match) {
+          const v = parseInt(match[1]);
+          if ([16, 18, 20, 22].includes(v)) {
+            nodeVersion = String(v);
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  const chmodHelper = 'RUN find . -name "*.sh" -exec chmod +x {} + 2>/dev/null || true\\n';
+
   const containerPort = options.containerPort || 3000;
 
   // SRE: Detect if Prisma ORM is present to install runtime OS packages (openssl, libc6-compat) in Alpine
@@ -512,13 +548,13 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
       const outDir = options.outputDir || (repoPath ? getBuildOutput(repoPath) : 'dist');
       const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
       const feCodeGenSteps = detectCodeGenSteps(repoPath, '', 'frontend');
-      return `FROM node:20-alpine AS builder
+      return `FROM node:${nodeVersion}-alpine AS builder
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}
 COPY . .
-${envArgs}${feCodeGenSteps}
+${chmodHelper}${envArgs}${feCodeGenSteps}
 RUN ${buildCmd}
 
 FROM nginx:alpine
@@ -540,16 +576,16 @@ CMD ["nginx", "-g", "daemon off;"]`;
         const migrationCmds = migrations.map(m => `${m} || true`).join(' && ');
         runCmd = `CMD ["sh", "-c", "${migrationCmds} && ${pm.name} start"]`;
       }
-      return `FROM node:20-alpine AS builder
+      return `FROM node:${nodeVersion}-alpine AS builder
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}
 COPY . .
-${envArgs}${feCodeGenSteps}
+${chmodHelper}${envArgs}${feCodeGenSteps}
 RUN --mount=type=cache,target=/app/.next/cache ${buildCmd}
 
-FROM node:20-alpine
+FROM node:${nodeVersion}-alpine
 RUN apk add --no-cache curl tini ca-certificates${hasPrisma ? ' openssl libc6-compat' : ''}
 WORKDIR /app
 ENV PORT=${containerPort}
@@ -612,13 +648,13 @@ CMD ["nginx", "-g", "daemon off;"]`;
 
       // Stage 1: Build Frontend (Parallel stage)
       const frontendBuilderStage = `# ── Stage 1: Build Frontend (runs in PARALLEL with Stage 2) ──
-FROM node:20-alpine AS fe-builder
+FROM node:${nodeVersion}-alpine AS fe-builder
 WORKDIR /app/frontend
 ${pmSetup}
 COPY ${feDir}/package*.json${feLockStr} ./
 ${installRunInstruction}
 COPY ${feDir}/ .
-${envArgs}${feCodeGenSteps}
+${chmodHelper}${envArgs}${feCodeGenSteps}
 RUN ${buildCmd} 2>/dev/null || npx vite build || true`;
 
       if (beStack === 'go') {
@@ -937,7 +973,7 @@ CMD ["/app/start.sh"]`;
       return `${frontendBuilderStage}
 
 # ── Stage 2: Install & Build Backend (runs in PARALLEL with Stage 1) ──
-FROM node:20-alpine AS be-builder
+FROM node:${nodeVersion}-alpine AS be-builder
 WORKDIR /app
 # SRE Optimization: Force sequential execution under memory limits by copying from fe-builder stage
 COPY --from=fe-builder /app/frontend/package*.json /tmp/dummy-fe-pkg.json
@@ -945,9 +981,9 @@ ${bePmSetup}
 COPY ${beDir}/package*.json${beLockStr} ./
 ${beInstallAllCmd}
 COPY ${beDir}/ .${codeGenSteps}
-${beBuildStep}${bePruneStep}
+${chmodHelper}${beBuildStep}${bePruneStep}
 # ── Stage 3: Final SRE container ──
-FROM node:20-alpine
+FROM node:${nodeVersion}-alpine
 RUN apk add --no-cache curl nginx tini ca-certificates${hasPrisma ? ' openssl libc6-compat' : ''}
 RUN npm install -g pm2 --silent
 
@@ -973,16 +1009,16 @@ CMD ["/app/start.sh"]`;
         const migrationCmds = migrations.map(m => `${m} || true`).join(' && ');
         runCmd = `CMD ["sh", "-c", "${migrationCmds} && node .output/server/index.mjs"]`;
       }
-      return `FROM node:20-alpine AS builder
+      return `FROM node:${nodeVersion}-alpine AS builder
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}
 COPY . .
-${envArgs}${feCodeGenSteps}
+${chmodHelper}${envArgs}${feCodeGenSteps}
 RUN ${buildCmd} 2>/dev/null || npx nuxt build || true
 
-FROM node:20-alpine
+FROM node:${nodeVersion}-alpine
 RUN apk add --no-cache curl tini ca-certificates${hasPrisma ? ' openssl libc6-compat' : ''}
 WORKDIR /app
 COPY --from=builder /app/.output ./.output
@@ -1256,14 +1292,14 @@ CMD ["dotnet", "${appName}.dll"]`;
       }
       const pruneStep = `RUN ${pruneCmd} || true\n`;
 
-      return `FROM node:20-alpine
+      return `FROM node:${nodeVersion}-alpine
 RUN apk add --no-cache curl tini ca-certificates${hasPrisma ? ' openssl libc6-compat' : ''}
 WORKDIR /app
 COPY package*.json ./
 ${lockFileCopy}
 ${installRunInstruction}
 COPY . .${codeGenSteps}
-${buildCmdStep}${pruneStep}ENV PORT=${containerPort}
+${chmodHelper}${buildCmdStep}${pruneStep}ENV PORT=${containerPort}
 ENV NODE_ENV=production
 EXPOSE ${containerPort}
 ${healthCheck}
