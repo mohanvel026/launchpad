@@ -377,7 +377,7 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
     } catch (e) {}
   }
 
-  const chmodHelper = 'RUN find . -name "*.sh" -exec chmod +x {} + 2>/dev/null || true\\n';
+  const chmodHelper = 'RUN find . -name "*.sh" -exec chmod +x {} + 2>/dev/null || true\\nRUN chmod +x node_modules/.bin/* 2>/dev/null || true\\n';
 
   const containerPort = options.containerPort || 3000;
 
