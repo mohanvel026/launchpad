@@ -301,9 +301,96 @@ const provisionDatabaseContainer = async (projectId, dbType, log) => {
 const localDiagnoseError = (output = '', stack = 'unknown') => {
   const o = output.toLowerCase();
 
+  // 1. Missing package dependency / import failures
+  const rollupMatch = output.match(/Rollup failed to resolve import ["']([^"']+)["']/i);
+  const rollupResolveMatch = output.match(/Could not resolve ["']([^"']+)["']/i);
+  const webpackMatch = output.match(/Module not found: Error: Can't resolve ['"]([^'"]+)['"]/i);
+  const nodeMatch = output.match(/Cannot find module ['"]([^'"]+)['"]/i) || output.match(/Cannot find module ([^\s'"]+)/i);
+  const esmMatch = output.match(/Failed to resolve module specifier ["']([^"']+)["']/i);
+
+  const missingImport = rollupMatch?.[1] || rollupResolveMatch?.[1] || webpackMatch?.[1] || nodeMatch?.[1] || esmMatch?.[1];
+
+  if (missingImport) {
+    const localFolders = ['src', 'components', 'assets', 'utils', 'views', 'pages', 'hooks', 'context', 'services', 'config', 'styles'];
+    const getBasePackageName = (importPath) => {
+      if (!importPath) return null;
+      // If it's a relative path, absolute path, or uses a common workspace alias like "@/..."
+      if (importPath.startsWith('.') || importPath.startsWith('/') || importPath.startsWith('\\') || importPath.startsWith('@/')) {
+        return null;
+      }
+      if (importPath.startsWith('@')) {
+        const parts = importPath.split('/');
+        if (parts.length >= 2) {
+          return `${parts[0]}/${parts[1]}`;
+        }
+      }
+      return importPath.split('/')[0];
+    };
+
+    const pkg = getBasePackageName(missingImport);
+    if (pkg && !localFolders.includes(pkg)) {
+      // Auto-detect package manager in use
+      let pm = 'npm';
+      let installCmd = `npm install ${pkg}`;
+      let runBuildCmd = 'npm run build';
+      let lockfile = 'package-lock.json';
+      
+      if (/yarn\.lock|yarn/i.test(output)) {
+        pm = 'yarn';
+        installCmd = `yarn add ${pkg}`;
+        runBuildCmd = 'yarn build';
+        lockfile = 'yarn.lock';
+      } else if (/pnpm-lock\.yaml|pnpm/i.test(output)) {
+        pm = 'pnpm';
+        installCmd = `pnpm add ${pkg}`;
+        runBuildCmd = 'pnpm build';
+        lockfile = 'pnpm-lock.yaml';
+      }
+
+      return {
+        summary: `Missing package dependency: ${pkg}`,
+        cause: `The module "${pkg}" is imported in your code (specifically "${missingImport}") but is not installed or configured in your package.json.`,
+        fix: `To fix this issue, follow these steps locally:
+1. **Open your terminal** in your local project repository directory.
+2. **Install the package** using your package manager (${pm}):
+   \`${installCmd}\`
+3. **Verify the build** compiles successfully locally:
+   \`${runBuildCmd}\`
+4. **Commit and push** the package changes to GitHub to trigger a new deployment:
+   \`git add package.json ${lockfile}\`
+   \`git commit -m "fix: add missing ${pkg} dependency"\`
+   \`git push origin main\``,
+        commands: [
+          installCmd,
+          `git add package.json ${lockfile}`,
+          `git commit -m "fix: add missing ${pkg} dependency"`,
+          `git push origin main`
+        ]
+      };
+    } else {
+      return {
+        summary: `Missing local module: ${missingImport}`,
+        cause: `The local file or module "${missingImport}" is imported in your code but could not be resolved. This is usually due to a case-sensitivity mismatch (as Linux containers are case-sensitive) or the file not being committed to git.`,
+        fix: `To fix this issue, follow these steps locally:
+1. **Verify spelling & casing**: Ensure the casing of your import statement matches the physical filename exactly (e.g., \`Button.jsx\` vs \`button.jsx\`, which matters on Linux containers).
+2. **Check file existence**: Confirm that the file actually exists at the correct path in your local repository.
+3. **Check git status**: Run \`git status\` to check if the file is untracked or ignored by your \`.gitignore\`.
+4. **Commit & Push**: Add, commit, and push the file to your repository:
+   \`git add .\`
+   \`git commit -m "fix: add missing file ${missingImport.split('/').pop()}"\`
+   \`git push origin main\``,
+        commands: [
+          'git status',
+          'git diff'
+        ]
+      };
+    }
+  }
+
   // npm / yarn install failures
   if (/npm err!|yarn error|enoent.*package\.json|cannot find module/i.test(output)) {
     return {
+      summary: 'Dependency installation failed.',
       cause: 'Dependency installation failed. A required npm package is missing or package.json has an error.',
       fix: 'Check your package.json for typos or missing dependencies. Run `npm install` locally to reproduce the error.',
       commands: ['npm install', 'npm ls --depth=0'],
@@ -313,6 +400,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
   // Build tool failure (vite, webpack, tsc, etc.)
   if (/vite.*error|webpack.*error|tsc.*error|build.*failed|error ts\d+/i.test(output)) {
     return {
+      summary: 'Build tool compilation failed.',
       cause: 'Build tool compilation failed. There are TypeScript errors, import errors, or missing environment variables in the source code.',
       fix: 'Run `npm run build` locally to see the exact error. Check for missing VITE_* or REACT_APP_* env vars in your .env file.',
       commands: ['npm run build', 'npx tsc --noEmit'],
@@ -322,6 +410,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
   // Missing environment variable
   if (/process\.env\.|env.*undefined|missing.*env|required.*variable/i.test(output)) {
     return {
+      summary: 'Missing environment variable.',
       cause: 'A required environment variable is missing at build/runtime.',
       fix: 'Go to the Environment tab in your LaunchLive project and add the missing variable(s), then redeploy.',
       commands: [],
@@ -331,6 +420,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
   // Dockerfile syntax / COPY errors
   if (/copy failed|no such file or directory|dockerfile.*error|syntax error/i.test(output)) {
     return {
+      summary: 'Dockerfile build error.',
       cause: 'Dockerfile error — a file or directory referenced in the Dockerfile does not exist in your repository.',
       fix: 'Make sure all paths in your Dockerfile COPY commands exist in the repo. Check for case-sensitivity issues on Linux.',
       commands: ['ls -la', 'git status'],
@@ -340,6 +430,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
   // Port / network
   if (/address already in use|eaddrinuse|port.*conflict/i.test(output)) {
     return {
+      summary: 'Port conflict error.',
       cause: 'Port conflict — another container or process is already using the target port.',
       fix: 'Delete and redeploy the project to get a fresh port allocation.',
       commands: [],
@@ -349,6 +440,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
   // Out of disk / memory
   if (/no space left|out of memory|killed|oom/i.test(output)) {
     return {
+      summary: 'Server resource limit exceeded.',
       cause: 'Server ran out of disk space or memory during the build.',
       fix: 'Contact support or free up server resources. Try deleting unused projects to reclaim disk space.',
       commands: ['docker system prune -f'],
@@ -358,6 +450,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
   // Python
   if (/modulenotfounderror|importerror|pip install/i.test(output)) {
     return {
+      summary: 'Python dependency missing.',
       cause: 'Python dependency missing. A required package is not in requirements.txt.',
       fix: 'Add the missing package to requirements.txt and push again.',
       commands: ['pip install -r requirements.txt'],
@@ -366,6 +459,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
 
   // Generic fallback — still useful
   return {
+    summary: 'Docker build failed.',
     cause: `Docker build for ${stack.toUpperCase()} project failed. See the raw output above for the exact error line.`,
     fix: 'Look for lines starting with "ERROR" or "npm ERR!" in the raw output above. Fix the issue locally, push your changes, and redeploy.',
     commands: ['npm install', 'npm run build'],
