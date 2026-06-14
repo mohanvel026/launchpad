@@ -430,9 +430,10 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
   // Missing environment variable
   const envMissingRegexes = [
     /missing(?: required)? env(?:ironment)? var(?:iable)?s?\b:?\s*['"]?([a-zA-Z0-9_]+)['"]?/i,
-    /↳\s*(?:⚠️\s*)?([a-zA-Z0-9_-]+)/u,
+    /↳\s*(?:⚠️\s*)?([a-zA-Z0-9_]+)\s*\(requires your value\)/iu,
     /missing(?: required)? env(?:ironment)? var(?:iable)?s?\b:?\s*[\r\n\s]*↳\s*(?:[^\s]+)\s*([a-zA-Z0-9_]+)/iu,
     /env(?:ironment)? var(?:iable)?s?\b\s*['"]?([a-zA-Z0-9_]+)['"]?\s*is required/i,
+    /Environment variable not found:\s*([a-zA-Z0-9_]+)/i,
     /process\.env\.([a-zA-Z0-9_]+)/i
   ];
   
