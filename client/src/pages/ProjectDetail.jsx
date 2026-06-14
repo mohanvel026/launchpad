@@ -1990,6 +1990,152 @@ Use bold headers, bullet lists, and code blocks.`;
         {/* ── Build Logs ── */}
         {activeTab === 'logs' && (
           <div className="fade-in" style={{ display: 'grid', gap: 20 }}>
+            {activeDeployment && activeDeployment.status === 'failed' && activeDeployment.aiDiagnosis && (
+              <div className="lp-card glass" style={{
+                padding: '24px',
+                borderLeft: '4px solid #ef4444',
+                background: 'rgba(239, 68, 68, 0.02)',
+                borderRadius: 16,
+                border: '1px solid rgba(239, 68, 68, 0.1)',
+                borderLeftWidth: 4,
+                display: 'grid',
+                gap: 16,
+                boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 20 }}>🤖</span>
+                    <div>
+                      <h4 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-main)', margin: 0, letterSpacing: '0.02em' }}>
+                        SRE Build Diagnosis
+                      </h4>
+                      <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                        ACTION REQUIRED
+                      </div>
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize: 11,
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    color: '#ef4444',
+                    padding: '4px 10px',
+                    borderRadius: 20,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em'
+                  }}>
+                    {activeDeployment.aiDiagnosis.summary?.split(':')[0] || 'Build Error'}
+                  </span>
+                </div>
+
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
+
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                    Root Cause
+                  </div>
+                  <p style={{ color: '#f1f5f9', fontSize: 13, lineHeight: 1.6, margin: 0, fontWeight: 500 }}>
+                    {activeDeployment.aiDiagnosis.cause}
+                  </p>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                    Resolution Steps
+                  </div>
+                  <div style={{
+                    background: 'rgba(255,255,255,0.01)',
+                    border: '1px solid rgba(255,255,255,0.04)',
+                    borderRadius: 12,
+                    padding: '16px 20px',
+                    fontSize: 13,
+                    lineHeight: 1.7,
+                    color: '#cbd5e1'
+                  }}>
+                    {formatMessageContent(activeDeployment.aiDiagnosis.fix)}
+                  </div>
+                </div>
+
+                {activeDeployment.aiDiagnosis.commands && activeDeployment.aiDiagnosis.commands.length > 0 && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Copy-Paste Commands
+                      </div>
+                      <button
+                        onClick={() => {
+                          const allCmds = activeDeployment.aiDiagnosis.commands.join('\n');
+                          navigator.clipboard.writeText(allCmds);
+                          const btn = document.getElementById('copy-all-btn');
+                          if (btn) {
+                            btn.innerText = 'Copied All!';
+                            setTimeout(() => { btn.innerText = 'Copy All'; }, 2000);
+                          }
+                        }}
+                        id="copy-all-btn"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--accent-primary)',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          padding: 0
+                        }}
+                      >
+                        Copy All
+                      </button>
+                    </div>
+                    
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {activeDeployment.aiDiagnosis.commands.map((cmd, idx) => (
+                        <div key={idx} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          background: '#040406',
+                          border: '1px solid rgba(255,255,255,0.03)',
+                          borderRadius: 8,
+                          padding: '10px 14px',
+                          fontFamily: 'var(--font-mono, monospace)',
+                          fontSize: 12
+                        }}>
+                          <span style={{ color: '#38bdf8', overflowX: 'auto', whiteSpace: 'nowrap', marginRight: 16 }}>
+                            <span style={{ color: '#64748b', marginRight: 8, userSelect: 'none' }}>$</span>
+                            {cmd}
+                          </span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(cmd);
+                              const btn = document.getElementById(`copy-btn-${idx}`);
+                              if (btn) {
+                                btn.innerText = 'Copied';
+                                setTimeout(() => { btn.innerText = 'Copy'; }, 2000);
+                              }
+                            }}
+                            id={`copy-btn-${idx}`}
+                            style={{
+                              background: 'rgba(255,255,255,0.03)',
+                              border: '1px solid rgba(255,255,255,0.05)',
+                              borderRadius: 4,
+                              color: 'var(--text-dim)',
+                              fontSize: 10,
+                              padding: '3px 8px',
+                              cursor: 'pointer',
+                              fontWeight: 600
+                            }}
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeDeployment && activeDeployment.isAutoHeal && activeDeployment.autoHealDiff && (
               <div className="lp-card glass" style={{ 
                 padding: '20px 24px', 

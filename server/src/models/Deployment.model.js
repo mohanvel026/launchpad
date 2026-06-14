@@ -10,6 +10,12 @@ const deploymentSchema = new mongoose.Schema({
   logs:           [{ type: String }],
   imageTag:       { type: String },
   aiErrorSummary: { type: String },
+  aiDiagnosis: {
+    summary:  { type: String },
+    cause:    { type: String },
+    fix:      { type: String },
+    commands: [{ type: String }]
+  },
   startedAt:      { type: Date },
   finishedAt:     { type: Date },
   duration:       { type: Number },  // milliseconds

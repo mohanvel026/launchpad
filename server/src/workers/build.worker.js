@@ -1770,7 +1770,15 @@ buildQueue.process(1, async (job) => {
 
       const formattedSummary = `${finalDiagnosis.summary || finalDiagnosis.cause || 'Deployment failed.'}\n\n🔍 Root Cause: ${finalDiagnosis.cause || 'Unknown.'}\n\n🛠️ Quick Fix: ${finalDiagnosis.fix || 'Check logs for details.'}${finalDiagnosis.commands?.length ? '\n\n💻 Suggested commands:\n' + finalDiagnosis.commands.map(c => '  $ ' + c).join('\n') : ''}`;
 
-      await Deployment.findByIdAndUpdate(deploymentId, { aiErrorSummary: formattedSummary });
+      await Deployment.findByIdAndUpdate(deploymentId, { 
+        aiErrorSummary: formattedSummary,
+        aiDiagnosis: {
+          summary: finalDiagnosis.summary || finalDiagnosis.cause || 'Deployment failed.',
+          cause: finalDiagnosis.cause || 'Unknown.',
+          fix: finalDiagnosis.fix || 'Check logs for details.',
+          commands: finalDiagnosis.commands || []
+        }
+      });
       await log(`🤖 Diagnosis:\n${formattedSummary}`);
     } catch (diagErr) {
       console.error('[Build Worker] Failed to run build error diagnosis:', diagErr.message);
