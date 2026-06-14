@@ -276,13 +276,24 @@ const registerWebhook = async (req, res) => {
   }
 };
 
-// ─── PATCH /api/projects/:id ──────────────────────────────────────────────────
 const updateProject = async (req, res) => {
-  const allowed = ['name', 'branch', 'installCommand', 'buildCommand', 'outputDir', 'autoHeal', 'autoHealStrategy'];
+  const allowed = ['name', 'branch', 'installCommand', 'buildCommand', 'outputDir', 'autoHeal', 'autoHealStrategy', 'regions', 'cronSchedule', 'cronEnabled'];
   const updates = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
   }
+
+  if (updates.cronEnabled && updates.cronSchedule) {
+    try {
+      const cronParser = require('cron-parser');
+      const parseExpression = cronParser.parseExpression || (cronParser.default && cronParser.default.parse);
+      if (!parseExpression) throw new Error('Cron parser not loaded');
+      parseExpression(updates.cronSchedule);
+    } catch (e) {
+      return res.status(400).json({ message: 'Invalid cron expression: ' + e.message });
+    }
+  }
+
   try {
     const project = await Project.findOneAndUpdate(
       { _id: req.params.id, owner: req.user._id },
@@ -474,6 +485,156 @@ const syncProjectStatus = async (req, res) => {
   }
 };
 
+const lintDockerfileText = (content, stack = 'unknown') => {
+  const recommendations = [];
+  let score = 100;
+
+  // 1. Secrets check
+  const secretRegex = /ENV\s+([A-Z_0-9]+)\s*=\s*(["']?[a-zA-Z0-9_\-\.\:\/]+["']?)/gi;
+  let match;
+  while ((match = secretRegex.exec(content)) !== null) {
+    const key = match[1].toLowerCase();
+    const val = match[2];
+    if (/(pass|pwd|secret|token|key|auth|jwt)/i.test(key) && !val.startsWith('$') && !val.includes('ENV_')) {
+      score -= 15;
+      recommendations.push({
+        type: 'Security',
+        issue: `Exposed secret or private key in ENV: ${match[1]} has hardcoded credentials.`,
+        fix: `Remove the hardcoded secret value. Inject it dynamically via LaunchPad Environment Variables instead of exposing it in your Dockerfile.`
+      });
+    }
+  }
+
+  // 2. RUN chaining check
+  const consecutiveRunMatches = content.match(/RUN\s+apt-get\s+update/gi);
+  if (consecutiveRunMatches && consecutiveRunMatches.length > 0 && !/RUN[\s\S]+?apt-get\s+install[\s\S]+?&&/i.test(content)) {
+    score -= 10;
+    recommendations.push({
+      type: 'Performance',
+      issue: 'Unchained RUN steps for package management.',
+      fix: 'Chain `apt-get update && apt-get install -y ...` in a single RUN instruction to prevent caching out-of-date package indexes and reduce final image layers.'
+    });
+  }
+
+  // 3. Cache cleanup check
+  if (/apt-get\s+install/i.test(content) && !/rm\s+-rf\s+\/var\/lib\/apt\/lists/i.test(content)) {
+    score -= 10;
+    recommendations.push({
+      type: 'Performance',
+      issue: 'Missing package cache cleanup after installing dependencies.',
+      fix: 'Append `&& rm -rf /var/lib/apt/lists/*` to the installation RUN step to save up to 50MB of unused cache files.'
+    });
+  }
+
+  // 4. Running as root check
+  if (!/USER\s+[a-zA-Z0-9_-]+/i.test(content)) {
+    score -= 10;
+    recommendations.push({
+      type: 'Security',
+      issue: 'Container runs as root user by default.',
+      fix: 'Add a non-root USER directive (e.g. `USER node` or create a custom app user) to enforce least-privilege runtime security.'
+    });
+  }
+
+  // 5. Workdir check
+  if (!/WORKDIR\s+/i.test(content)) {
+    score -= 10;
+    recommendations.push({
+      type: 'Performance',
+      issue: 'Missing WORKDIR definition.',
+      fix: 'Specify a dedicated WORKDIR (e.g. `WORKDIR /app`) so commands do not execute in the root directory of the container.'
+    });
+  }
+
+  score = Math.max(10, score);
+  return { score, recommendations };
+};
+
+// GET /api/projects/:id/dockerfile
+const getProjectDockerfile = async (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (project.customDockerfile) {
+      return res.json({ dockerfile: project.customDockerfile, isCustom: true });
+    }
+
+    const repoPath = path.join(__dirname, '../../repos', project._id.toString());
+    const dockerfilePath = path.join(repoPath, 'Dockerfile');
+    if (fs.existsSync(dockerfilePath)) {
+      const content = fs.readFileSync(dockerfilePath, 'utf8');
+      return res.json({ dockerfile: content, isCustom: false });
+    }
+
+    // Generate fallback default based on stack
+    const { generateDockerfile } = require('../services/stackDetector.service');
+    const defaultDockerfile = generateDockerfile(project.stack || 'node', repoPath, {
+      installCommand: project.installCommand,
+      buildCommand: project.buildCommand,
+      outputDir: project.outputDir,
+      containerPort: project.port || 3000
+    });
+
+    res.json({ dockerfile: defaultDockerfile, isCustom: false });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /api/projects/:id/dockerfile
+const saveProjectDockerfile = async (req, res) => {
+  const { dockerfile } = req.body;
+  if (dockerfile === undefined) return res.status(400).json({ message: 'dockerfile is required' });
+
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const project = await Project.findOne({
+      _id: req.params.id,
+      owner: req.user._id
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    project.customDockerfile = dockerfile;
+    await project.save();
+
+    // Sync to disk if repository exists
+    const repoPath = path.join(__dirname, '../../repos', project._id.toString());
+    if (fs.existsSync(repoPath)) {
+      fs.writeFileSync(path.join(repoPath, 'Dockerfile'), dockerfile, 'utf8');
+    }
+
+    res.json({ message: 'Dockerfile saved successfully.', project });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /api/projects/:id/dockerfile/lint
+const lintProjectDockerfile = async (req, res) => {
+  const { dockerfile } = req.body;
+  if (!dockerfile) return res.status(400).json({ message: 'dockerfile is required' });
+
+  try {
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const result = lintDockerfileText(dockerfile, project.stack);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // GET /api/projects/check-subdomain
 const checkSubdomainAvailability = async (req, res) => {
   const { subdomain } = req.query;
@@ -494,4 +655,5 @@ module.exports = {
   updateProject, clearProjectStuckBuild,
   resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus,
   checkSubdomainAvailability,
+  getProjectDockerfile, saveProjectDockerfile, lintProjectDockerfile,
 };

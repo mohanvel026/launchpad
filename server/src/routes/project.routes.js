@@ -4,7 +4,7 @@ const {
   getProjects, createProject, getProject,
   deleteProject, getUserRepos, analyzeRepo, registerWebhook, updateProject,
   clearProjectStuckBuild, resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus,
-  checkSubdomainAvailability
+  checkSubdomainAvailability, getProjectDockerfile, saveProjectDockerfile, lintProjectDockerfile
 } = require('../controllers/project.controller');
 
 const router = express.Router();
@@ -44,6 +44,20 @@ router.post('/:id/resize-limits', protect,      resizeResourceLimits);
 
 // POST /api/projects/:id/readiness — AI deployment readiness check
 router.post('/:id/readiness', protect, deploymentReadinessCheck);
+
+// GET  /api/projects/:id/dockerfile — get custom Dockerfile or generate default
+router.get('/:id/dockerfile', protect, getProjectDockerfile);
+
+// POST /api/projects/:id/dockerfile — save custom Dockerfile
+router.post('/:id/dockerfile', protect, saveProjectDockerfile);
+
+// POST /api/projects/:id/dockerfile/lint — lint Dockerfile code
+router.post('/:id/dockerfile/lint', protect, lintProjectDockerfile);
+
+// POST /api/projects/:id/readme — trigger AI README and Architecture generator
+const { generateDocs, commitReadme } = require('../controllers/ai.controller');
+router.post('/:id/readme', protect, generateDocs);
+router.post('/:id/readme/commit', protect, commitReadme);
 
 // POST /api/projects/:id/sync-status — repair project status from deployment history
 router.post('/:id/sync-status', protect, syncProjectStatus);

@@ -34,6 +34,50 @@ const formatApiError = (provider, err) => {
 };
 
 /**
+ * Aggressive JSON Cleanser
+ * Strips markdown code fences, trailing commas, and extracts valid JSON substring to resolve conversational prefixes.
+ */
+const cleanJson = (str = '') => {
+  let cleaned = str.trim();
+  // Remove markdown block backticks if present
+  cleaned = cleaned.replace(/^```json\s*/i, '').replace(/```$/, '');
+  
+  // Resolve prefix conversational text by extracting between first '{' and last '}'
+  const startIdx = cleaned.indexOf('{');
+  const endIdx = cleaned.lastIndexOf('}');
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    cleaned = cleaned.slice(startIdx, endIdx + 1);
+  } else {
+    // Check for array candidates if it starts with [
+    const arrayStart = cleaned.indexOf('[');
+    const arrayEnd = cleaned.lastIndexOf(']');
+    if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+      cleaned = cleaned.slice(arrayStart, arrayEnd + 1);
+    }
+  }
+
+  // Remove trailing commas before closing brackets/braces
+  cleaned = cleaned.replace(/,\s*([\]}])/g, '$1');
+  return cleaned.trim();
+};
+
+const safeParseJson = (raw) => {
+  const cleaned = cleanJson(raw);
+  return JSON.parse(cleaned);
+};
+
+/**
+ * Text generation helper for general/legacy endpoints
+ */
+const generateAiText = async (prompt, isJson = false) => {
+  const systemPrompt = isJson 
+    ? "You are a helpful AI assistant. Respond with valid JSON only." 
+    : "You are a helpful AI assistant.";
+  return callAI(systemPrompt, prompt, 1000, isJson);
+};
+
+
+/**
  * Token-Efficient Log Compressor
  * Filters noisy/redundant lines, keeps only actionable content.
  * Reduces token usage by up to 70% on verbose Docker build logs.
@@ -310,7 +354,7 @@ Rules:
   };
 
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = safeParseJson(raw);
     return {
       summary:  parsed.summary  || 'Unknown error.',
       cause:    parsed.cause    || 'Unknown cause.',
@@ -373,7 +417,7 @@ Detection rules:
   if (!raw) return 'unknown';
 
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = safeParseJson(raw);
     const stack  = (parsed?.stack || '').trim().toLowerCase();
     return VALID_STACKS.has(stack) ? stack : 'unknown';
   } catch (err) {
@@ -418,7 +462,7 @@ ${safeDockerfile}`;
   if (!raw) return { willFail: false, confidence: 0, reason: 'Health check unavailable.', suggestion: 'None' };
 
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = safeParseJson(raw);
     return {
       willFail:   !!parsed.willFail,
       confidence: parsed.confidence || 0,
@@ -492,7 +536,7 @@ ${safeDocker}`;
   };
 
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = safeParseJson(raw);
     return {
       score: parsed.score || 70,
       recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
@@ -562,18 +606,7 @@ const extractEnvVarsLocally = (code = '') => {
   });
 };
 
-/**
- * Aggressive JSON Cleanser
- * Strips markdown code fences, trailing commas, and resolves malformed formatting before parsing.
- */
-const cleanJson = (str = '') => {
-  let cleaned = str.trim();
-  // Remove markdown block backticks if present
-  cleaned = cleaned.replace(/^```json\s*/i, '').replace(/```$/, '');
-  // Remove trailing commas before closing brackets/braces
-  cleaned = cleaned.replace(/,\s*([\]}])/g, '$1');
-  return cleaned.trim();
-};
+// Note: Centralized cleanJson helper is defined at the top of the file.
 
 /**
  * GitGuardian-style exposed credentials detector
@@ -671,8 +704,7 @@ ${safeCode}`;
 
   if (raw) {
     try {
-      const cleanedJson = cleanJson(raw);
-      const parsed = JSON.parse(cleanedJson);
+      const parsed = safeParseJson(raw);
       const vars = Array.isArray(parsed.detectedVars) ? parsed.detectedVars : [];
       
       const crypto = require('crypto');
@@ -763,7 +795,7 @@ If no issues are found, return isHealthy: true and anomalies: []. Do not include
   if (!raw) return { isHealthy: true, anomalies: [] };
 
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = safeParseJson(raw);
     return {
       isHealthy: parsed.isHealthy !== false,
       anomalies: Array.isArray(parsed.anomalies) ? parsed.anomalies : []
@@ -804,7 +836,7 @@ If no optimization is needed, return recommendations: []. Do not include markdow
   if (!raw) return { recommendations: [] };
 
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = safeParseJson(raw);
     const rawRecs = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
     const recommendations = rawRecs.filter(r => {
       if (!r.query || !r.indexAdvice) return false;
@@ -853,7 +885,7 @@ Do not include markdown or extra text.`;
   if (!raw) return { cpuLimit: '0.5', ramLimitMB: 256, needsRedis: false, suggestions: [] };
 
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = safeParseJson(raw);
     return {
       cpuLimit: parsed.cpuLimit || '0.5',
       ramLimitMB: parsed.ramLimitMB || 256,
@@ -963,7 +995,7 @@ This project is deployed on **LaunchLive** with automated CI/CD from the \`${bra
   // ── Try AI to generate a richer, code-aware README (optional enhancement) ──
   let readme = templateReadme;
   try {
-    const readmeSystemPrompt = `You are an expert Technical Writer. Generate a professional README.md in markdown format for this ${detectedStack} project. Include: project title with emoji, description, tech stack badges, setup steps, environment variables table, and API overview if applicable. Be specific and detailed. Output ONLY raw markdown, no JSON, no code fences around the whole response.`;
+    const readmeSystemPrompt = `You are an expert Technical Writer. Generate a professional README.md in markdown format for this ${detectedStack} project. Include: project title with emoji, description, tech stack badges, setup steps, environment variables table, API overview if applicable, and a generated ASCII architecture graph outlining structural project flow (e.g. client -> API -> database or component connections). Be specific and detailed. Output ONLY raw markdown, no JSON, no code fences around the whole response.`;
     const readmeRaw = await callAI(readmeSystemPrompt, safeCode, 1000, false);
     if (readmeRaw && readmeRaw.length > 200 && !readmeRaw.includes('could not')) {
       readme = readmeRaw;
@@ -978,7 +1010,7 @@ This project is deployed on **LaunchLive** with automated CI/CD from the \`${bra
     const endpointsSystemPrompt = `Analyze this code and extract HTTP API route definitions. Respond ONLY with valid JSON: { "apiEndpoints": [{ "method": "GET", "path": "/api/route", "description": "one sentence" }] }. Max 15 endpoints. No markdown fences.`;
     const endpointsRaw = await callAI(endpointsSystemPrompt, `Stack: ${detectedStack}\n${safeCode}`, 500, true);
     if (endpointsRaw) {
-      const parsed = JSON.parse(cleanJson(endpointsRaw));
+      const parsed = safeParseJson(endpointsRaw);
       if (Array.isArray(parsed.apiEndpoints)) apiEndpoints = parsed.apiEndpoints;
     }
   } catch (e) {
@@ -1032,8 +1064,7 @@ If the application is secure, return score: 100, securityGrade: 'A+' and issues:
   if (!raw) return { securityScore: 80, securityGrade: 'B', issues: [] };
 
   try {
-    const cleanedJson = cleanJson(raw);
-    const parsed = JSON.parse(cleanedJson);
+    const parsed = safeParseJson(raw);
     return {
       securityScore: parsed.securityScore || 85,
       securityGrade: parsed.securityGrade || 'B',
@@ -1090,8 +1121,7 @@ Do not include markdown blocks or extra text around the JSON object.`;
   if (!raw) return { cpuUsageAnalysis: 'Telemetry offline.', ramUsageAnalysis: 'Telemetry offline.', anomalyAlerts: [], predictedGrowth: 'Not available.', recommendedCpu: '0.5', recommendedRam: '256', scalingAdvice: [] };
 
   try {
-    const cleanedJson = cleanJson(raw);
-    const parsed = JSON.parse(cleanedJson);
+    const parsed = safeParseJson(raw);
     return {
       cpuUsageAnalysis: parsed.cpuUsageAnalysis || 'CPU usage looks normal.',
       ramUsageAnalysis: parsed.ramUsageAnalysis || 'Memory footprints look healthy.',
@@ -1214,7 +1244,7 @@ If no issues, return score: 100, status: 'healthy', anomalies: []. No markdown.`
   if (!raw) return { score: 100, status: 'healthy', anomalies: [], recommendation: 'AI telemetry offline.' };
 
   try {
-    const parsed = JSON.parse(raw.replace(/^```json/, '').replace(/```$/, '').trim());
+    const parsed = safeParseJson(raw);
     return {
       score: parsed.score ?? 100,
       status: parsed.status || 'healthy',
@@ -1351,7 +1381,7 @@ Respond ONLY with a valid JSON object matching this schema:
           { timeout: 15000 }
         );
         const raw = res.data.candidates[0].content.parts[0].text;
-        return JSON.parse(raw);
+        return safeParseJson(raw);
       } catch (err) {
         const status = err.response?.status;
         const errMessage = err.response?.data?.error?.message || err.message || '';
@@ -1375,6 +1405,9 @@ Respond ONLY with a valid JSON object matching this schema:
 // ─── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
   callAI,
+  generateAiText,
+  safeParseJson,
+  cleanJson,
   analyzeError,
   detectStackWithAI,
   predictDeploymentHealth,

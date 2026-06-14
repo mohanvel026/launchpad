@@ -25,33 +25,76 @@ const PHASES = [
   { id: 'deploying',label: 'Deploying'        },
 ];
 
-const requiresUserInput = (key) => {
+const SENSITIVE_KEYS = [
+  'STRIPE_SECRET_KEY', 'STRIPE_PUBLISHABLE_KEY', 'STRIPE_WEBHOOK_SECRET',
+  'STRIPE_KEY', 'STRIPE_API_KEY',
+  'SENDGRID_API_KEY', 'SENDGRID_KEY', 'MAILGUN_API_KEY', 'SMTP_USER', 'SMTP_PASS',
+  'EMAIL_USER', 'EMAIL_PASS', 'MAIL_USER', 'MAIL_PASS',
+  'CLOUDINARY_URL', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET',
+  'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET',
+  'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
+  'FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET',
+  'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET',
+  'TWITTER_API_KEY', 'TWITTER_API_SECRET',
+  'FIREBASE_API_KEY', 'FIREBASE_PROJECT_ID',
+  'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN',
+  'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET',
+  'PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET',
+  'ANTHROPIC_API_KEY', 'OPENAI_API_KEY',
+];
+
+const AUTO_GENERATED_KEYS = [
+  'JWT_SECRET', 'JWT_SECRET_KEY', 'SESSION_SECRET', 'COOKIE_SECRET',
+  'SECRET_KEY', 'APP_SECRET', 'ENCRYPTION_KEY', 'TOKEN_SECRET',
+  'REFRESH_SECRET', 'AUTH_SECRET', 'CSRF_SECRET',
+];
+
+const AUTO_DEFAULTS = {
+  PORT: '3000', NODE_ENV: 'production', ENVIRONMENT: 'production',
+  CORS_ORIGIN: '*', BCRYPT_ROUNDS: '10', SALT_ROUNDS: '10',
+  JWT_EXPIRES_IN: '7d', LOG_LEVEL: 'info', DEBUG: 'false',
+};
+
+const isSensitive = (key) => {
   if (!key) return false;
   const u = key.toUpperCase();
-  
-  if (['DATABASE_URL', 'DATABASE_URI', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT'].includes(u)) {
-    return false;
-  }
-  
-  if (u.startsWith('GEMINI_API_KEY') || u.startsWith('GROQ_API_KEY')) {
-    return false;
-  }
-  
-  if (['VITE_API_URL', 'REACT_APP_API_URL', 'NEXT_PUBLIC_API_URL'].includes(u)) {
-    return false;
-  }
-  
-  if (u === 'JWT_SECRET' || u === 'JWT_TOKEN' || u === 'SESSION_SECRET' || u === 'COOKIE_SECRET' || 
-      u === 'APP_SECRET' || u === 'ENCRYPTION_KEY' || u === 'TOKEN_SECRET' || u === 'APP_KEY' || 
-      u.endsWith('_SALT')) {
-    return false;
-  }
-  
-  if (['PORT', 'NODE_ENV', 'HOST', 'HOSTNAME'].includes(u)) {
-    return false;
-  }
-  
-  return true;
+  const isDbOrGemini = ['DATABASE_URL', 'DATABASE_URI', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT', 'GEMINI_API_KEY', 'GROQ_API_KEY'].includes(u);
+  if (isDbOrGemini) return false;
+  return SENSITIVE_KEYS.some(k => u.includes(k) || k.includes(u));
+};
+
+const isAutoGen = (key) => {
+  if (!key) return false;
+  const u = key.toUpperCase();
+  return AUTO_GENERATED_KEYS.some(k => u === k || u.endsWith('_SECRET') || u.endsWith('_KEY'));
+};
+
+const hasDefault = (key) => {
+  if (!key) return false;
+  return AUTO_DEFAULTS[key.toUpperCase()] !== undefined;
+};
+
+const isAutoConfigured = (key) => {
+  if (!key) return false;
+  const u = key.toUpperCase();
+  const isDb = ['DATABASE_URL', 'DATABASE_URI', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT'].includes(u);
+  const isAi = ['GEMINI_API_KEY', 'GROQ_API_KEY'].includes(u);
+  return isDb || isAi || isAutoGen(key) || hasDefault(key);
+};
+
+const isOptional = (key) => {
+  if (!key) return false;
+  const u = key.toUpperCase();
+  const optionalKeywords = [
+    'SENDGRID', 'MAILGUN', 'SMTP', 'EMAIL', 'MAIL', 'CLOUDINARY',
+    'AWS', 'S3', 'TELEGRAM', 'SLACK', 'DISCORD', 'TWILIO', 'ANALYTICS', 'GA_'
+  ];
+  return optionalKeywords.some(kw => u.includes(kw));
+};
+
+const requiresUserInput = (key) => {
+  if (!key) return false;
+  return !isAutoConfigured(key) && isSensitive(key) && !isOptional(key);
 };
 
 export default function NewProject() {
@@ -73,6 +116,13 @@ export default function NewProject() {
   const [branch,    setBranch]    = useState('main');
   const [envVars,   setEnvVars]   = useState([]);   // [{key, value, fromExample}]
   const [showAll,   setShowAll]   = useState(false); // show all env fields vs just missing
+  const [revealed,  setRevealed]  = useState({});
+  const [scanStep,  setScanStep]  = useState(0);
+  const [scanDetails, setScanDetails] = useState({
+    stack: 'Scanning repository file tree...',
+    branch: 'Waiting for repository connection...',
+    env: 'Waiting for environment manifest...'
+  });
 
   // Custom project name & subdomain live validation
   const [projectName, setProjectName] = useState('');
@@ -119,21 +169,89 @@ export default function NewProject() {
     r.fullName?.toLowerCase().includes(search.toLowerCase())
   );
 
-  // ── Pick repo → trigger analysis ───────────────────────────────────────────
+  // ── Pick repo → trigger analysis with sequential animation ──
   const handleSelectRepo = useCallback(async (repo) => {
     setSelected(repo);
     setProjectName(repo.name || '');
     setPhase('analyze');
     setAnalyzeErr('');
     setAnalysis(null);
+    setScanStep(0);
+    setScanDetails({
+      stack: 'Scanning repository file tree...',
+      branch: 'Waiting for repository connection...',
+      env: 'Waiting for environment manifest...'
+    });
 
-    try {
-      const res = await api.post('/projects/repos/analyze', { repoFullName: repo.fullName });
-      const data = res.data;
+    let apiData = null;
+    let apiError = null;
+
+    // Trigger API call in parallel
+    const apiPromise = api.post('/projects/repos/analyze', { repoFullName: repo.fullName })
+      .then(res => {
+        apiData = res.data;
+        return res.data;
+      })
+      .catch(err => {
+        apiError = err.response?.data?.message || 'Could not analyze repo. You can still deploy manually.';
+        return null;
+      });
+
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    
+    (async () => {
+      // 1. Stack detection scanning...
+      await sleep(700);
+      let data = apiData;
+      if (!data) {
+        // Wait if API is slow
+        while (!apiData && !apiError) {
+          await sleep(100);
+        }
+        data = apiData;
+      }
+      
+      if (apiError) {
+        setScanDetails(prev => ({ ...prev, stack: '⚠️ Analysis failed' }));
+        setAnalyzeErr(apiError);
+        setAnalysis({ stack: 'unknown', branches: [repo.defaultBranch || 'main'], defaultBranch: repo.defaultBranch || 'main', envExampleVars: [] });
+        setBranch(repo.defaultBranch || 'main');
+        setEnvVars([]);
+        setPhase('review');
+        return;
+      }
+
+      // Stack detected!
+      const stackName = STACK_META[data.stack]?.label || data.stack || 'Custom';
+      setScanDetails(prev => ({
+        ...prev,
+        stack: `✨ Detected ${stackName} stack!`,
+        branch: 'Listing branches on remote...'
+      }));
+      setScanStep(1);
+
+      // 2. Branch listing...
+      await sleep(700);
+      const branchCount = data.branches?.length || 1;
+      setScanDetails(prev => ({
+        ...prev,
+        branch: `📋 Found ${branchCount} branches (Default: ${data.defaultBranch || 'main'})`,
+        env: 'Analyzing .env.example configuration...'
+      }));
+      setScanStep(2);
+
+      // 3. Env discovery...
+      await sleep(700);
+      const envCount = data.envExampleVars?.length || 0;
+      setScanDetails(prev => ({
+        ...prev,
+        env: envCount > 0 ? `🔑 Found ${envCount} env variables in .env.example` : '✅ No env variables required'
+      }));
+      setScanStep(3);
+
+      // Set state variables for review phase
       setAnalysis(data);
       setBranch(data.defaultBranch || 'main');
-
-      // Pre-populate env vars from .env.example
       if (data.envExampleVars?.length > 0) {
         setEnvVars(data.envExampleVars.map(v => {
           const lowerVal = (v.placeholder || '').toLowerCase();
@@ -149,14 +267,11 @@ export default function NewProject() {
       } else {
         setEnvVars([]);
       }
+
+      // Brief pause for success state celebration, then go to review
+      await sleep(600);
       setPhase('review');
-    } catch (e) {
-      setAnalyzeErr(e.response?.data?.message || 'Could not analyze repo. You can still deploy manually.');
-      setPhase('review');
-      setAnalysis({ stack: 'unknown', branches: [repo.defaultBranch || 'main'], defaultBranch: repo.defaultBranch || 'main', envExampleVars: [] });
-      setBranch(repo.defaultBranch || 'main');
-      setEnvVars([]);
-    }
+    })();
   }, []);
 
   // ── Env helpers ────────────────────────────────────────────────────────────
@@ -321,27 +436,70 @@ export default function NewProject() {
 
         {/* ── PHASE: ANALYZE ── */}
         {phase === 'analyze' && (
-          <div className="fade-in flex-center" style={{ flexDirection: 'column', gap: 20, paddingTop: 80 }}>
-            <div style={{
-              width: 72, height: 72, borderRadius: '50%',
-              background: 'linear-gradient(135deg, rgba(56,189,248,0.15), rgba(129,140,248,0.15))',
-              border: '2px solid rgba(56,189,248,0.3)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              animation: 'spin 1.5s linear infinite',
-            }}>
-              <span style={{ fontSize: 28 }}>🔍</span>
+          <div className="fade-in flex-center" style={{ flexDirection: 'column', gap: 32, paddingTop: 60, maxWidth: 500, margin: '0 auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 72, height: 72, borderRadius: '50%',
+                background: 'linear-gradient(135deg, rgba(56,189,248,0.1), rgba(129,140,248,0.1))',
+                border: '2px solid rgba(56,189,248,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                animation: scanStep < 3 ? 'spin 2s linear infinite' : 'none',
+                boxShadow: '0 0 20px rgba(56, 189, 248, 0.15)',
+                transition: 'all 0.5s ease'
+              }}>
+                <span style={{ fontSize: 28, transform: scanStep === 3 ? 'scale(1.2)' : 'none', transition: 'all 0.3s' }}>
+                  {scanStep === 3 ? '🎉' : '🔍'}
+                </span>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--text-main)' }}>Analyzing {selected?.name}</div>
+                <div style={{ color: 'var(--text-dim)', fontSize: 13, marginTop: 4 }}>LaunchPad AI-scanner is examining your repository</div>
+              </div>
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>Analyzing {selected?.name}…</div>
-              <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>AI is detecting your stack, branches, and environment variables</div>
-            </div>
-            <div style={{ display: 'flex', gap: 24, marginTop: 8 }}>
-              {['Stack Detection', 'Branch Listing', 'Env Discovery'].map((label, i) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div className="loading-spinner" style={{ width: 12, height: 12, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: i === 0 ? '#38bdf8' : i === 1 ? '#818cf8' : '#22c55e', animationDelay: `${i * 0.2}s` }} />
-                  <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{label}</span>
-                </div>
-              ))}
+
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
+              {[
+                { id: 0, label: 'Stack & Framework Scan', detail: scanDetails.stack },
+                { id: 1, label: 'Branch Mapping', detail: scanDetails.branch },
+                { id: 2, label: 'Environment Discovery', detail: scanDetails.env }
+              ].map(step => {
+                const isActive = scanStep === step.id;
+                const isCompleted = scanStep > step.id;
+                const isPending = scanStep < step.id;
+
+                let iconColor = 'var(--text-dim)';
+                let iconContent = (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/></svg>
+                );
+                
+                if (isActive) {
+                  iconColor = 'var(--accent-primary)';
+                  iconContent = (
+                    <div className="loading-spinner" style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent-primary)' }} />
+                  );
+                } else if (isCompleted) {
+                  iconColor = '#10b981';
+                  iconContent = (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  );
+                }
+
+                return (
+                  <div key={step.id} style={{ display: 'flex', gap: 14, alignItems: 'flex-start', opacity: isPending ? 0.4 : 1, transition: 'all 0.3s' }}>
+                    <div style={{ color: iconColor, marginTop: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16 }}>
+                      {iconContent}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: isActive ? 'var(--text-main)' : 'var(--text-dim)' }}>
+                        {step.label}
+                      </span>
+                      <span style={{ fontSize: 12, color: isActive ? 'var(--accent-primary)' : isCompleted ? '#34d399' : 'var(--text-muted)' }}>
+                        {step.detail}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -469,22 +627,17 @@ export default function NewProject() {
 
             {/* Environment Variables */}
             <div className="lp-card" style={{ padding: 24, marginBottom: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-dim)', letterSpacing: '0.08em' }}>ENVIRONMENT VARIABLES</div>
                   {envVars.length > 0 && (
                     <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
-                      {analysis.hasEnvExample ? `📋 Auto-imported from .env.example` : 'Manually configured'}
-                      {missingCount > 0 && <span style={{ color: '#f59e0b', marginLeft: 8 }}>⚠️ {missingCount} value{missingCount !== 1 ? 's' : ''} need filling</span>}
+                      {analysis.hasEnvExample ? `📋 Auto-scanned from .env.example` : 'Manually configured'}
+                      {missingCount > 0 && <span style={{ color: '#fbbf24', marginLeft: 8 }}>⚠️ {missingCount} required value{missingCount !== 1 ? 's' : ''} need filling</span>}
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {envVars.length > 0 && (
-                    <button onClick={() => setShowAll(s => !s)} className="lp-btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }}>
-                      {showAll ? 'Hide filled' : 'Show all'}
-                    </button>
-                  )}
+                <div>
                   <button onClick={addEnvRow} className="lp-btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }}>+ Add Variable</button>
                 </div>
               </div>
@@ -496,51 +649,196 @@ export default function NewProject() {
                   <div style={{ fontSize: 12, marginTop: 4 }}>You can add them later from the project settings.</div>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {/* Header */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 32px', gap: 8, padding: '0 4px' }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 700 }}>KEY</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 700 }}>VALUE</span>
-                  </div>
-                  {envVars
-                    .map((env, i) => ({ env, i }))
-                    .filter(({ env }) => showAll || !env.fromExample || !env.value.trim())
-                    .map(({ env, i }) => (
-                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 32px', gap: 8, alignItems: 'center' }}>
-                        <input
-                          value={env.key}
-                          onChange={e => updateEnv(i, 'key', e.target.value.toUpperCase())}
-                          placeholder="VARIABLE_NAME"
-                          className="lp-input lp-input-mono"
-                          style={{ fontSize: 12, background: env.fromExample ? 'rgba(56,189,248,0.04)' : undefined }}
-                          readOnly={env.fromExample}
-                        />
-                        <input
-                          value={env.value}
-                          onChange={e => updateEnv(i, 'value', e.target.value)}
-                          placeholder={env.placeholder || (env.fromExample ? 'Required — enter value' : 'value')}
-                          type={env.key?.includes('SECRET') || env.key?.includes('KEY') || env.key?.includes('PASSWORD') ? 'password' : 'text'}
-                          className="lp-input"
-                          style={{
-                            fontSize: 12,
-                            borderColor: requiresUserInput(env.key) && (!env.value.trim() || env.value.includes('placeholder') || env.value.includes('your_')) ? 'rgba(239, 68, 68, 0.45)' : undefined,
-                            boxShadow: requiresUserInput(env.key) && (!env.value.trim() || env.value.includes('placeholder') || env.value.includes('your_')) ? '0 0 4px rgba(239, 68, 68, 0.15)' : undefined
-                          }}
-                        />
-                        <button onClick={() => removeEnvRow(i)} style={{
-                          background: 'none', border: '1px solid var(--border)', borderRadius: 6,
-                          color: 'var(--accent-danger)', cursor: 'pointer', height: 32, width: 32, fontSize: 13,
-                        }}>✕</button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  
+                  {/* Category 1: Required from you */}
+                  {(() => {
+                    const requiredItems = envVars.map((env, idx) => ({ env, idx })).filter(item => !isAutoConfigured(item.env.key) && isSensitive(item.env.key) && !isOptional(item.env.key));
+                    if (requiredItems.length === 0) return null;
+                    return (
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            ⚠️ Required from you ({requiredItems.length})
+                          </span>
+                          <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>— sensitive values that must be entered to deploy</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {requiredItems.map(({ env, idx }) => {
+                            const isMissing = !env.value.trim() || env.value.includes('placeholder') || env.value.includes('your_');
+                            const isDbKey = ['MONGO', 'DATABASE', 'DB_URL'].some(dbw => env.key.includes(dbw));
+                            const isStripe = env.key.includes('STRIPE');
+                            const isSendGrid = env.key.includes('SENDGRID') || env.key.includes('SMTP');
+                            const isCloudinary = env.key.includes('CLOUDINARY');
+                            return (
+                              <div key={idx} style={{ background: 'rgba(245, 158, 11, 0.03)', border: isMissing ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                  <code style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text)' }}>{env.key}</code>
+                                  <span style={{ fontSize: '9px', padding: '2px 8px', borderRadius: '100px', background: 'rgba(245, 158, 11, 0.1)', color: '#fbbf24', fontWeight: '700', letterSpacing: '0.05em' }}>REQUIRED</span>
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <input
+                                    type={revealed[env.key] ? 'text' : 'password'}
+                                    placeholder={`Enter value for ${env.key.toLowerCase().replace(/_/g, ' ')}...`}
+                                    value={env.value}
+                                    onChange={e => updateEnv(idx, 'value', e.target.value)}
+                                    className="lp-input"
+                                    style={{
+                                      fontSize: 12,
+                                      fontFamily: 'monospace',
+                                      borderColor: isMissing ? 'rgba(239, 68, 68, 0.4)' : undefined,
+                                      boxShadow: isMissing ? '0 0 4px rgba(239, 68, 68, 0.1)' : undefined
+                                    }}
+                                  />
+                                  <button onClick={() => setRevealed(p => ({ ...p, [env.key]: !p[env.key] }))} className="lp-btn-secondary" style={{ padding: '0 12px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                                    {revealed[env.key] ? '🙈 Hide' : '👁 Show'}
+                                  </button>
+                                  <button onClick={() => removeEnvRow(idx)} style={{
+                                    background: 'none', border: '1px solid var(--border)', borderRadius: 6,
+                                    color: 'var(--accent-danger)', cursor: 'pointer', height: 32, width: 32, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                  }}>✕</button>
+                                </div>
+                                {/* Help hints */}
+                                {isDbKey && (
+                                  <div style={{ fontSize: '11px', color: '#fbbf24', marginTop: '6px', opacity: 0.8 }}>
+                                    💡 Get a free MongoDB URI at <a href="https://mongodb.com/atlas" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>mongodb.com/atlas</a>
+                                  </div>
+                                )}
+                                {isStripe && (
+                                  <div style={{ fontSize: '11px', color: '#fbbf24', marginTop: '6px', opacity: 0.8 }}>
+                                    💡 Get your keys from the <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Stripe Dashboard</a>
+                                  </div>
+                                )}
+                                {isSendGrid && (
+                                  <div style={{ fontSize: '11px', color: '#fbbf24', marginTop: '6px', opacity: 0.8 }}>
+                                    💡 Get a free API key at <a href="https://sendgrid.com" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>sendgrid.com</a>
+                                  </div>
+                                )}
+                                {isCloudinary && (
+                                  <div style={{ fontSize: '11px', color: '#fbbf24', marginTop: '6px', opacity: 0.8 }}>
+                                    💡 Get free storage at <a href="https://cloudinary.com" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>cloudinary.com</a>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    ))}
-                  {!showAll && envVars.filter(e => e.fromExample && e.value.trim()).length > 0 && (
-                    <button onClick={() => setShowAll(true)} style={{
-                      background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: 12,
-                      cursor: 'pointer', textAlign: 'left', padding: '4px 0',
-                    }}>
-                      + {envVars.filter(e => e.fromExample && e.value.trim()).length} more filled variable(s) — click to show
-                    </button>
-                  )}
+                    );
+                  })()}
+
+                  {/* Category 2: Auto-configured */}
+                  {(() => {
+                    const autoItems = envVars.map((env, idx) => ({ env, idx })).filter(item => isAutoConfigured(item.env.key));
+                    if (autoItems.length === 0) return null;
+                    return (
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              ✅ Auto-configured ({autoItems.length})
+                            </span>
+                            <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>— safely generated/provisioned automatically</span>
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(16, 185, 129, 0.02)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '10px', padding: '12px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
+                            {autoItems.map(({ env, idx }) => {
+                              let typeLabel = 'DEFAULT';
+                              let placeholderText = env.placeholder || 'Auto';
+                              
+                              const uKey = env.key.toUpperCase();
+                              if (isAutoGen(env.key)) {
+                                typeLabel = 'GENERATED';
+                                placeholderText = '[auto-generated]';
+                              } else if (['DATABASE_URL', 'DATABASE_URI', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT'].includes(uKey)) {
+                                typeLabel = 'PROVISIONED';
+                                placeholderText = '[auto-provisioned]';
+                              } else if (['GEMINI_API_KEY', 'GROQ_API_KEY'].includes(uKey)) {
+                                typeLabel = 'API KEY';
+                                placeholderText = '[auto-configured]';
+                              } else if (hasDefault(env.key)) {
+                                typeLabel = 'DEFAULT';
+                                placeholderText = AUTO_DEFAULTS[uKey];
+                              }
+
+                              return (
+                                <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 8px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.02)', borderRadius: 8 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <code style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-dim)' }}>{env.key}</code>
+                                    <span style={{ fontSize: '8px', padding: '1px 5px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', fontWeight: '700', letterSpacing: '0.05em' }}>{typeLabel}</span>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 2 }}>
+                                    <input
+                                      type="text"
+                                      value={env.value}
+                                      placeholder={placeholderText}
+                                      onChange={e => updateEnv(idx, 'value', e.target.value)}
+                                      className="lp-input"
+                                      style={{
+                                        fontSize: 11,
+                                        height: 24,
+                                        padding: '2px 8px',
+                                        background: env.value ? undefined : 'transparent',
+                                        border: env.value ? undefined : '1px dashed var(--border)',
+                                        opacity: env.value ? 1 : 0.6
+                                      }}
+                                    />
+                                    <button onClick={() => removeEnvRow(idx)} style={{
+                                      background: 'none', border: 'none',
+                                      color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11, padding: '0 4px'
+                                    }}>✕</button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Category 3: Optional */}
+                  {(() => {
+                    const optionalItems = envVars.map((env, idx) => ({ env, idx })).filter(item => !isAutoConfigured(item.env.key) && (!isSensitive(item.env.key) || isOptional(item.env.key)));
+                    if (optionalItems.length === 0) return null;
+                    return (
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            ℹ️ Optional ({optionalItems.length})
+                          </span>
+                          <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>— can be added or edited anytime later</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {optionalItems.map(({ env, idx }) => (
+                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 32px', gap: 8, alignItems: 'center' }}>
+                              <input
+                                value={env.key}
+                                onChange={e => updateEnv(idx, 'key', e.target.value.toUpperCase())}
+                                placeholder="VARIABLE_NAME"
+                                className="lp-input lp-input-mono"
+                                style={{ fontSize: 12, background: env.fromExample ? 'rgba(255,255,255,0.02)' : undefined }}
+                                readOnly={env.fromExample}
+                              />
+                              <input
+                                value={env.value}
+                                onChange={e => updateEnv(idx, 'value', e.target.value)}
+                                placeholder={env.placeholder || 'optional'}
+                                className="lp-input"
+                                style={{ fontSize: 12 }}
+                              />
+                              <button onClick={() => removeEnvRow(idx)} style={{
+                                background: 'none', border: '1px solid var(--border)', borderRadius: 6,
+                                color: 'var(--accent-danger)', cursor: 'pointer', height: 32, width: 32, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                              }}>✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                 </div>
               )}
             </div>

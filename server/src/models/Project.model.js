@@ -49,6 +49,10 @@ const projectSchema = new mongoose.Schema({
     medium:   { type: Number, default: 0 },
     low:      { type: Number, default: 0 },
   },
+  customDockerfile:   { type: String },
+  regions:            { type: [String], default: ['us-ashburn-1'] },
+  cronSchedule:       { type: String, default: '' },
+  cronEnabled:        { type: Boolean, default: false },
   readinessScore:     { type: Number },
 }, { timestamps: true });
 

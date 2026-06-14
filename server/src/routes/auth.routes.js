@@ -31,6 +31,8 @@ router.get('/github/callback', async (req, res) => {
       { headers: { Accept: 'application/json' } }
     );
     const accessToken = tokenRes.data.access_token;
+    const refreshToken = tokenRes.data.refresh_token;
+    const expiresIn = tokenRes.data.expires_in;
     if (!accessToken) throw new Error('No access token returned from GitHub');
 
     // Fetch GitHub user profile
@@ -42,7 +44,14 @@ router.get('/github/callback', async (req, res) => {
     // Upsert user — create if first login, update token always
     const user = await User.findOneAndUpdate(
       { githubId: String(id) },
-      { username: login, email, avatarUrl: avatar_url, githubAccessToken: accessToken },
+      { 
+        username: login, 
+        email, 
+        avatarUrl: avatar_url, 
+        githubAccessToken: accessToken,
+        ...(refreshToken ? { githubRefreshToken: refreshToken } : {}),
+        ...(expiresIn ? { githubTokenExpiresAt: new Date(Date.now() + expiresIn * 1000) } : {})
+      },
       { upsert: true, new: true }
     );
 

@@ -137,13 +137,86 @@ const startHealthChecker = () => {
     const { exec } = require('child_process');
     exec('docker image prune -a -f --filter "until=24h" && docker builder prune -a -f --filter "until=24h"', (err, stdout, stderr) => {
       if (err) {
-        console.error('[Docker-Pruner] Error pruning Docker resources:', err.message);
+      console.error('[Docker-Pruner] Error pruning Docker resources:', err.message);
         return;
       }
       console.log('[Docker-Pruner] Cleanup finished successfully:\n', stdout);
     });
   });
   console.log('SRE Docker image pruner worker active (daily at 3:00 AM)');
+
+  // 4. Scheduled deployments scanner (runs every minute)
+  cron.schedule('* * * * *', async () => {
+    try {
+      const cronParser = require('cron-parser');
+      const parseExpression = cronParser.parseExpression || (cronParser.default && cronParser.default.parse);
+      const crypto = require('crypto');
+      const buildQueue = require('./build.worker');
+      const Deployment = require('../models/Deployment.model');
+
+      const scheduledProjects = await Project.find({ cronEnabled: true, cronSchedule: { $exists: true, $ne: '' } });
+
+      for (const project of scheduledProjects) {
+        try {
+          if (!parseExpression) throw new Error('Cron parser not loaded');
+          // Parse expression and check if it matches the current minute
+          const interval = parseExpression(project.cronSchedule);
+          const prevTime = interval.prev();
+          const diffSeconds = Math.abs(Date.now() - prevTime.getTime()) / 1000;
+
+          // If the last run match is within 60 seconds, it's time to build
+          if (diffSeconds < 60) {
+            console.log(`[Scheduled-Build] Time match for project ${project.name} (Schedule: ${project.cronSchedule})`);
+
+            // Verify if there is already a running build
+            const running = await Deployment.findOne({ project: project._id, status: { $in: ['queued', 'building'] } });
+            if (running) {
+              console.log(`[Scheduled-Build] Build is already in progress for ${project.name}, skipping`);
+              continue;
+            }
+
+            const EnvVar = require('../models/EnvVar.model');
+            const envVars = await EnvVar.find({ project: project._id }).sort({ key: 1 });
+            const envStr = envVars.map(ev => `${ev.key}=${ev.value}`).join('\n');
+            const envVarsHash = crypto.createHash('md5').update(envStr).digest('hex');
+
+            const settingsStr = `${project.installCommand || ''}|${project.buildCommand || ''}|${project.outputDir || ''}|${project.branch || ''}|${project.cpuLimit || ''}|${project.ramLimitMB || ''}`;
+            const settingsHash = crypto.createHash('md5').update(settingsStr).digest('hex');
+
+            const deployment = await Deployment.create({
+              project:       project._id,
+              commitSha:     'cron',
+              commitMessage: `Scheduled Deploy (${project.cronSchedule})`,
+              branch:        project.branch || 'main',
+              status:        'queued',
+              envVarsHash,
+              settingsHash,
+            });
+
+            await buildQueue.add(
+              { 
+                deploymentId: deployment._id.toString(), 
+                projectId: project._id.toString(),
+                forceRebuild: true
+              },
+              {
+                attempts: 2,
+                backoff: { type: 'exponential', delay: 5000 },
+                removeOnComplete: 50,
+                removeOnFail: 50
+              }
+            );
+            console.log(`[Scheduled-Build] Successfully queued build for project ${project.name}`);
+          }
+        } catch (cronErr) {
+          console.warn(`[Scheduled-Build Error] Failed to parse cron for project ${project.name}:`, cronErr.message);
+        }
+      }
+    } catch (err) {
+      console.warn('[Scheduled-Build Worker Error]:', err.message);
+    }
+  });
+  console.log('SRE Scheduled deployments scanner active (every 1 minute)');
 };
 
 module.exports = { startHealthChecker };

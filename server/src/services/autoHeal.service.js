@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const util = require('util');
 const execAsync = util.promisify(require('child_process').exec);
-const { callAI } = require('./ai.service');
+const { callAI, safeParseJson } = require('./ai.service');
 
 // Helper to list all code files in the repository recursively
 function listFiles(dir, baseDir = dir, fileList = []) {
@@ -143,15 +143,7 @@ ${logs}`;
     const raw = await callAI(systemPrompt, userPrompt, 1500, true);
     if (!raw) return null;
 
-    // Clean up potential markdown formatting wrapping JSON
-    let cleanRaw = raw.trim();
-    if (cleanRaw.startsWith('```json')) {
-      cleanRaw = cleanRaw.replace(/^```json/, '').replace(/```$/, '').trim();
-    } else if (cleanRaw.startsWith('```')) {
-      cleanRaw = cleanRaw.replace(/^```/, '').replace(/```$/, '').trim();
-    }
-
-    const parsed = JSON.parse(cleanRaw);
+    const parsed = safeParseJson(raw);
     return {
       patches: parsed.patches || [],
       description: parsed.description || 'Auto-healing patch applied.'

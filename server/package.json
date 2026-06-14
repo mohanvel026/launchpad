@@ -18,6 +18,7 @@
     "bull": "^4.16.5",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
+    "cron-parser": "^5.5.0",
     "crypto-js": "^4.2.0",
     "dockerode": "^5.0.0",
     "dotenv": "^17.4.2",

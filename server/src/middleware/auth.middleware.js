@@ -29,8 +29,13 @@ const getUserWithToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select('+githubAccessToken');
+    req.user = await User.findById(decoded.id).select('+githubAccessToken +githubRefreshToken githubTokenExpiresAt');
     if (!req.user) return res.status(401).json({ message: 'User not found' });
+
+    // Ensure token is valid and refresh if necessary
+    const { ensureValidGithubToken } = require('../services/github.service');
+    req.user.githubAccessToken = await ensureValidGithubToken(req.user);
+
     next();
   } catch (err) {
     res.status(401).json({ message: 'Token invalid or expired' });

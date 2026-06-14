@@ -92,8 +92,8 @@ const revokeSSL = (subdomain) => {
 // Renew all certs (called by cron job weekly)
 const renewAllSSL = () => {
   try {
-    execSync('sudo certbot renew --quiet', { stdio: 'pipe' });
-    console.log('SSL certificates renewed');
+    execSync('sudo certbot renew --quiet --post-hook "nginx -s reload"', { stdio: 'pipe' });
+    console.log('SSL certificates renewed and Nginx configuration reloaded');
   } catch (err) {
     console.error('SSL renewal error:', err.message);
   }

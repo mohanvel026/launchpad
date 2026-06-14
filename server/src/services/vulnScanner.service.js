@@ -1,7 +1,7 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const { callAI } = require('./ai.service');
+const { callAI, safeParseJson } = require('./ai.service');
 
 /**
  * Reads package.json from repoPath and queries OSV.dev for CVEs.
@@ -108,8 +108,7 @@ Only include packages that have a known fixedIn version. Do not include markdown
   try {
     const raw = await callAI(systemPrompt, userPrompt, 600, true);
     if (!raw) return { patchCommands: [], description: 'AI unavailable.' };
-    let cleaned = raw.trim().replace(/^```json/, '').replace(/```$/, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const parsed = safeParseJson(raw);
     return {
       patchCommands: Array.isArray(parsed.patchCommands) ? parsed.patchCommands : [],
       description: parsed.description || 'Security patches generated.'

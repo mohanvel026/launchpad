@@ -415,8 +415,34 @@ const generateDocs = async (req, res) => {
 
     const repoPath = path.join(__dirname, '../../repos', project._id.toString());
     let docCode = '';
+    let folderTree = '';
+
+    const getFolderTree = (dir, depth = 0, maxDepth = 3) => {
+      if (depth > maxDepth) return '';
+      let result = '';
+      let files;
+      try {
+        files = fs.readdirSync(dir);
+      } catch {
+        return '';
+      }
+      files.forEach((file, idx) => {
+        if (['node_modules', '.git', 'dist', 'build', '.next', '.nuxt', 'out', 'coverage', 'public', '.cache'].includes(file)) return;
+        const fullPath = path.join(dir, file);
+        let stat;
+        try { stat = fs.statSync(fullPath); } catch { return; }
+        const prefix = '  '.repeat(depth) + (idx === files.length - 1 ? '└── ' : '├── ');
+        if (stat.isDirectory()) {
+          result += `${prefix}${file}/\n` + getFolderTree(fullPath, depth + 1, maxDepth);
+        } else {
+          result += `${prefix}${file}\n`;
+        }
+      });
+      return result;
+    };
 
     if (fs.existsSync(repoPath)) {
+      folderTree = getFolderTree(repoPath);
       const scanForCode = (dir, depth = 0) => {
         if (depth > 6 || docCode.length > 14000) return;
         let files;
@@ -449,6 +475,7 @@ const generateDocs = async (req, res) => {
       `Branch: ${project.branch || 'main'}`,
       `Stack: ${project.stack}`,
       `Status: ${project.status}`,
+      folderTree ? `\nDirectory Layout Structure:\n${folderTree}` : '',
       docCode
         ? `\nSource Code Snippets:\n${docCode}`
         : '\n(Repository not yet cloned — generate docs based on project metadata and stack conventions only)'
@@ -752,6 +779,62 @@ Provide your SRE Traffic Insights audit now:`;
   }
 };
 
+const commitReadme = async (req, res) => {
+  try {
+    const Project = require('../models/Project.model');
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const path = require('path');
+    const fs = require('fs');
+    const repoPath = path.join(__dirname, '../../repos', project._id.toString());
+    const readmePath = path.join(repoPath, 'README.md');
+    if (!fs.existsSync(readmePath)) {
+      return res.status(400).json({ message: 'No generated README found. Generate it first.' });
+    }
+
+    const { exec } = require('child_process');
+    const execPromise = (cmd, options) => new Promise((resolve, reject) => {
+      exec(cmd, options, (err, stdout, stderr) => {
+        if (err) reject(err);
+        else resolve({ stdout, stderr });
+      });
+    });
+
+    // 1. Get authenticated git URL (with token injection)
+    const User = require('../models/User.model');
+    const owner = await User.findById(project.owner);
+    const githubService = require('../services/github.service');
+    const token = await githubService.ensureValidGithubToken(owner);
+
+    const authedUrl = `https://x-access-token:${token}@github.com/${project.repoFullName}.git`;
+
+    // 2. Git config, commit and push
+    await execPromise(`git -C "${repoPath}" config user.name "LaunchLive AI"`);
+    await execPromise(`git -C "${repoPath}" config user.email "ai@launchlive.in"`);
+    await execPromise(`git -C "${repoPath}" add README.md`);
+    
+    try {
+      await execPromise(`git -C "${repoPath}" commit -m "docs: auto-generate README.md & Architecture Flow [LaunchLive AI]"`);
+    } catch (commitErr) {
+      if (commitErr.message.includes('nothing to commit')) {
+        // do nothing
+      } else {
+        throw commitErr;
+      }
+    }
+
+    await execPromise(`git -C "${repoPath}" push "${authedUrl}" ${project.branch || 'main'}`);
+
+    res.json({ message: 'README.md successfully committed and pushed to GitHub!' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   chatWithAI,
   suggestFix,
@@ -761,6 +844,7 @@ module.exports = {
   optimizeDbQueries,
   predictResources,
   generateDocs,
+  commitReadme,
   auditSecurity,
   devopsSummary,
   analyzeTrafficInsights,

@@ -54,6 +54,7 @@ const SIDEBAR_GROUPS = [
     title: 'AI Assistant',
     items: [
       { id: 'ai',           label: 'AI Co-Pilot',  icon: '🤖' },
+      { id: 'ai-docs',      label: 'AI Docs & Flow', icon: '📝' },
       { id: 'advisor',      label: 'AI Advisor',   icon: '🧠' },
       { id: 'guide',        label: 'How It Works', icon: '📖' },
     ]
@@ -593,6 +594,31 @@ export default function ProjectDetail() {
   const [logSearchQuery, setLogSearchQuery] = useState('');
   const [showErrorsOnly, setShowErrorsOnly] = useState(false);
 
+  // Dockerfile Editor States
+  const [dockerfile, setDockerfile] = useState('');
+  const [dockerfileLoading, setDockerfileLoading] = useState(false);
+  const [lintResults, setLintResults] = useState(null);
+  const [linting, setLinting] = useState(false);
+  const [savingDockerfile, setSavingDockerfile] = useState(false);
+  const [dockerfileMessage, setDockerfileMessage] = useState('');
+
+  // Multi-Region & Cron Scheduled Deployment States
+  const [regions, setRegions] = useState(['us-ashburn-1']);
+  const [cronSchedule, setCronSchedule] = useState('');
+  const [cronEnabled, setCronEnabled] = useState(false);
+  const [regionsSaving, setRegionsSaving] = useState(false);
+  const [cronSaving, setCronSaving] = useState(false);
+  const [regionsMessage, setRegionsMessage] = useState('');
+  const [cronMessage, setCronMessage] = useState('');
+
+  // AI Docs & Flows States
+  const [aiDocsData, setAiDocsData] = useState(null);
+  const [aiDocsLoading, setAiDocsLoading] = useState(false);
+  const [aiDocsSubTab, setAiDocsSubTab] = useState('readme');
+  const [aiDocsError, setAiDocsError] = useState('');
+  const [commitStatus, setCommitStatus] = useState('');
+  const [commitMessage, setCommitMessage] = useState('');
+
   const filteredLogsWithIndex = logs
     .map((line, index) => ({ line, index }))
     .filter(({ line }) => {
@@ -1008,6 +1034,9 @@ Use bold headers, bullet lists, and code blocks.`;
         autoHeal:       !!p.autoHeal,
         autoHealStrategy: p.autoHealStrategy || 'push-on-success',
       });
+      setRegions(p.regions || ['us-ashburn-1']);
+      setCronSchedule(p.cronSchedule || '');
+      setCronEnabled(!!p.cronEnabled);
     } catch (err) {
       if (err.response && (err.response.status === 404 || err.response.status === 403)) {
         navigate('/dashboard');
@@ -1032,6 +1061,80 @@ Use bold headers, bullet lists, and code blocks.`;
   const loadOutgoingWebhooks = useCallback(() => {
     api.get(`/deploy/${id}/webhooks`).then(r => setOutgoingWebhooks(r.data.webhooks || [])).catch(() => {});
   }, [id]);
+
+  const loadDockerfile = useCallback(async () => {
+    setDockerfileLoading(true);
+    try {
+      const res = await api.get(`/projects/${id}/dockerfile`);
+      setDockerfile(res.data.dockerfile || '');
+    } catch (err) {
+      console.warn('Failed to load Dockerfile:', err.message);
+    } finally {
+      setDockerfileLoading(false);
+    }
+  }, [id]);
+
+  const handleLintDockerfile = async () => {
+    if (!dockerfile) return;
+    setLinting(true);
+    setDockerfileMessage('');
+    try {
+      const res = await api.post(`/projects/${id}/dockerfile/lint`, { dockerfile });
+      setLintResults(res.data);
+    } catch (err) {
+      setDockerfileMessage('Linting failed: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setLinting(false);
+    }
+  };
+
+  const handleSaveDockerfile = async () => {
+    setSavingDockerfile(true);
+    setDockerfileMessage('');
+    try {
+      await api.post(`/projects/${id}/dockerfile`, { dockerfile });
+      setDockerfileMessage('Dockerfile saved successfully! It will be used in your next deployment.');
+      setTimeout(() => setDockerfileMessage(''), 4000);
+    } catch (err) {
+      setDockerfileMessage('Failed to save Dockerfile: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setSavingDockerfile(false);
+    }
+  };
+
+  const handleSaveRegions = async (updatedRegions) => {
+    setRegionsSaving(true);
+    setRegionsMessage('');
+    try {
+      const res = await api.patch(`/projects/${id}`, { regions: updatedRegions });
+      setRegions(res.data.project.regions || ['us-ashburn-1']);
+      setRegionsMessage('✓ Multi-region replication parameters updated successfully!');
+      setTimeout(() => setRegionsMessage(''), 4000);
+    } catch (err) {
+      setRegionsMessage('Failed to save regions: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setRegionsSaving(false);
+    }
+  };
+
+  const handleSaveCron = async (enabledState, scheduleStr) => {
+    setCronSaving(true);
+    setCronMessage('');
+    try {
+      const res = await api.patch(`/projects/${id}`, {
+        cronSchedule: scheduleStr.trim(),
+        cronEnabled: enabledState
+      });
+      setCronSchedule(res.data.project.cronSchedule || '');
+      setCronEnabled(!!res.data.project.cronEnabled);
+      setCronMessage('✓ Scheduled deployments configuration updated successfully!');
+      setTimeout(() => setCronMessage(''), 4000);
+    } catch (err) {
+      setCronMessage(err.response?.data?.message || err.message);
+    } finally {
+      setCronSaving(false);
+    }
+  };
 
   const handleLoadPreviews = useCallback(async () => {
     setPreviewsLoading(true);
@@ -1066,8 +1169,9 @@ Use bold headers, bullet lists, and code blocks.`;
       loadEnvVars();
       loadDeployHooks();
       loadOutgoingWebhooks();
+      loadDockerfile();
     }, 0);
-  }, [loadProject, loadDeployments, loadEnvVars, loadDeployHooks, loadOutgoingWebhooks]);
+  }, [loadProject, loadDeployments, loadEnvVars, loadDeployHooks, loadOutgoingWebhooks, loadDockerfile]);
 
   // Page-level persistent socket connection
   useEffect(() => {
@@ -1636,6 +1740,34 @@ Use bold headers, bullet lists, and code blocks.`;
     }
   };
 
+  const handleGenerateAiDocs = async () => {
+    setAiDocsLoading(true);
+    setAiDocsError('');
+    setCommitStatus('');
+    setCommitMessage('');
+    try {
+      const res = await api.post(`/projects/${id}/readme`);
+      setAiDocsData(res.data);
+    } catch (err) {
+      setAiDocsError(err.response?.data?.message || err.message || 'Failed to generate documentation.');
+    } finally {
+      setAiDocsLoading(false);
+    }
+  };
+
+  const handleCommitAiDocs = async () => {
+    setCommitStatus('committing');
+    setCommitMessage('');
+    try {
+      const res = await api.post(`/projects/${id}/readme/commit`);
+      setCommitStatus('committed');
+      setCommitMessage(res.data.message || 'Successfully committed and pushed README.md to GitHub!');
+    } catch (err) {
+      setCommitStatus('error');
+      setCommitMessage(err.response?.data?.message || err.message || 'Failed to commit README.md to GitHub.');
+    }
+  };
+
   const handleAiScanMissingVars = async () => {
     setMissingVarsLoading(true);
     setMissingVars(null);
@@ -1825,6 +1957,236 @@ Use bold headers, bullet lists, and code blocks.`;
       return `${scheme}://${project.customDomain}`;
     }
     return `https://${project.subdomain}.${domain}`;
+  };
+  const renderAiDocsTab = () => {
+    return (
+      <div style={{ display: 'grid', gap: 20 }}>
+        {/* Intro Card */}
+        <div className="lp-card glass" style={{ 
+          padding: 28,
+          borderLeft: '4px solid var(--accent-primary)',
+          background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, rgba(129, 140, 248, 0.02) 100%)'
+        }}>
+          <h3 style={{ fontSize: 16, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+            📝 AI Documentation & Architecture Flows
+          </h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>
+            LaunchLive traverses your workspace folder tree, identifies APIs and configurations, and invokes Gemini to construct a premium README.md, complete with an ASCII architecture map and REST API endpoint specifications.
+          </p>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button 
+              className="lp-btn-primary" 
+              onClick={handleGenerateAiDocs} 
+              disabled={aiDocsLoading}
+              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+            >
+              {aiDocsLoading ? (
+                <>
+                  <div className="loading-spinner" style={{ width: 16, height: 16, borderColor: '#fff', borderTopColor: 'transparent' }} />
+                  Analyzing Workspace Tree...
+                </>
+              ) : (
+                <>🔮 Generate README & Architecture Flow</>
+              )}
+            </button>
+            {aiDocsData && (
+              <button 
+                className="lp-btn-secondary" 
+                onClick={handleCommitAiDocs} 
+                disabled={commitStatus === 'committing'}
+                style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+              >
+                {commitStatus === 'committing' ? (
+                  <>
+                    <div className="loading-spinner" style={{ width: 14, height: 14 }} />
+                    Pushing to GitHub...
+                  </>
+                ) : (
+                  <>💾 Commit & Push README to GitHub</>
+                )}
+              </button>
+            )}
+          </div>
+          
+          {commitMessage && (
+            <div className={`lp-status-bar ${commitStatus === 'committed' ? 'success' : 'error'}`} style={{ marginTop: 16, fontSize: 12.5 }}>
+              {commitStatus === 'committed' ? '✓ ' : '✕ '}{commitMessage}
+            </div>
+          )}
+          
+          {aiDocsError && (
+            <div className="lp-status-bar error" style={{ marginTop: 16, fontSize: 12.5 }}>
+              ✕ {aiDocsError}
+            </div>
+          )}
+        </div>
+
+        {/* Results Block */}
+        {aiDocsData ? (
+          <div className="lp-card glass" style={{ padding: 28, display: 'grid', gap: 20 }}>
+            {/* Sub-tabs header */}
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', paddingBottom: 10, gap: 20 }}>
+              {[
+                { id: 'readme', label: '📖 README.md' },
+                { id: 'endpoints', label: '⚡ API Endpoints' },
+                { id: 'reference', label: '📘 API Reference Docs' },
+              ].map(sub => (
+                <button
+                  key={sub.id}
+                  onClick={() => setAiDocsSubTab(sub.id)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: aiDocsSubTab === sub.id ? 'var(--accent-primary)' : 'var(--text-dim)',
+                    fontWeight: aiDocsSubTab === sub.id ? 700 : 500,
+                    fontSize: 13.5,
+                    cursor: 'pointer',
+                    padding: '6px 0',
+                    borderBottom: aiDocsSubTab === sub.id ? '2px solid var(--accent-primary)' : 'none',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {sub.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Sub-tab Content */}
+            <div style={{ minHeight: 250 }}>
+              {aiDocsSubTab === 'readme' && (
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div className="flex-between">
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>PREVIEW OF GENERATED README.MD</span>
+                    <button 
+                      className="lp-btn-secondary" 
+                      style={{ padding: '4px 10px', fontSize: 11, height: 'auto' }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(aiDocsData.readme);
+                        alert('README.md markdown copied to clipboard!');
+                      }}
+                    >
+                      📋 Copy Markdown
+                    </button>
+                  </div>
+                  <pre style={{
+                    background: '#040406',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    padding: 20,
+                    overflow: 'auto',
+                    fontFamily: 'monospace',
+                    fontSize: 12.5,
+                    maxHeight: 500,
+                    color: 'var(--text-main)',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {aiDocsData.readme}
+                  </pre>
+                </div>
+              )}
+
+              {aiDocsSubTab === 'endpoints' && (
+                <div style={{ display: 'grid', gap: 16 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>DETECTED API ENDPOINTS</div>
+                  {(!aiDocsData.apiEndpoints || aiDocsData.apiEndpoints.length === 0) ? (
+                    <div style={{ color: 'var(--text-dim)', fontSize: 13, textAlign: 'center', padding: '40px 0' }}>
+                      No active API endpoints detected in this repository stack.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gap: 12 }}>
+                      {aiDocsData.apiEndpoints.map((ep, idx) => {
+                        const m = (ep.method || 'GET').toUpperCase();
+                        const mColors = {
+                          GET: { bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.2)', text: '#10b981' },
+                          POST: { bg: 'rgba(56,189,248,0.1)', border: 'rgba(56,189,248,0.2)', text: '#38bdf8' },
+                          PUT: { bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.2)', text: '#f59e0b' },
+                          DELETE: { bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.2)', text: '#ef4444' }
+                        };
+                        const c = mColors[m] || { bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', text: 'var(--text-muted)' };
+                        return (
+                          <div key={idx} style={{ 
+                            padding: '14px 16px', 
+                            background: 'rgba(255,255,255,0.01)', 
+                            border: '1px solid var(--border)', 
+                            borderRadius: 8,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 14
+                          }}>
+                            <span style={{ 
+                              padding: '4px 10px', 
+                              borderRadius: 4, 
+                              fontSize: 11, 
+                              fontWeight: 700, 
+                              background: c.bg, 
+                              border: `1px solid ${c.border}`, 
+                              color: c.text,
+                              fontFamily: 'monospace'
+                            }}>
+                              {m}
+                            </span>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, fontFamily: 'monospace', color: 'var(--text-main)' }}>{ep.route}</div>
+                              <div style={{ fontSize: 11.5, color: 'var(--text-dim)', marginTop: 2 }}>{ep.description}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {aiDocsSubTab === 'reference' && (
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div className="flex-between">
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>PREVIEW OF FULL API DOCUMENTATION</span>
+                    <button 
+                      className="lp-btn-secondary" 
+                      style={{ padding: '4px 10px', fontSize: 11, height: 'auto' }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(aiDocsData.apiDocs);
+                        alert('API Reference markdown copied to clipboard!');
+                      }}
+                    >
+                      📋 Copy Markdown
+                    </button>
+                  </div>
+                  <pre style={{
+                    background: '#040406',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    padding: 20,
+                    overflow: 'auto',
+                    fontFamily: 'monospace',
+                    fontSize: 12.5,
+                    maxHeight: 500,
+                    color: 'var(--text-main)',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {aiDocsData.apiDocs}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="lp-card glass" style={{ 
+            padding: 40, 
+            textAlign: 'center', 
+            color: 'var(--text-dim)', 
+            fontSize: 13.5,
+            border: '1px dashed var(--border)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 12
+          }}>
+            <span>No documentation generated yet. Click "Generate" above to scan your project code layers.</span>
+          </div>
+        )}
+      </div>
+    );
   };
   const deployUrl = getDeployUrl();
 
@@ -3462,6 +3824,380 @@ Use bold headers, bullet lists, and code blocks.`;
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* 🌍 Multi-Region Edge Replication Card */}
+            <div className="lp-card glass" style={{ 
+              padding: 28, 
+              borderLeft: '4px solid #10b981',
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(56, 189, 248, 0.02) 100%)'
+            }}>
+              <h3 style={{ fontSize: 16, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🌍 Multi-Region Edge Replication
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>
+                Deploy instances of your application closer to your users across secondary locations to reduce round-trip network latency.
+              </p>
+
+              <div style={{ display: 'grid', gap: 24 }}>
+                <div>
+                  <div className="lp-section-label" style={{ marginBottom: 12 }}>SELECT TARGET REGIONS</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+                    {[
+                      { key: 'us-ashburn-1', label: 'US East (Ashburn)', ping: '240ms' },
+                      { key: 'uk-london-1',  label: 'Europe (London)',   ping: '124ms' },
+                      { key: 'ap-mumbai-1',  label: 'Asia (Mumbai)',     ping: '22ms' },
+                    ].map(regionOption => {
+                      const isSelected = regions.includes(regionOption.key);
+                      return (
+                        <label 
+                          key={regionOption.key} 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 12, 
+                            padding: 14, 
+                            borderRadius: 8, 
+                            border: `1px solid ${isSelected ? '#10b981' : 'var(--border)'}`, 
+                            background: isSelected ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255,255,255,0.01)',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <input 
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={regionOption.key === 'us-ashburn-1'} // Primary region is required
+                            onChange={() => {
+                              let nextRegions;
+                              if (isSelected) {
+                                nextRegions = regions.filter(r => r !== regionOption.key);
+                              } else {
+                                nextRegions = [...regions, regionOption.key];
+                              }
+                              handleSaveRegions(nextRegions);
+                            }}
+                            style={{ accentColor: '#10b981', cursor: 'pointer' }}
+                          />
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)' }}>{regionOption.label}</div>
+                            <div style={{ fontSize: 11, color: isSelected ? '#10b981' : 'var(--text-dim)', marginTop: 2 }}>
+                              Ping: {regionOption.ping}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Latency Map Visualization */}
+                <div style={{ 
+                  padding: 20, 
+                  background: 'rgba(0,0,0,0.2)', 
+                  border: '1px solid var(--border)', 
+                  borderRadius: 10,
+                  display: 'grid',
+                  gap: 14
+                }}>
+                  <div className="flex-between">
+                    <div className="lp-section-label" style={{ margin: 0 }}>LIVE ROUTING LATENCY MAP</div>
+                    <span style={{ fontSize: 11.5, color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="live-pulse" style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                      Optimal route active
+                    </span>
+                  </div>
+
+                  {/* SVG Map Graphic */}
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0' }}>
+                    <svg viewBox="0 0 400 160" style={{ width: '100%', maxWidth: '380px', height: 'auto' }}>
+                      {/* World map stylized continents path */}
+                      <path d="M50,40 Q60,30 90,30 T120,40 T160,50 T180,70 T150,90 T120,110 T80,100 T50,80 Z M250,50 Q280,30 310,40 T350,60 T380,90 T340,110 T300,120 T260,90 Z" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                      
+                      {/* Connections */}
+                      {regions.includes('uk-london-1') && (
+                        <line x1="100" y1="50" x2="220" y2="45" stroke="#10b981" strokeWidth="1.5" strokeDasharray="4 4" />
+                      )}
+                      {regions.includes('ap-mumbai-1') && (
+                        <line x1="100" y1="50" x2="300" y2="90" stroke="#10b981" strokeWidth="1.5" strokeDasharray="4 4" />
+                      )}
+
+                      {/* Nodes */}
+                      {/* Primary US East */}
+                      <circle cx="100" cy="50" r="5" fill="#38bdf8" />
+                      <circle cx="100" cy="50" r="10" fill="none" stroke="#38bdf8" strokeWidth="1" className="ping-ring" />
+                      <text x="100" y="38" fill="#fff" fontSize="9" textAnchor="middle" fontWeight="bold">US EAST (Host)</text>
+
+                      {/* London */}
+                      {regions.includes('uk-london-1') && (
+                        <>
+                          <circle cx="220" cy="45" r="5" fill="#10b981" />
+                          <text x="220" y="33" fill="#10b981" fontSize="9" textAnchor="middle">UK Edge</text>
+                        </>
+                      )}
+
+                      {/* Mumbai */}
+                      {regions.includes('ap-mumbai-1') && (
+                        <>
+                          <circle cx="300" cy="90" r="5" fill="#10b981" />
+                          <text x="300" y="105" fill="#10b981" fontSize="9" textAnchor="middle">India Edge</text>
+                        </>
+                      )}
+                    </svg>
+                  </div>
+                </div>
+
+                {regionsMessage && (
+                  <div className="lp-status-bar success" style={{ fontSize: 12.5, padding: '10px 14px' }}>
+                    {regionsMessage}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ⏱️ Scheduled Deployments (Cron) Card */}
+            <div className="lp-card glass" style={{ padding: 28 }}>
+              <h3 style={{ fontSize: 16, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                ⏱️ Scheduled Deployments (Cron)
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
+                Automatically trigger periodic rebuilds and redeployments of your project using cron schedule expressions.
+              </p>
+
+              <div style={{ display: 'grid', gap: 20 }}>
+                <div className="flex-between">
+                  <div className="lp-section-label" style={{ margin: 0 }}>ENABLE CRON SCHEDULES</div>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={cronEnabled} 
+                      onChange={e => {
+                        setCronEnabled(e.target.checked);
+                        handleSaveCron(e.target.checked, cronSchedule);
+                      }}
+                      style={{ width: 40, height: 20, accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                    />
+                  </label>
+                </div>
+
+                {cronEnabled && (
+                  <div className="fade-in" style={{ display: 'grid', gap: 14, padding: 18, background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border)', borderRadius: 10 }}>
+                    <div>
+                      <div className="lp-section-label" style={{ marginBottom: 8 }}>CRON EXPRESSION</div>
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <input
+                          type="text"
+                          placeholder="e.g. 0 0 * * * (Every midnight)"
+                          value={cronSchedule}
+                          onChange={e => setCronSchedule(e.target.value)}
+                          className="lp-input lp-input-mono"
+                          style={{ flex: 1 }}
+                        />
+                        <button 
+                          className="lp-btn-primary" 
+                          onClick={() => handleSaveCron(cronEnabled, cronSchedule)}
+                          disabled={cronSaving}
+                          style={{ padding: '0 20px', height: 42 }}
+                        >
+                          {cronSaving ? 'Saving...' : 'Apply'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Presets */}
+                    <div>
+                      <div className="lp-section-label" style={{ marginBottom: 6, fontSize: 10.5 }}>COMMON PRESETS</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {[
+                          { label: 'Hourly', expr: '0 * * * *' },
+                          { label: 'Every 12 Hours', expr: '0 */12 * * *' },
+                          { label: 'Daily (Midnight)', expr: '0 0 * * *' },
+                          { label: 'Weekly (Sunday)', expr: '0 0 * * 0' },
+                        ].map(preset => (
+                          <button
+                            key={preset.expr}
+                            onClick={() => {
+                              setCronSchedule(preset.expr);
+                              handleSaveCron(cronEnabled, preset.expr);
+                            }}
+                            className="lp-btn-secondary"
+                            style={{ padding: '4px 10px', fontSize: 11, height: 'auto', background: 'transparent' }}
+                          >
+                            {preset.label} ({preset.expr})
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {cronMessage && (
+                  <div className={`lp-status-bar ${cronMessage.includes('✓') ? 'success' : 'error'}`} style={{ fontSize: 12.5, padding: '10px 14px' }}>
+                    {cronMessage}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 🐳 Advanced Dockerfile Code Editor Card */}
+            <div className="lp-card glass" style={{ padding: 28, borderLeft: '4px solid var(--accent-primary)' }}>
+              <h3 style={{ fontSize: 16, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🐳 Advanced Dockerfile Editor
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
+                Directly edit your application containerization instructions. Custom Dockerfiles override auto-detected stack templates.
+              </p>
+
+              {dockerfileLoading ? (
+                <div className="flex-center" style={{ padding: '40px 0' }}>
+                  <div className="loading-spinner" style={{ width: 24, height: 24 }} />
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 16 }}>
+                  {/* Editor Box */}
+                  <div style={{
+                    display: 'flex',
+                    background: '#040406',
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    overflow: 'hidden',
+                    fontFamily: 'monospace',
+                    fontSize: 12.5,
+                    lineHeight: 1.6
+                  }}>
+                    {/* Line Numbers Column */}
+                    <div style={{
+                      padding: '16px 12px',
+                      color: 'rgba(255, 255, 255, 0.15)',
+                      textAlign: 'right',
+                      userSelect: 'none',
+                      borderRight: '1px solid rgba(255,255,255,0.03)',
+                      background: 'rgba(0, 0, 0, 0.2)',
+                      whiteSpace: 'pre'
+                    }}>
+                      {dockerfile.split('\n').map((_, i) => i + 1).join('\n')}
+                    </div>
+                    {/* Textarea */}
+                    <textarea
+                      value={dockerfile}
+                      onChange={e => setDockerfile(e.target.value)}
+                      placeholder="# Write your custom Dockerfile here..."
+                      style={{
+                        flex: 1,
+                        background: 'transparent',
+                        color: '#f8fafc',
+                        border: 'none',
+                        outline: 'none',
+                        padding: 16,
+                        fontFamily: 'inherit',
+                        fontSize: 'inherit',
+                        lineHeight: 'inherit',
+                        resize: 'vertical',
+                        minHeight: 280
+                      }}
+                    />
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex-between">
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        className="lp-btn-secondary"
+                        onClick={handleLintDockerfile}
+                        disabled={linting || !dockerfile.trim()}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38 }}
+                      >
+                        {linting ? (
+                          <div className="loading-spinner" style={{ width: 14, height: 14 }} />
+                        ) : '🔍'}
+                        Lint Dockerfile
+                      </button>
+                    </div>
+
+                    <button
+                      className="lp-btn-primary"
+                      onClick={handleSaveDockerfile}
+                      disabled={savingDockerfile}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38, background: 'var(--accent-primary)' }}
+                    >
+                      {savingDockerfile ? (
+                        <div className="loading-spinner" style={{ width: 14, height: 14 }} />
+                      ) : '💾'}
+                      Save & Apply
+                    </button>
+                  </div>
+
+                  {/* Message Alert */}
+                  {dockerfileMessage && (
+                    <div className={`lp-status-bar ${dockerfileMessage.includes('saved') ? 'success' : 'error'}`} style={{ fontSize: 12.5, padding: '10px 14px' }}>
+                      {dockerfileMessage}
+                    </div>
+                  )}
+
+                  {/* Lint Results Widget */}
+                  {lintResults && (
+                    <div className="fade-in" style={{
+                      padding: 20,
+                      background: 'rgba(255,255,255,0.01)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 10,
+                      display: 'grid',
+                      gap: 14
+                    }}>
+                      <div className="flex-between">
+                        <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-main)' }}>📋 Lint Diagnostic Report</span>
+                        <span style={{
+                          fontSize: 13,
+                          fontWeight: 800,
+                          color: lintResults.score >= 80 ? '#10b981' : lintResults.score >= 60 ? '#fbbf24' : '#ef4444'
+                        }}>
+                          Score: {lintResults.score}/100
+                        </span>
+                      </div>
+
+                      {lintResults.recommendations.length === 0 ? (
+                        <div style={{ fontSize: 12.5, color: '#10b981' }}>
+                          ✓ No syntax or performance recommendations. Your Dockerfile is fully optimized!
+                        </div>
+                      ) : (
+                        <div style={{ display: 'grid', gap: 10 }}>
+                          {lintResults.recommendations.map((rec, idx) => {
+                            const badgeColor = rec.type === 'Security' ? '#ef4444' : rec.type === 'Performance' ? '#38bdf8' : '#c084fc';
+                            return (
+                              <div key={idx} style={{
+                                padding: 12,
+                                background: 'rgba(255, 255, 255, 0.01)',
+                                border: '1px solid rgba(255,255,255,0.04)',
+                                borderRadius: 8,
+                                display: 'grid',
+                                gap: 6
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    padding: '2px 8px',
+                                    borderRadius: 100,
+                                    background: badgeColor + '15',
+                                    color: badgeColor,
+                                    border: `1px solid ${badgeColor}30`
+                                  }}>
+                                    {rec.type.toUpperCase()}
+                                  </span>
+                                  <span style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9' }}>{rec.issue}</span>
+                                </div>
+                                <p style={{ margin: 0, fontSize: 11.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>
+                                  <strong style={{ color: 'var(--accent-primary)' }}>Suggested Fix:</strong> {rec.fix}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="lp-card" style={{ padding: 28 }}>
@@ -5369,6 +6105,13 @@ Use bold headers, bullet lists, and code blocks.`;
         {activeTab === 'ai' && (
           <div className="fade-in">
             <AIChat projectId={id} />
+          </div>
+        )}
+
+        {/* ── AI Docs & Flow ── */}
+        {activeTab === 'ai-docs' && (
+          <div className="fade-in">
+            {renderAiDocsTab()}
           </div>
         )}
             </div>{/* /inner-flex */}

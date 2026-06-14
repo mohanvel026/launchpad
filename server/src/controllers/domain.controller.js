@@ -141,7 +141,39 @@ const verifyCustomDomainDNS = async (req, res) => {
 
     // Save status in DB
     const newStatus = verified ? 'dns_verified' : 'pending_dns';
-    await Project.findByIdAndUpdate(project._id, { customDomainStatus: newStatus });
+    
+    if (verified && project.sslStatus !== 'active' && project.sslStatus !== 'pending') {
+      await Project.findByIdAndUpdate(project._id, { 
+        customDomainStatus: newStatus,
+        sslStatus: 'pending'
+      });
+      
+      // Provision SSL in the background to avoid blocking DNS verification API
+      (async () => {
+        try {
+          console.log(`[Auto-SSL] DNS verified. Auto-provisioning SSL for project ${project.name} (${project.customDomain})...`);
+          const success = await provisionSSL(project.subdomain, project.customDomain);
+          if (success) {
+            upgradeToHTTPS(project.subdomain, project.port, project.customDomain);
+            await Project.findByIdAndUpdate(project._id, {
+              sslStatus: 'active',
+              customDomainStatus: 'active',
+              sslIssuedAt: new Date(),
+              sslExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+            });
+            console.log(`[Auto-SSL] SSL successfully auto-provisioned and proxy upgraded to HTTPS for ${project.customDomain}`);
+          } else {
+            await Project.findByIdAndUpdate(project._id, { sslStatus: 'failed' });
+            console.warn(`[Auto-SSL] SSL auto-provisioning failed for ${project.customDomain}`);
+          }
+        } catch (sslBgErr) {
+          await Project.findByIdAndUpdate(project._id, { sslStatus: 'failed' });
+          console.error(`[Auto-SSL] Background SSL error for ${project.customDomain}:`, sslBgErr.message);
+        }
+      })();
+    } else {
+      await Project.findByIdAndUpdate(project._id, { customDomainStatus: newStatus });
+    }
 
     res.json({ verified, resolvedTo, targetCname });
   } catch (err) {

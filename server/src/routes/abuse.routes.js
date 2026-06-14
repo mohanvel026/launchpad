@@ -3,7 +3,7 @@ const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const AbuseReport = require('../models/AbuseReport.model');
 const Project = require('../models/Project.model');
-const { generateAiText } = require('../services/ai.service');
+const { generateAiText, safeParseJson } = require('../services/ai.service');
 const { stopContainer } = require('../services/docker.service');
 const axios = require('axios');
 
@@ -61,7 +61,7 @@ Reply in strict JSON format:
 }`;
 
         const aiResponseStr = await generateAiText(prompt, true);
-        const aiResponse = JSON.parse(aiResponseStr);
+        const aiResponse = safeParseJson(aiResponseStr);
 
         report.aiAnalysis = aiResponse;
 

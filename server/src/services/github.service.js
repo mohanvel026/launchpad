@@ -97,4 +97,58 @@ const createPullRequestComment = async (accessToken, repoFullName, prNumber, com
   }
 };
 
-module.exports = { listUserRepos, createWebhook, deleteWebhook, createPullRequest, createPullRequestComment };
+const refreshAccessToken = async (userId) => {
+  const User = require('../models/User.model');
+  const user = await User.findById(userId).select('+githubAccessToken +githubRefreshToken');
+  if (!user || !user.githubRefreshToken) return null;
+
+  try {
+    const res = await axios.post('https://github.com/login/oauth/access_token', {
+      client_id:     process.env.GITHUB_CLIENT_ID,
+      client_secret: process.env.GITHUB_CLIENT_SECRET,
+      grant_type:    'refresh_token',
+      refresh_token: user.githubRefreshToken
+    }, {
+      headers: { Accept: 'application/json' }
+    });
+
+    if (res.data.access_token) {
+      user.githubAccessToken = res.data.access_token;
+      if (res.data.refresh_token) {
+        user.githubRefreshToken = res.data.refresh_token;
+      }
+      if (res.data.expires_in) {
+        user.githubTokenExpiresAt = new Date(Date.now() + res.data.expires_in * 1000);
+      }
+      await user.save();
+      return user.githubAccessToken;
+    }
+  } catch (err) {
+    console.error('Failed to refresh GitHub access token:', err.response?.data || err.message);
+  }
+  return null;
+};
+
+const ensureValidGithubToken = async (user) => {
+  if (!user) return null;
+  // If the token expires in > 5 mins, return the current token
+  if (user.githubTokenExpiresAt && new Date(user.githubTokenExpiresAt) > new Date(Date.now() + 5 * 60 * 1000)) {
+    return user.githubAccessToken;
+  }
+  // If no expires date or expired, attempt to refresh it
+  if (user.githubRefreshToken) {
+    const refreshedToken = await refreshAccessToken(user._id);
+    if (refreshedToken) return refreshedToken;
+  }
+  return user.githubAccessToken;
+};
+
+module.exports = { 
+  listUserRepos, 
+  createWebhook, 
+  deleteWebhook, 
+  createPullRequest, 
+  createPullRequestComment,
+  refreshAccessToken,
+  ensureValidGithubToken
+};
