@@ -387,6 +387,26 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
     }
   }
 
+  // Network / Registry failures
+  if (/fetch failed|getaddrinfo ENOTFOUND|eai_again|connection timed out|network error/i.test(output)) {
+    return {
+      summary: 'Network/Registry connection failed.',
+      cause: 'Network error: The build environment could not connect to the npm registry or external resources.',
+      fix: 'Verify the internet connection of the host server and the status of npmjs.org. Click "Retry Build" to try again.',
+      commands: ['curl -I https://registry.npmjs.org'],
+    };
+  }
+
+  // Node.js Engine Mismatches
+  if (/unsupported engine|incompatible node version|requires node/i.test(output)) {
+    return {
+      summary: 'Node.js version mismatch.',
+      cause: 'Incompatible Node.js version: The project dependencies require a different version of Node.js than the one running on the server.',
+      fix: 'Update the engine requirements in your package.json, or configure the project node version on the server.',
+      commands: ['node -v', 'npm -v'],
+    };
+  }
+
   // npm / yarn install failures
   if (/npm err!|yarn error|enoent.*package\.json|cannot find module/i.test(output)) {
     return {
@@ -443,6 +463,7 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
       missingEnvVar: missingEnvVar || undefined
     };
   }
+
 
   // Dockerfile syntax / COPY errors
   if (/copy failed|no such file or directory|dockerfile.*error|syntax error/i.test(output)) {

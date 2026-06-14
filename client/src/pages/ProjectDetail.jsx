@@ -77,13 +77,17 @@ const SIDEBAR_GROUPS = [
   }
 ];
 
-function LogLine({ line }) {
-  let cls = '';
-  if (
+const isErrorLine = (line) => {
+  return (
     /❌|🛑|🤖|diagnosis|root\s+cause|quick\s+fix|detected\s+issue|suggested\s+commands|🛠️|💻|\bfix:/i.test(line) ||
     /\b(error|errors|fail|failed|failure|failures|abort|aborted|crash|crashing|exception|invalid|missing|cannot|could\s+not|unable|issue|issues|not\s+found|not\s+exist|does\s+not\s+exist|not\s+a\s+file|exit\s+code\s+[^0])\b/i.test(line) ||
     /^\s*\$/i.test(line)
-  ) {
+  );
+};
+
+function LogLine({ line }) {
+  let cls = '';
+  if (isErrorLine(line)) {
     cls = 'lp-log-error';
   } else if (/⚠️|\b(warn|warning|warnings)\b/i.test(line)) {
     cls = 'lp-log-warn';
@@ -428,6 +432,35 @@ export default function ProjectDetail() {
   const [showDiff, setShowDiff] = useState(false);
   const [quickEnvValue, setQuickEnvValue] = useState('');
   const [quickEnvLoading, setQuickEnvLoading] = useState(false);
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [showErrorsOnly, setShowErrorsOnly] = useState(false);
+
+  const filteredLogsWithIndex = logs
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => {
+      const matchesSearch = logSearchQuery ? line.toLowerCase().includes(logSearchQuery.toLowerCase()) : true;
+      const matchesError = showErrorsOnly ? isErrorLine(line) : true;
+      return matchesSearch && matchesError;
+    });
+
+  const jumpToFirstError = () => {
+    const firstErrorIdx = logs.findIndex(line => isErrorLine(line));
+    if (firstErrorIdx !== -1) {
+      setShowErrorsOnly(false);
+      setLogSearchQuery('');
+      setTimeout(() => {
+        const el = document.getElementById(`log-line-${firstErrorIdx}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+          el.style.transition = 'background-color 0.5s ease';
+          setTimeout(() => {
+            el.style.backgroundColor = '';
+          }, 2000);
+        }
+      }, 100);
+    }
+  };
 
   // SRE Container Limits
   const [cpuLimit, setCpuLimit] = useState(0.5);
@@ -2244,6 +2277,21 @@ Use bold headers, bullet lists, and code blocks.`;
                 )}
 
                 <div style={{ display: 'flex', gap: '12px', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px' }}>
+                  {logs.some(line => isErrorLine(line)) && (
+                    <button
+                      onClick={jumpToFirstError}
+                      className="lp-btn-primary"
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: '13px',
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        color: '#f87171'
+                      }}
+                    >
+                      🚨 Jump to Error
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDeploy(false)}
                     className="lp-btn-primary"
@@ -2375,22 +2423,114 @@ Use bold headers, bullet lists, and code blocks.`;
               />
             )}
             <div className="lp-terminal">
-              <div className="lp-terminal-header" style={{ position: 'relative' }}>
-                <div className="lp-terminal-dots">
-                  <div className="lp-terminal-dot" style={{ background: '#ff5f57' }} />
-                  <div className="lp-terminal-dot" style={{ background: '#ffbd2e' }} />
-                  <div className="lp-terminal-dot" style={{ background: '#28c840' }} />
+              <div className="lp-terminal-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', gap: '12px', minHeight: '44px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div className="lp-terminal-dots">
+                    <div className="lp-terminal-dot" style={{ background: '#ff5f57' }} />
+                    <div className="lp-terminal-dot" style={{ background: '#ffbd2e' }} />
+                    <div className="lp-terminal-dot" style={{ background: '#28c840' }} />
+                  </div>
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-main)' }}>Build Output — {project.name}</span>
                 </div>
-                <span style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>Build Output — {project.name}</span>
-                {deploying && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-primary)', marginLeft: 'auto' }}>
-                  <div className="loading-spinner" style={{ width: 12, height: 12, border: '2px solid rgba(56,189,248,0.2)', borderTopColor: 'var(--accent-primary)' }} />
-                  Live Stream
-                </div>}
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: 'auto', flexWrap: 'wrap' }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span style={{ position: 'absolute', left: '8px', fontSize: '11px', opacity: 0.5 }}>🔍</span>
+                    <input
+                      type="text"
+                      placeholder="Search logs..."
+                      value={logSearchQuery}
+                      onChange={(e) => setLogSearchQuery(e.target.value)}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '6px',
+                        padding: '4px 8px 4px 24px',
+                        fontSize: '11px',
+                        color: '#fff',
+                        width: '130px',
+                        outline: 'none',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onFocus={(e) => { e.target.style.width = '180px'; e.target.style.borderColor = 'rgba(56, 189, 248, 0.4)'; }}
+                      onBlur={(e) => { e.target.style.width = '130px'; e.target.style.borderColor = 'rgba(255, 255, 255, 0.08)'; }}
+                    />
+                    {logSearchQuery && (
+                      <button
+                        onClick={() => setLogSearchQuery('')}
+                        style={{
+                          position: 'absolute',
+                          right: '6px',
+                          background: 'none',
+                          border: 'none',
+                          color: '#94a3b8',
+                          cursor: 'pointer',
+                          fontSize: '10px',
+                          padding: 0
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={showErrorsOnly}
+                      onChange={(e) => setShowErrorsOnly(e.target.checked)}
+                      style={{ cursor: 'pointer', accentColor: '#ef4444' }}
+                    />
+                    <span>Errors Only</span>
+                  </label>
+
+                  <button
+                    onClick={() => {
+                      const text = filteredLogsWithIndex.map(x => x.line).join('\n');
+                      navigator.clipboard.writeText(text);
+                      const btn = document.getElementById('copy-terminal-logs-btn');
+                      if (btn) {
+                        btn.innerText = 'Copied!';
+                        setTimeout(() => { btn.innerText = 'Copy Logs'; }, 2000);
+                      }
+                    }}
+                    id="copy-terminal-logs-btn"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: '6px',
+                      color: 'var(--text-main)',
+                      fontSize: '11px',
+                      padding: '4px 8px',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => { e.target.style.background = 'rgba(255, 255, 255, 0.08)'; }}
+                    onMouseLeave={(e) => { e.target.style.background = 'rgba(255, 255, 255, 0.04)'; }}
+                  >
+                    📋 Copy Logs
+                  </button>
+
+                  {deploying && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent-primary)', fontSize: '11px', fontWeight: 600 }}>
+                      <span className="loading-spinner" style={{ width: 8, height: 8, border: '2px solid rgba(56,189,248,0.2)', borderTopColor: 'var(--accent-primary)' }} />
+                      <span>Live</span>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="lp-terminal-body">
-                {logs.length === 0 ? (
-                  <span style={{ opacity: 0.4 }}>Waiting for build output...</span>
-                ) : logs.map((line, i) => <LogLine key={i} line={line} />)}
+                {filteredLogsWithIndex.length === 0 ? (
+                  <span style={{ opacity: 0.4 }}>No matching logs found.</span>
+                ) : filteredLogsWithIndex.map(({ line, index }) => (
+                  <div key={index} id={`log-line-${index}`} style={{ display: 'block' }}>
+                    <LogLine line={line} />
+                  </div>
+                ))}
                 <div ref={logsEndRef} />
               </div>
             </div>
