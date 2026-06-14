@@ -70,6 +70,28 @@ function startMonitoring(project) {
       const healthScore = result.isHealthy ? 100 : Math.max(10, 100 - (result.anomalies.length * 25));
 
       const existing = monitors.get(String(projectId)) || {};
+      
+      const previousScore = existing.lastScore ?? 100;
+      if (healthScore < 70 && previousScore >= 70) {
+        try {
+          const Notification = require('../models/Notification.model');
+          const { emitNotification } = require('../sockets/logs.socket');
+          const proj = await Project.findById(projectId);
+          if (proj) {
+            const notif = await Notification.create({
+              user: proj.owner,
+              title: `⚠️ Container Health Drop: ${proj.name}`,
+              message: `Container health score dropped to ${healthScore}% due to anomalies detected in logs: ${result.anomalies?.slice(0, 3).join(', ') || 'runtime errors'}.`,
+              type: 'warning',
+              project: proj._id,
+            });
+            emitNotification(proj.owner.toString(), notif);
+          }
+        } catch (notifErr) {
+          console.error('[HealthMonitor] Failed to create drop notification:', notifErr.message);
+        }
+      }
+
       monitors.set(String(projectId), {
         ...existing,
         intervalId,
@@ -97,6 +119,24 @@ function startMonitoring(project) {
           try {
             await restartContainer(containerId);
             console.log(`[HealthMonitor] ✅ Container ${containerId} restarted successfully.`);
+            
+            try {
+              const Notification = require('../models/Notification.model');
+              const { emitNotification } = require('../sockets/logs.socket');
+              const proj = await Project.findById(projectId);
+              if (proj) {
+                const notif = await Notification.create({
+                  user: proj.owner,
+                  title: `🔄 Auto-Restart Initiated: ${proj.name}`,
+                  message: `LaunchLive SRE auto-restarted the container for ${proj.name} due to critical health score (${healthScore}%).`,
+                  type: 'warning',
+                  project: proj._id,
+                });
+                emitNotification(proj.owner.toString(), notif);
+              }
+            } catch (notifErr) {
+              console.error('[HealthMonitor] Failed to create restart notification:', notifErr.message);
+            }
             monitors.set(String(projectId), {
               ...monitors.get(String(projectId)) || {},
               lastRecoveryAt: new Date(),

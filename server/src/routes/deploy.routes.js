@@ -5,7 +5,7 @@ const {
   rollback, githubWebhook,
   cancelDeploy, stopProject, startProject, restartProject, getRecentActivity,
   triggerDeployHook, getDeployHooks, createDeployHook, deleteDeployHook,
-  getWebhooks, createWebhook, deleteWebhook, getProjectBadge
+  getWebhooks, createWebhook, deleteWebhook, getProjectBadge, updateDeploymentNotes
 } = require('../controllers/deploy.controller');
 
 const router = express.Router();
@@ -40,6 +40,9 @@ router.get('/:projectId',                         protect, getDeployments);
 
 // Single deployment detail (includes logs + AI error summary)
 router.get('/:projectId/:deploymentId',           protect, getDeployment);
+
+// Update deployment release notes/comments
+router.put('/:projectId/:deploymentId/notes',     protect, updateDeploymentNotes);
 
 // Roll back to a previous successful deployment
 router.post('/:projectId/rollback/:deploymentId', protect, rollback);

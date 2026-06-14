@@ -107,6 +107,15 @@ const initSocket = (server) => {
       socket.leave(`project:${projectId}`);
     });
 
+    socket.on('join:user', (userId) => {
+      socket.join(`user:${userId}`);
+      console.log(`Socket ${socket.id} joined user:${userId}`);
+    });
+
+    socket.on('leave:user', (userId) => {
+      socket.leave(`user:${userId}`);
+    });
+
     socket.on('disconnect', () => {
       if (socket.runtimeLogProcess) {
         try { socket.runtimeLogProcess.kill(); } catch {}
@@ -151,4 +160,13 @@ const emitProjectUpdate = (projectId, payload) => {
   }
 };
 
-module.exports = { initSocket, getIO, emitLog, emitMetrics, emitProjectUpdate };
+// Emit real-time notification to a specific user
+const emitNotification = (userId, notification) => {
+  try {
+    getIO().to(`user:${userId}`).emit('notification', notification);
+  } catch (err) {
+    console.error('Failed to emit notification:', err.message);
+  }
+};
+
+module.exports = { initSocket, getIO, emitLog, emitMetrics, emitProjectUpdate, emitNotification };

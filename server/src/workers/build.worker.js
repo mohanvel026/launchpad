@@ -1904,6 +1904,38 @@ buildQueue.process(1, async (job) => {
       status: 'success', imageTag, finishedAt, duration,
     });
 
+    try {
+      const Notification = require('../models/Notification.model');
+      const { emitNotification } = require('../sockets/logs.socket');
+      
+      const newNotif = await Notification.create({
+        user: project.owner._id,
+        title: `Deployment Successful: ${project.name}`,
+        message: `Deployment of commit "${deployment.commitMessage || 'Manual Deploy'}" succeeded.`,
+        type: 'success',
+        project: project._id,
+        deployment: deployment._id,
+      });
+
+      emitNotification(project.owner._id.toString(), newNotif);
+
+      if (project.collaborators && project.collaborators.length > 0) {
+        for (const colId of project.collaborators) {
+          const colNotif = await Notification.create({
+            user: colId,
+            title: `Deployment Successful: ${project.name}`,
+            message: `Deployment of commit "${deployment.commitMessage || 'Manual Deploy'}" succeeded.`,
+            type: 'success',
+            project: project._id,
+            deployment: deployment._id,
+          });
+          emitNotification(colId.toString(), colNotif);
+        }
+      }
+    } catch (notifErr) {
+      console.error('Failed to create success notification:', notifErr.message);
+    }
+
     await notifyUpdate(projectId);
 
     await notifyWebhooks(projectId, 'success', {
@@ -2129,6 +2161,38 @@ buildQueue.process(1, async (job) => {
     await Deployment.findByIdAndUpdate(deploymentId, {
       status: 'failed', finishedAt: new Date(),
     });
+
+    try {
+      const Notification = require('../models/Notification.model');
+      const { emitNotification } = require('../sockets/logs.socket');
+      
+      const newNotif = await Notification.create({
+        user: project.owner._id,
+        title: `Deployment Failed: ${project.name}`,
+        message: `Deployment of commit "${deployment.commitMessage || 'Manual Deploy'}" failed.`,
+        type: 'error',
+        project: project._id,
+        deployment: deployment._id,
+      });
+
+      emitNotification(project.owner._id.toString(), newNotif);
+
+      if (project.collaborators && project.collaborators.length > 0) {
+        for (const colId of project.collaborators) {
+          const colNotif = await Notification.create({
+            user: colId,
+            title: `Deployment Failed: ${project.name}`,
+            message: `Deployment of commit "${deployment.commitMessage || 'Manual Deploy'}" failed.`,
+            type: 'error',
+            project: project._id,
+            deployment: deployment._id,
+          });
+          emitNotification(colId.toString(), colNotif);
+        }
+      }
+    } catch (notifErr) {
+      console.error('Failed to create failure notification:', notifErr.message);
+    }
 
     // SRE Zero-Downtime Rollback Check: If the old container is still running, keep the project live!
     let oldContainerRunning = false;

@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import NotificationCenter from '../components/NotificationCenter';
+import CommandPalette from '../components/CommandPalette';
 
 // Advanced LaunchLive Sub-components
 import MetricsChart from '../components/MetricsChart';
@@ -583,6 +585,21 @@ export default function ProjectDetail() {
   const [showDiff, setShowDiff] = useState(false);
   const [quickEnvValue, setQuickEnvValue] = useState('');
   const [quickEnvLoading, setQuickEnvLoading] = useState(false);
+  const [editingNotesDepId, setEditingNotesDepId] = useState(null);
+  const [tempNotes, setTempNotes] = useState('');
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
   const [envScopes, setEnvScopes] = useState(['production', 'preview', 'development']);
   const [deployHooks, setDeployHooks] = useState([]);
   const [newHookName, setNewHookName] = useState('');
@@ -606,6 +623,7 @@ export default function ProjectDetail() {
   const [regions, setRegions] = useState(['us-ashburn-1']);
   const [cronSchedule, setCronSchedule] = useState('');
   const [cronEnabled, setCronEnabled] = useState(false);
+  const [badgeTimestamp] = useState(() => Date.now());
   const [regionsSaving, setRegionsSaving] = useState(false);
   const [cronSaving, setCronSaving] = useState(false);
   const [regionsMessage, setRegionsMessage] = useState('');
@@ -1408,6 +1426,20 @@ Use bold headers, bullet lists, and code blocks.`;
     }
   };
 
+  const handleSaveNotes = async (depId) => {
+    setNotesSaving(true);
+    try {
+      const res = await api.put(`/deploy/${id}/${depId}/notes`, { notes: tempNotes });
+      setDeployments(prev => prev.map(d => d._id === depId ? { ...d, notes: res.data.deployment.notes } : d));
+      setEditingNotesDepId(null);
+      setTempNotes('');
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to save release notes');
+    } finally {
+      setNotesSaving(false);
+    }
+  };
+
   const handleBulkImport = async () => {
     const lines = bulkEnv.split('\n').filter(l => l.includes('=') && !l.trim().startsWith('#'));
     if (lines.length === 0) { setError('No valid KEY=VALUE lines found.'); return; }
@@ -1444,7 +1476,9 @@ Use bold headers, bullet lists, and code blocks.`;
     try {
       await api.delete(`/deploy/${id}/hooks/${hookId}`);
       loadDeployHooks();
-    } catch {}
+    } catch (err) {
+      console.error('Failed to delete deploy hook:', err);
+    }
   };
 
   const handleCreateOutgoingWebhook = async () => {
@@ -1461,7 +1495,9 @@ Use bold headers, bullet lists, and code blocks.`;
     try {
       await api.delete(`/deploy/${id}/webhooks/${webhookId}`);
       loadOutgoingWebhooks();
-    } catch {}
+    } catch (err) {
+      console.error('Failed to delete webhook:', err);
+    }
   };
 
   // ── Container lifecycle controls ──────────────────────────────────────────────
@@ -2438,6 +2474,16 @@ Use bold headers, bullet lists, and code blocks.`;
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
               Dashboard
             </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 8 }}>
+              <button
+                onClick={() => setIsPaletteOpen(true)}
+                className="lp-btn-secondary"
+                style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}
+              >
+                🔍 Search... <kbd style={{ background: 'rgba(255,255,255,0.08)', padding: '2px 4px', borderRadius: 3, fontSize: 10, fontFamily: 'var(--font-mono)' }}>Ctrl+K</kbd>
+              </button>
+              <NotificationCenter user={user} />
+            </div>
             <div className="lp-header-separator" />
             <span className="lp-header-project-name">{project.name}</span>
             <span className={`lp-badge ${deploying ? 'building' : (project.status || 'idle')}`}>
@@ -2883,6 +2929,72 @@ Use bold headers, bullet lists, and code blocks.`;
                             {dur && <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>⏱ {dur}</span>}
                             <span>{new Date(dep.createdAt).toLocaleString()}</span>
                             {dep.triggeredBy?.username && <span style={{ color: 'var(--text-muted)' }}>by @{dep.triggeredBy.username}</span>}
+                          </div>
+
+                          {/* Release Notes section */}
+                          <div style={{ marginTop: 8, fontSize: 13 }}>
+                            {editingNotesDepId === dep._id ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                                <textarea
+                                  value={tempNotes}
+                                  onChange={e => setTempNotes(e.target.value)}
+                                  placeholder="Add release notes, updates, or comment for this deployment..."
+                                  style={{
+                                    width: '100%',
+                                    minHeight: 60,
+                                    background: 'rgba(255,255,255,0.02)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: 6,
+                                    padding: '8px 10px',
+                                    color: 'var(--text-main)',
+                                    fontSize: 12.5,
+                                    fontFamily: 'var(--font-sans)',
+                                    resize: 'vertical'
+                                  }}
+                                />
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  <button
+                                    onClick={() => handleSaveNotes(dep._id)}
+                                    disabled={notesSaving}
+                                    className="lp-btn-primary"
+                                    style={{ padding: '4px 10px', fontSize: 11, height: 26 }}
+                                  >
+                                    {notesSaving ? 'Saving...' : 'Save Notes'}
+                                  </button>
+                                  <button
+                                    onClick={() => { setEditingNotesDepId(null); setTempNotes(''); }}
+                                    className="lp-btn-secondary"
+                                    style={{ padding: '4px 10px', fontSize: 11, height: 26 }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minHeight: 22 }}>
+                                {dep.notes ? (
+                                  <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', background: 'rgba(255,255,255,0.02)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                    📝 {dep.notes}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--text-dim)', fontSize: 11.5 }}>No notes added.</span>
+                                )}
+                                <button
+                                  onClick={() => { setEditingNotesDepId(dep._id); setTempNotes(dep.notes || ''); }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--accent-primary)',
+                                    fontSize: 11.5,
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    textDecoration: 'underline'
+                                  }}
+                                >
+                                  {dep.notes ? 'Edit Notes' : 'Add Notes'}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -4031,7 +4143,7 @@ Use bold headers, bullet lists, and code blocks.`;
                   <div className="lp-section-label" style={{ marginBottom: 8 }}>LIVE BADGE PREVIEW</div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
                     <img 
-                      src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/deploy/projects/${id}/badge?t=${Date.now()}`}
+                      src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/deploy/projects/${id}/badge?t=${badgeTimestamp}`}
                       alt="Deployment Status" 
                       style={{ maxHeight: 20 }}
                       onError={(e) => {
@@ -4109,7 +4221,7 @@ Use bold headers, bullet lists, and code blocks.`;
                           <input 
                             type="checkbox"
                             checked={isSelected}
-                            disabled={regionOption.key === 'us-ashburn-1'} // Primary region is required
+                            disabled={regionsSaving || regionOption.key === 'us-ashburn-1'} // Primary region is required
                             onChange={() => {
                               let nextRegions;
                               if (isSelected) {
@@ -6362,6 +6474,12 @@ Use bold headers, bullet lists, and code blocks.`;
         </div>{/* /lp-detail-layout */}
       </div>{/* /lp-page */}
       </main>
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setIsPaletteOpen(false)}
+        currentProjectId={id}
+        currentProjectDeployments={deployments}
+      />
     </div>
   );
 }

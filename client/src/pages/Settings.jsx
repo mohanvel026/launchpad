@@ -2,10 +2,24 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import NotificationCenter from '../components/NotificationCenter';
+import CommandPalette from '../components/CommandPalette';
 
 export default function Settings() {
   const navigate         = useNavigate();
   const { user, logout } = useAuth();
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const [stats,       setStats]       = useState(null);
   const [token,       setToken]       = useState('');
@@ -157,6 +171,14 @@ export default function Settings() {
             LaunchLive
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={() => setIsPaletteOpen(true)}
+              className="lp-btn-secondary"
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}
+            >
+              🔍 Search... <kbd style={{ background: 'rgba(255,255,255,0.08)', padding: '2px 4px', borderRadius: 3, fontSize: 10, fontFamily: 'var(--font-mono)' }}>Ctrl+K</kbd>
+            </button>
+            {user && <NotificationCenter user={user} />}
             {user?.avatarUrl && <img src={user.avatarUrl} alt={user.username} style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid var(--border-strong)' }} />}
             <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>{user?.username}</span>
           </div>
@@ -477,6 +499,10 @@ export default function Settings() {
 
         </div>{/* /inner-wrapper */}
       </main>
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setIsPaletteOpen(false)}
+      />
     </div>
   );
 }

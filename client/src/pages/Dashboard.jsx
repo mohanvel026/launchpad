@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
+import NotificationCenter from '../components/NotificationCenter';
+import CommandPalette from '../components/CommandPalette';
 
 const NAV_TABS = ['Projects', 'Deployments', 'Domains', 'Activity', 'Settings'];
 
@@ -15,6 +17,18 @@ export default function Dashboard() {
   const { user, loading, logout } = useAuth();
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
   const [activeTab, setActiveTab] = useState('Projects');
   const [search, setSearch] = useState('');
   const [recentActivity, setRecentActivity] = useState([]);
@@ -105,6 +119,14 @@ export default function Dashboard() {
             LaunchLive
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={() => setIsPaletteOpen(true)}
+              className="lp-btn-secondary"
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}
+            >
+              🔍 Search... <kbd style={{ background: 'rgba(255,255,255,0.08)', padding: '2px 4px', borderRadius: 3, fontSize: 10, fontFamily: 'var(--font-mono)' }}>Ctrl+K</kbd>
+            </button>
+            <NotificationCenter user={user} />
             <img src={user.avatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--border-strong)' }} />
             <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-muted)' }}>{user.username}</span>
             <button className="lp-btn-secondary" style={{ padding: '6px 16px', fontSize: 13 }} onClick={logout}>Sign Out</button>
@@ -596,6 +618,10 @@ export default function Dashboard() {
         )}
         </div>{/* /lp-page */}
       </main>
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setIsPaletteOpen(false)}
+      />
     </div>
   );
 }

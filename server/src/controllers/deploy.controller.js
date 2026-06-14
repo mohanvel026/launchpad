@@ -569,9 +569,30 @@ const getProjectBadge = async (req, res) => {
   }
 };
 
+const updateDeploymentNotes = async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.projectId,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const deployment = await Deployment.findOneAndUpdate(
+      { _id: req.params.deploymentId, project: project._id },
+      { notes: req.body.notes || '' },
+      { returnDocument: 'after' }
+    );
+    if (!deployment) return res.status(404).json({ message: 'Deployment not found' });
+
+    res.json({ deployment });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   githubWebhook, triggerDeploy, getDeployments, getDeployment, rollback,
   cancelDeploy, stopProject, startProject, restartProject, getRecentActivity,
   triggerDeployHook, getDeployHooks, createDeployHook, deleteDeployHook,
-  getWebhooks, createWebhook, deleteWebhook, getProjectBadge
+  getWebhooks, createWebhook, deleteWebhook, getProjectBadge, updateDeploymentNotes
 };

@@ -21,6 +21,7 @@ const vulnRoutes      = require('./routes/vuln.routes');
 const healthRoutes    = require('./routes/health.routes');
 const previewRoutes   = require('./routes/preview.routes');
 const abuseRoutes     = require('./routes/abuse.routes');
+const notificationRoutes = require('./routes/notification.routes');
 
 // ── Project Proxy ──────────────────────────────────────────────────────────────
 const { projectProxyMiddleware } = require('./middleware/projectProxy.middleware');
@@ -184,6 +185,7 @@ app.use('/api/vuln',      vulnRoutes);
 app.use('/api/health',   healthRoutes);
 app.use('/api/previews', previewRoutes);
 app.use('/api/abuse',    abuseRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
 

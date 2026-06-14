@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
+import { useAuth } from '../hooks/useAuth';
+import NotificationCenter from '../components/NotificationCenter';
+import CommandPalette from '../components/CommandPalette';
 
 const STACK_META = {
   react:           { icon: '⚛️',  label: 'React / Vite',       color: '#61dafb' },
@@ -100,6 +103,19 @@ const requiresUserInput = (key) => {
 export default function NewProject() {
   const navigate = useNavigate();
   const domain = import.meta.env.VITE_DOMAIN || 'launchlive.in';
+  const { user } = useAuth();
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Repo list
   const [repos,        setRepos]        = useState([]);
@@ -115,7 +131,6 @@ export default function NewProject() {
   // Editable (override) fields
   const [branch,    setBranch]    = useState('main');
   const [envVars,   setEnvVars]   = useState([]);   // [{key, value, fromExample}]
-  const [showAll,   setShowAll]   = useState(false); // show all env fields vs just missing
   const [revealed,  setRevealed]  = useState({});
   const [scanStep,  setScanStep]  = useState(0);
   const [scanDetails, setScanDetails] = useState({
@@ -187,7 +202,7 @@ export default function NewProject() {
     let apiError = null;
 
     // Trigger API call in parallel
-    const apiPromise = api.post('/projects/repos/analyze', { repoFullName: repo.fullName })
+    api.post('/projects/repos/analyze', { repoFullName: repo.fullName })
       .then(res => {
         apiData = res.data;
         return res.data;
@@ -361,7 +376,16 @@ export default function NewProject() {
               );
             })}
           </div>
-          <div style={{ width: 80 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={() => setIsPaletteOpen(true)}
+              className="lp-btn-secondary"
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}
+            >
+              🔍 <kbd style={{ background: 'rgba(255,255,255,0.08)', padding: '2px 4px', borderRadius: 3, fontSize: 10, fontFamily: 'var(--font-mono)' }}>Ctrl+K</kbd>
+            </button>
+            {user && <NotificationCenter user={user} />}
+          </div>
         </div>
       </header>
 
@@ -880,6 +904,11 @@ export default function NewProject() {
 
         </div>{/* /inner-wrapper */}
       </main>
+
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setIsPaletteOpen(false)}
+      />
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
