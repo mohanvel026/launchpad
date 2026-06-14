@@ -2195,13 +2195,13 @@ Use bold headers, bullet lists, and code blocks.`;
       {/* Header */}
       <header className="lp-header">
         <div className="lp-header-inner">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div className="lp-header-left">
             <button className="lp-btn-secondary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => navigate('/dashboard')}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
               Dashboard
             </button>
-            <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-            <span style={{ fontWeight: 700, fontSize: 15 }}>{project.name}</span>
+            <div className="lp-header-separator" />
+            <span className="lp-header-project-name">{project.name}</span>
             <span className={`lp-badge ${deploying ? 'building' : (project.status || 'idle')}`}>
               {deploying ? 'building' : (project.status || 'idle')}
             </span>
@@ -2210,12 +2210,10 @@ Use bold headers, bullet lists, and code blocks.`;
               <button
                 onClick={handleSyncStatus}
                 title="Repair project status from deployment history"
+                className="lp-header-pill-btn"
                 style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
                   background: 'rgba(52,211,153,0.1)', color: '#34d399',
                   border: '1px solid rgba(52,211,153,0.25)',
-                  cursor: 'pointer',
                 }}
               >
                 🔧 Fix Status
@@ -2223,32 +2221,36 @@ Use bold headers, bullet lists, and code blocks.`;
             )}
             {/* Health Score Pill */}
             {project.lastHealthScore !== undefined && (
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-                background: project.lastHealthScore >= 80 ? 'rgba(52,211,153,0.15)' : project.lastHealthScore >= 50 ? 'rgba(251,191,36,0.15)' : 'rgba(248,113,113,0.15)',
-                color: project.lastHealthScore >= 80 ? '#34d399' : project.lastHealthScore >= 50 ? '#fbbf24' : '#f87171',
-                border: `1px solid ${project.lastHealthScore >= 80 ? 'rgba(52,211,153,0.3)' : project.lastHealthScore >= 50 ? 'rgba(251,191,36,0.3)' : 'rgba(248,113,113,0.3)'}`,
-                cursor: 'pointer',
-              }} onClick={() => { setActiveTab('runtime-logs'); handleLoadHealth(); }} title="Click to view health status">
+              <span 
+                className="lp-header-pill"
+                style={{
+                  background: project.lastHealthScore >= 80 ? 'rgba(52,211,153,0.15)' : project.lastHealthScore >= 50 ? 'rgba(251,191,36,0.15)' : 'rgba(248,113,113,0.15)',
+                  color: project.lastHealthScore >= 80 ? '#34d399' : project.lastHealthScore >= 50 ? '#fbbf24' : '#f87171',
+                  border: `1px solid ${project.lastHealthScore >= 80 ? 'rgba(52,211,153,0.3)' : project.lastHealthScore >= 50 ? 'rgba(251,191,36,0.3)' : 'rgba(248,113,113,0.3)'}`,
+                }} 
+                onClick={() => { setActiveTab('runtime-logs'); handleLoadHealth(); }} 
+                title="Click to view health status"
+              >
                 {project.lastHealthScore >= 80 ? '🟢' : project.lastHealthScore >= 50 ? '🟡' : '🔴'}
                 Health {project.lastHealthScore}%
               </span>
             )}
             {/* Vuln Summary Pill */}
             {project.vulnSummary && (project.vulnSummary.critical > 0 || project.vulnSummary.high > 0) && (
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-                background: 'rgba(248,113,113,0.15)', color: '#f87171',
-                border: '1px solid rgba(248,113,113,0.3)',
-                cursor: 'pointer',
-              }} onClick={() => setActiveTab('security')} title="Click to view vulnerabilities">
+              <span 
+                className="lp-header-pill"
+                style={{
+                  background: 'rgba(248,113,113,0.15)', color: '#f87171',
+                  border: '1px solid rgba(248,113,113,0.3)',
+                }} 
+                onClick={() => setActiveTab('security')} 
+                title="Click to view vulnerabilities"
+              >
                 ⚠️ {project.vulnSummary.critical} Critical · {project.vulnSummary.high} High CVEs
               </span>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div className="lp-header-right">
             {branches.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 12, color: 'var(--text-dim)', fontWeight: 600 }}>SWITCH BRANCH:</span>

@@ -113,6 +113,61 @@ a { color: inherit; text-decoration: none; }
   padding-right: 24px;
 }
 
+.lp-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.lp-header-right {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.lp-header-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+
+.lp-header-project-name {
+  font-weight: 700;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+}
+
+.lp-header-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lp-header-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.lp-header-pill-btn:hover {
+  background: rgba(52, 211, 153, 0.2) !important;
+}
+
 .lp-project-info-bar {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
@@ -746,15 +801,55 @@ textarea.lp-input {
     padding-left: 16px;
     padding-right: 16px;
   }
-  .lp-header-inner > div {
+  .lp-header-left {
     flex-wrap: wrap;
     justify-content: center;
+    gap: 8px;
+    width: 100%;
+  }
+  .lp-header-right {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 4px;
+  }
+  .lp-header-separator {
+    display: none;
+  }
+  .lp-header-project-name {
+    font-size: 14px;
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+  }
+  .lp-header-pill {
+    font-size: 11px;
+    padding: 2.5px 8px;
   }
   .lp-project-info-inner {
     padding-left: 16px;
     padding-right: 16px;
-    gap: 16px;
+    gap: 8px 16px;
     justify-content: center;
+    flex-wrap: wrap;
+  }
+  .lp-project-info-inner span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lp-info-bar-link {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
   }
   .lp-detail-layout {
     flex-direction: column;
