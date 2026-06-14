@@ -20,14 +20,29 @@ const verifyAccess = async (projectId, userId) => {
   });
 };
 
-// GET /api/env/:projectId — return keys only (values masked with ***)
+// GET /api/env/:projectId — return keys only (values masked with ***, plus placeholder check)
 const getEnvVars = async (req, res) => {
   try {
     const project = await verifyAccess(req.params.projectId, req.user._id);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const envVars = await EnvVar.find({ project: project._id }).select('-value');
-    res.json({ envVars });
+    const envVars = await EnvVar.find({ project: project._id });
+    const formatted = envVars.map(e => {
+      let hasPlaceholder = false;
+      try {
+        const val = decrypt(e.value) || '';
+        hasPlaceholder = val.includes('placeholder') || val.includes('your_') || val.includes('${') || val.includes('{{') || val.trim() === '';
+      } catch (err) {}
+      
+      return {
+        _id: e._id,
+        key: e.key,
+        isSecret: e.isSecret,
+        hasPlaceholder
+      };
+    });
+
+    res.json({ envVars: formatted });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -11,6 +11,35 @@ import DomainManager from '../components/DomainManager';
 import TeamManager from '../components/TeamManager';
 import AIChat from '../components/AIChat';
 
+const requiresUserInput = (key) => {
+  if (!key) return false;
+  const u = key.toUpperCase();
+  
+  if (['DATABASE_URL', 'DATABASE_URI', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT'].includes(u)) {
+    return false;
+  }
+  
+  if (u.startsWith('GEMINI_API_KEY') || u.startsWith('GROQ_API_KEY')) {
+    return false;
+  }
+  
+  if (['VITE_API_URL', 'REACT_APP_API_URL', 'NEXT_PUBLIC_API_URL'].includes(u)) {
+    return false;
+  }
+  
+  if (u === 'JWT_SECRET' || u === 'JWT_TOKEN' || u === 'SESSION_SECRET' || u === 'COOKIE_SECRET' || 
+      u === 'APP_SECRET' || u === 'ENCRYPTION_KEY' || u === 'TOKEN_SECRET' || u === 'APP_KEY' || 
+      u.endsWith('_SALT')) {
+    return false;
+  }
+  
+  if (['PORT', 'NODE_ENV', 'HOST', 'HOSTNAME'].includes(u)) {
+    return false;
+  }
+  
+  return true;
+};
+
 const SIDEBAR_GROUPS = [
   {
     title: 'Development',
@@ -343,6 +372,7 @@ export default function ProjectDetail() {
 
   // Env vars
   const [envVars,  setEnvVars]  = useState([]);
+  const [envChanged, setEnvChanged] = useState(false);
   const [envKey,   setEnvKey]   = useState('');
   const [envValue, setEnvValue] = useState('');
   const [showBulk, setShowBulk] = useState(false);
@@ -930,6 +960,15 @@ Use bold headers, bullet lists, and code blocks.`;
 
 
   const handleDeploy = async (forceRebuild = false) => {
+    // Client-side block for required missing env variables
+    const missing = envVars.filter(e => e.hasPlaceholder && requiresUserInput(e.key));
+    if (missing.length > 0) {
+      const keys = missing.map(e => e.key).join(', ');
+      setError(`Deployment Blocked: Please configure the required environment variables first: ${keys}`);
+      setActiveTab('env');
+      return;
+    }
+
     setDeploying(true); setError(''); setActiveTab('logs'); setLogs([]);
     setActiveDeployment(null);
     setShowDiff(false);
@@ -996,6 +1035,7 @@ Use bold headers, bullet lists, and code blocks.`;
     try {
       await api.post(`/env/${id}`, { key: envKey.trim(), value: envValue.trim() });
       setEnvKey(''); setEnvValue('');
+      setEnvChanged(true);
       loadEnvVars();
     } catch (err) { setError(err.response?.data?.message || 'Failed to add variable'); }
   };
@@ -1013,6 +1053,7 @@ Use bold headers, bullet lists, and code blocks.`;
       const res = await api.post(`/env/${id}/bulk`, { vars });
       setSaveStatus(`✅ Imported ${res.data.created} new, updated ${res.data.updated} variables`);
       setTimeout(() => setSaveStatus(''), 4000);
+      setEnvChanged(true);
       setBulkEnv(''); setShowBulk(false); loadEnvVars();
     } catch (err) {
       setError(err.response?.data?.message || 'Bulk import failed. Check your format.');
@@ -1102,6 +1143,7 @@ Use bold headers, bullet lists, and code blocks.`;
     if (!window.confirm(`Delete ${key}?`)) return;
     await api.delete(`/env/${id}/${key}`);
     setEnvVars(prev => prev.filter(e => e.key !== key));
+    setEnvChanged(true);
   };
 
   const handleShowClick = async (key, envId) => {
@@ -1318,6 +1360,7 @@ Use bold headers, bullet lists, and code blocks.`;
     try {
       await api.post(`/env/${id}`, { key, value });
       setMissingVars(prev => prev.filter(v => v !== key));
+      setEnvChanged(true);
       loadEnvVars();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to add environment variable');
@@ -1570,6 +1613,25 @@ Use bold headers, bullet lists, and code blocks.`;
                     <option key={b} value={b}>{b}</option>
                   ))}
                 </select>
+              </div>
+            )}
+            {envVars.some(e => e.hasPlaceholder && requiresUserInput(e.key)) && (
+              <div 
+                style={{ 
+                  color: '#fca5a5', 
+                  fontSize: 12, 
+                  background: 'rgba(239, 68, 68, 0.15)', 
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  padding: '5px 10px',
+                  borderRadius: 6,
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginRight: 8
+                }}
+              >
+                ⚠️ Missing Required Envs
               </div>
             )}
             {deployUrl && (
@@ -2082,6 +2144,20 @@ Use bold headers, bullet lists, and code blocks.`;
         {/* ── Environment Variables ── */}
         {activeTab === 'env' && (
           <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {envChanged && (
+              <div className="glass fade-in" style={{ padding: '16px 20px', borderRadius: 12, border: '1px solid rgba(56,189,248,0.35)', background: 'rgba(56,189,248,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                <span style={{ fontSize: 13, color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>💡</span> Environment variables have changed. Redeploy your project to apply the new values to the live container.
+                </span>
+                <button 
+                  onClick={() => { handleDeploy(false); setEnvChanged(false); }}
+                  className="lp-btn-primary"
+                  style={{ padding: '6px 16px', fontSize: 12, fontWeight: 700 }}
+                >
+                  🚀 Redeploy Now
+                </button>
+              </div>
+            )}
             <div className="lp-card" style={{ padding: 24 }}>
               <div className="flex-between" style={{ marginBottom: 20 }}>
                 <div>
@@ -2100,6 +2176,14 @@ Use bold headers, bullet lists, and code blocks.`;
                   </button>
                 </div>
               </div>
+
+              {envVars.some(e => e.hasPlaceholder && requiresUserInput(e.key)) && (
+                <div className="glass fade-in" style={{ padding: '16px 20px', borderRadius: 12, border: '1px solid rgba(239, 68, 68, 0.35)', background: 'rgba(239, 68, 68, 0.03)', marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>⚠️</span> DEPLOYMENT BLOCKED: Please configure the required environment variables marked below to resume deployment.
+                  </div>
+                </div>
+              )}
 
               {/* Security Warnings */}
               {envWarnings && envWarnings.length > 0 && (
@@ -2174,7 +2258,7 @@ Use bold headers, bullet lists, and code blocks.`;
               {!showBulk && (
                 <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
                   <input value={envKey} onChange={e => setEnvKey(e.target.value.toUpperCase())} placeholder="VARIABLE_NAME" className="lp-input lp-input-mono" style={{ flex: 1 }} />
-                  <input value={envValue} onChange={e => setEnvValue(e.target.value)} placeholder="value" type="password" className="lp-input" style={{ flex: 2 }} />
+                  <input value={envValue} onChange={e => setEnvValue(e.target.value)} placeholder="value" type={envKey.includes('SECRET') || envKey.includes('KEY') || envKey.includes('PASSWORD') || envKey.includes('TOKEN') ? 'password' : 'text'} className="lp-input" style={{ flex: 2 }} />
                   <button className="lp-btn-primary" onClick={handleAddEnv} style={{ flexShrink: 0 }}>Add</button>
                 </div>
               )}
@@ -2205,7 +2289,22 @@ Use bold headers, bullet lists, and code blocks.`;
                   <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dim)', fontSize: 13 }}>No environment variables set</div>
                 ) : envVars.map(e => (
                   <div key={e._id} className="lp-env-row">
-                    <span className="mono" style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: 13, flex: 1 }}>{e.key}</span>
+                    <span className="mono" style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: 13, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {e.key}
+                      {e.hasPlaceholder && (
+                        <span style={{
+                          fontSize: 10,
+                          background: requiresUserInput(e.key) ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                          border: requiresUserInput(e.key) ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)',
+                          color: requiresUserInput(e.key) ? '#fca5a5' : '#fde047',
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          fontWeight: 600
+                        }}>
+                          {requiresUserInput(e.key) ? '⚠️ Required — Missing Value' : '⚠️ Placeholder / Provisioning'}
+                        </span>
+                      )}
+                    </span>
                     <span style={{ flex: 2, fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-dim)', letterSpacing: showVal[e._id] ? 0 : 4 }}>
                       {showVal[e._id] ? (decryptedVals[e._id] || '') : '••••••••••••'}
                     </span>

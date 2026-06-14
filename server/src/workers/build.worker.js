@@ -92,6 +92,34 @@ const pushAuditStep = async (deploymentId, step, status, details) => {
   }
 };
 
+const requiresUserInput = (key) => {
+  const u = key.toUpperCase();
+  
+  if (['DATABASE_URL', 'DATABASE_URI', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT'].includes(u)) {
+    return false;
+  }
+  
+  if (u.startsWith('GEMINI_API_KEY') || u.startsWith('GROQ_API_KEY')) {
+    return false;
+  }
+  
+  if (['VITE_API_URL', 'REACT_APP_API_URL', 'NEXT_PUBLIC_API_URL'].includes(u)) {
+    return false;
+  }
+  
+  if (u === 'JWT_SECRET' || u === 'JWT_TOKEN' || u === 'SESSION_SECRET' || u === 'COOKIE_SECRET' || 
+      u === 'APP_SECRET' || u === 'ENCRYPTION_KEY' || u === 'TOKEN_SECRET' || u === 'APP_KEY' || 
+      u.endsWith('_SALT')) {
+    return false;
+  }
+  
+  if (['PORT', 'NODE_ENV', 'HOST', 'HOSTNAME'].includes(u)) {
+    return false;
+  }
+  
+  return true;
+};
+
 const detectDatabaseType = (repoDir) => {
   // 1. Search for schema.prisma recursively or in common directories
   const prismaPaths = [
@@ -808,13 +836,18 @@ buildQueue.process(1, async (job) => {
           continue;
         }
       } else {
-        defaultValue = generateSuggestedValue(key);
-        if (!defaultValue) {
-          if (upperKey.includes('SECRET') || upperKey.includes('TOKEN') || upperKey.includes('KEY') || upperKey.includes('PASSWORD') || upperKey.includes('AUTH_SALT')) {
-            defaultValue = crypto.randomBytes(32).toString('hex');
-          } else {
-            defaultValue = `your_${key.toLowerCase()}_placeholder`;
-            isSecret = false;
+        if (requiresUserInput(key)) {
+          defaultValue = `your_${key.toLowerCase()}_placeholder`;
+          isSecret = false;
+        } else {
+          defaultValue = generateSuggestedValue(key);
+          if (!defaultValue) {
+            if (upperKey.includes('SECRET') || upperKey.includes('TOKEN') || upperKey.includes('KEY') || upperKey.includes('PASSWORD') || upperKey.includes('AUTH_SALT')) {
+              defaultValue = crypto.randomBytes(32).toString('hex');
+            } else {
+              defaultValue = `your_${key.toLowerCase()}_placeholder`;
+              isSecret = false;
+            }
           }
         }
       }
@@ -837,6 +870,8 @@ buildQueue.process(1, async (job) => {
 
     const runtimeEnv = { NODE_ENV: 'production' };
     const decryptErrors = [];
+    const blockingKeys = [];
+
     for (const e of rawEnvs) {
       try {
         let val = decryptValue(e.value);
@@ -891,6 +926,8 @@ buildQueue.process(1, async (job) => {
           } catch (dbErr) {
             await log(`   ❌ [Auto-Provision] Database provisioning failed: ${dbErr.message}`);
           }
+        } else if (isPlaceholder && requiresUserInput(e.key)) {
+          blockingKeys.push(e.key);
         }
         
         runtimeEnv[e.key] = val;
@@ -901,6 +938,13 @@ buildQueue.process(1, async (job) => {
     }
     if (decryptErrors.length > 0) {
       await log(`⚠️  [ENV] Failed to decrypt ${decryptErrors.length} variable(s): ${decryptErrors.join(', ')} — check ENCRYPTION_KEY.`);
+    }
+
+    if (blockingKeys.length > 0) {
+      const uniqueBlocking = Array.from(new Set(blockingKeys));
+      await log(`🛑 [DEPLOYMENT BLOCKED]: Missing required environment variables:\n` + uniqueBlocking.map(k => `   ↳ ⚠️ ${k} (requires your value)`).join('\n'));
+      await log(`💡 SRE Suggestion: Go to your project dashboard's settings, open the "Environment" tab, fill in the real values for these variables, and click Redeploy.`);
+      throw new Error(`Deployment blocked: Missing required environment variables: ${uniqueBlocking.join(', ')}`);
     }
 
     const envVarsList = rawEnvs.map(e => {
@@ -1639,7 +1683,7 @@ buildQueue.process(1, async (job) => {
     }
 
     // AI Auto-Healing Section
-    if (project.autoHeal && !deployment.isAutoHeal) {
+    if (project.autoHeal && !deployment.isAutoHeal && !err.message.includes('Deployment blocked')) {
       try {
         await log(`\n🤖 LaunchLive AI Auto-Healing is analyzing repository for a fix...`);
         await pushAuditStep(deploymentId, 'Analyzing logs', 'info', 'Parsing error logs to identify relevant files...');

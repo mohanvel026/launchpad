@@ -25,6 +25,35 @@ const PHASES = [
   { id: 'deploying',label: 'Deploying'        },
 ];
 
+const requiresUserInput = (key) => {
+  if (!key) return false;
+  const u = key.toUpperCase();
+  
+  if (['DATABASE_URL', 'DATABASE_URI', 'MONGODB_URI', 'MONGO_URI', 'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT'].includes(u)) {
+    return false;
+  }
+  
+  if (u.startsWith('GEMINI_API_KEY') || u.startsWith('GROQ_API_KEY')) {
+    return false;
+  }
+  
+  if (['VITE_API_URL', 'REACT_APP_API_URL', 'NEXT_PUBLIC_API_URL'].includes(u)) {
+    return false;
+  }
+  
+  if (u === 'JWT_SECRET' || u === 'JWT_TOKEN' || u === 'SESSION_SECRET' || u === 'COOKIE_SECRET' || 
+      u === 'APP_SECRET' || u === 'ENCRYPTION_KEY' || u === 'TOKEN_SECRET' || u === 'APP_KEY' || 
+      u.endsWith('_SALT')) {
+    return false;
+  }
+  
+  if (['PORT', 'NODE_ENV', 'HOST', 'HOSTNAME'].includes(u)) {
+    return false;
+  }
+  
+  return true;
+};
+
 export default function NewProject() {
   const navigate = useNavigate();
   const domain = import.meta.env.VITE_DOMAIN || 'launchlive.in';
@@ -106,12 +135,17 @@ export default function NewProject() {
 
       // Pre-populate env vars from .env.example
       if (data.envExampleVars?.length > 0) {
-        setEnvVars(data.envExampleVars.map(v => ({
-          key: v.key,
-          value: v.placeholder || '',
-          fromExample: true,
-          filled: !!v.placeholder,
-        })));
+        setEnvVars(data.envExampleVars.map(v => {
+          const lowerVal = (v.placeholder || '').toLowerCase();
+          const isPlaceholder = lowerVal.includes('placeholder') || lowerVal.includes('your_') || lowerVal.includes('<your') || lowerVal.includes('insert_here') || lowerVal.includes('localhost') || lowerVal.includes('127.0.0.1') || lowerVal.trim() === '';
+          
+          return {
+            key: v.key,
+            value: isPlaceholder ? '' : v.placeholder,
+            placeholder: v.placeholder || '',
+            fromExample: true
+          };
+        }));
       } else {
         setEnvVars([]);
       }
@@ -130,7 +164,14 @@ export default function NewProject() {
   const addEnvRow   = () => setEnvVars(v => [...v, { key: '', value: '', fromExample: false }]);
   const removeEnvRow= (i) => setEnvVars(v => v.filter((_, idx) => idx !== i));
 
-  const missingCount = envVars.filter(e => e.fromExample && !e.value.trim()).length;
+  const missingCount = envVars.filter(e => {
+    if (requiresUserInput(e.key)) {
+      const val = e.value || '';
+      const isPlaceholder = val.includes('placeholder') || val.includes('your_') || val.includes('${') || val.includes('{{') || val.trim() === '';
+      return isPlaceholder;
+    }
+    return false;
+  }).length;
 
   // ── Deploy ─────────────────────────────────────────────────────────────────
   const handleDeploy = async () => {
@@ -477,12 +518,13 @@ export default function NewProject() {
                         <input
                           value={env.value}
                           onChange={e => updateEnv(i, 'value', e.target.value)}
-                          placeholder={env.fromExample ? 'Required — enter value' : 'value'}
+                          placeholder={env.placeholder || (env.fromExample ? 'Required — enter value' : 'value')}
                           type={env.key?.includes('SECRET') || env.key?.includes('KEY') || env.key?.includes('PASSWORD') ? 'password' : 'text'}
                           className="lp-input"
                           style={{
                             fontSize: 12,
-                            borderColor: env.fromExample && !env.value.trim() ? 'rgba(251,191,36,0.5)' : undefined,
+                            borderColor: requiresUserInput(env.key) && (!env.value.trim() || env.value.includes('placeholder') || env.value.includes('your_')) ? 'rgba(239, 68, 68, 0.45)' : undefined,
+                            boxShadow: requiresUserInput(env.key) && (!env.value.trim() || env.value.includes('placeholder') || env.value.includes('your_')) ? '0 0 4px rgba(239, 68, 68, 0.15)' : undefined
                           }}
                         />
                         <button onClick={() => removeEnvRow(i)} style={{
@@ -504,15 +546,32 @@ export default function NewProject() {
             </div>
 
             {/* Deploy Button */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
+              {missingCount > 0 && (
+                <div style={{ color: '#fca5a5', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                  ⚠️ {missingCount} required variable{missingCount !== 1 ? 's' : ''} need value{missingCount !== 1 ? 's' : ''}
+                </div>
+              )}
               <button
                 className={`lp-btn-primary ${deploying ? 'animate-pulse-cyan' : ''}`}
                 onClick={handleDeploy}
-                disabled={deploying || !selected || subdomainAvailable === false || checkingSubdomain || !projectName.trim()}
-                style={{ minWidth: 220, justifyContent: 'center', fontSize: 15, padding: '12px 28px' }}
+                disabled={deploying || !selected || subdomainAvailable === false || checkingSubdomain || !projectName.trim() || missingCount > 0}
+                style={{
+                  minWidth: 220,
+                  justifyContent: 'center',
+                  fontSize: 15,
+                  padding: '12px 28px',
+                  background: missingCount > 0 ? 'rgba(239, 68, 68, 0.2)' : undefined,
+                  border: missingCount > 0 ? '1px solid rgba(239, 68, 68, 0.4)' : undefined,
+                  color: missingCount > 0 ? '#fca5a5' : undefined,
+                  boxShadow: missingCount > 0 ? 'none' : undefined,
+                  cursor: missingCount > 0 ? 'not-allowed' : 'pointer'
+                }}
               >
                 {deploying ? (
                   <><div className="loading-spinner" style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white' }} /> Deploying…</>
+                ) : missingCount > 0 ? (
+                  <>⚠️ Enter Required Env Vars</>
                 ) : (
                   <>🚀 Deploy {selected?.name}</>
                 )}
