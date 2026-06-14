@@ -101,6 +101,139 @@ function LogLine({ line }) {
   return <div className={cls}>{line}</div>;
 }
 
+const PHASES_METADATA = [
+  { key: 'fetch', label: 'Clone Repository', icon: '📥' },
+  { key: 'analyze', label: 'Static Analysis', icon: '🔍' },
+  { key: 'prepare', label: 'Environment Prep', icon: '⚙️' },
+  { key: 'compile', label: 'Build & Compile', icon: '📦' },
+  { key: 'deploy', label: 'Hot-Swap Deploy', icon: '🚀' }
+];
+
+function BuildPhaseTimeline({ deployment }) {
+  if (!deployment) return null;
+
+  const phases = deployment.buildPhases || [];
+  
+  const getInferredPhases = () => {
+    const status = deployment.status;
+    return PHASES_METADATA.map((p, idx) => {
+      let phaseStatus = 'pending';
+      if (status === 'success') {
+        phaseStatus = 'success';
+      } else if (status === 'queued') {
+        phaseStatus = 'pending';
+      } else if (status === 'building') {
+        phaseStatus = idx === 0 ? 'running' : 'pending';
+      } else if (status === 'failed') {
+        phaseStatus = idx === 0 ? 'failed' : 'pending';
+      }
+      return { phase: p.key, status: phaseStatus };
+    });
+  };
+
+  const activePhases = phases.length > 0 ? phases : getInferredPhases();
+
+  return (
+    <div className="lp-card glass animate-fade-in" style={{ padding: '20px 24px', borderRadius: 16, border: '1px solid var(--border)', marginBottom: 8 }}>
+      <style>{`
+        @keyframes timeline-pulse {
+          0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.4); }
+          70% { box-shadow: 0 0 0 8px rgba(56, 189, 248, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+        }
+        .timeline-pulse-active {
+          animation: timeline-pulse 1.5s infinite;
+        }
+      `}</style>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 16 }}>
+        Build Execution Pipeline
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, overflowX: 'auto', paddingBottom: 8 }}>
+        {PHASES_METADATA.map((meta, idx) => {
+          const phaseData = activePhases.find(p => p.phase === meta.key) || { status: 'pending' };
+          const { status, duration } = phaseData;
+          
+          let color = 'var(--text-dim)';
+          let dotBg = 'rgba(255, 255, 255, 0.02)';
+          let dotBorder = '1px solid var(--border)';
+          let isPulsing = false;
+
+          if (status === 'success') {
+            color = '#10b981';
+            dotBg = 'rgba(16, 185, 129, 0.1)';
+            dotBorder = '1px solid rgba(16, 185, 129, 0.3)';
+          } else if (status === 'failed') {
+            color = '#ef4444';
+            dotBg = 'rgba(239, 68, 68, 0.1)';
+            dotBorder = '1px solid rgba(239, 68, 68, 0.3)';
+          } else if (status === 'running') {
+            color = '#38bdf8';
+            dotBg = 'rgba(56, 189, 248, 0.1)';
+            dotBorder = '1px solid #38bdf8';
+            isPulsing = true;
+          }
+
+          const formattedDuration = duration 
+            ? `${(duration / 1000).toFixed(1)}s` 
+            : phaseData.startedAt && phaseData.finishedAt
+              ? `${((new Date(phaseData.finishedAt) - new Date(phaseData.startedAt)) / 1000).toFixed(1)}s`
+              : status === 'running' && phaseData.startedAt
+                ? 'building...'
+                : '';
+
+          return (
+            <div key={meta.key} style={{ display: 'flex', flex: 1, alignItems: 'center', minWidth: 140, position: 'relative' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: 1 }}>
+                <div 
+                  className={isPulsing ? "timeline-pulse-active" : ""}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: '50%',
+                    background: dotBg,
+                    border: dotBorder,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 16,
+                    zIndex: 1,
+                    transition: 'all 0.3s ease'
+                  }}
+                >
+                  {status === 'success' ? <span style={{ color: '#10b981', fontWeight: 'bold' }}>✓</span> : status === 'failed' ? <span style={{ color: '#ef4444', fontWeight: 'bold' }}>✗</span> : meta.icon}
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 600, color: status !== 'pending' ? 'var(--text-main)' : 'var(--text-dim)', textAlign: 'center' }}>
+                  {meta.label}
+                </span>
+                {formattedDuration && (
+                  <span style={{ fontSize: 10, color: color, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                    {formattedDuration}
+                  </span>
+                )}
+              </div>
+              
+              {idx < PHASES_METADATA.length - 1 && (
+                <div style={{
+                  position: 'absolute',
+                  right: -8,
+                  top: 18,
+                  width: 'calc(100% - 36px)',
+                  left: 'calc(50% + 18px)',
+                  height: 2,
+                  background: status === 'success' ? '#10b981' : 'var(--border)',
+                  zIndex: 0,
+                  opacity: status === 'success' ? 0.6 : 0.2,
+                  transition: 'background 0.3s'
+                }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CodeBlock({ code, language }) {
   const [copied, setCopied] = useState(false);
 
@@ -432,6 +565,14 @@ export default function ProjectDetail() {
   const [showDiff, setShowDiff] = useState(false);
   const [quickEnvValue, setQuickEnvValue] = useState('');
   const [quickEnvLoading, setQuickEnvLoading] = useState(false);
+  const [envScopes, setEnvScopes] = useState(['production', 'preview', 'development']);
+  const [deployHooks, setDeployHooks] = useState([]);
+  const [newHookName, setNewHookName] = useState('');
+  const [newHookBranch, setNewHookBranch] = useState('main');
+  const [outgoingWebhooks, setOutgoingWebhooks] = useState([]);
+  const [newHookUrl, setNewHookUrl] = useState('');
+  const [newHookType, setNewHookType] = useState('slack');
+  const [newHookEvents, setNewHookEvents] = useState(['start', 'success', 'failure']);
   const [logSearchQuery, setLogSearchQuery] = useState('');
   const [showErrorsOnly, setShowErrorsOnly] = useState(false);
 
@@ -867,6 +1008,14 @@ Use bold headers, bullet lists, and code blocks.`;
     api.get(`/env/${id}`).then(r => setEnvVars(r.data.envVars || [])).catch(() => {}),
   [id]);
 
+  const loadDeployHooks = useCallback(() => {
+    api.get(`/deploy/${id}/hooks`).then(r => setDeployHooks(r.data.hooks || [])).catch(() => {});
+  }, [id]);
+
+  const loadOutgoingWebhooks = useCallback(() => {
+    api.get(`/deploy/${id}/webhooks`).then(r => setOutgoingWebhooks(r.data.webhooks || [])).catch(() => {});
+  }, [id]);
+
   const handleLoadPreviews = useCallback(async () => {
     setPreviewsLoading(true);
     try {
@@ -898,8 +1047,10 @@ Use bold headers, bullet lists, and code blocks.`;
       loadProject();
       loadDeployments();
       loadEnvVars();
+      loadDeployHooks();
+      loadOutgoingWebhooks();
     }, 0);
-  }, [loadProject, loadDeployments, loadEnvVars]);
+  }, [loadProject, loadDeployments, loadEnvVars, loadDeployHooks, loadOutgoingWebhooks]);
 
   // Page-level persistent socket connection
   useEffect(() => {
@@ -1108,8 +1259,9 @@ Use bold headers, bullet lists, and code blocks.`;
   const handleAddEnv = async () => {
     if (!envKey.trim() || !envValue.trim()) return;
     try {
-      await api.post(`/env/${id}`, { key: envKey.trim(), value: envValue.trim() });
+      await api.post(`/env/${id}`, { key: envKey.trim(), value: envValue.trim(), scopes: envScopes });
       setEnvKey(''); setEnvValue('');
+      setEnvScopes(['production', 'preview', 'development']);
       setEnvChanged(true);
       loadEnvVars();
     } catch (err) { setError(err.response?.data?.message || 'Failed to add variable'); }
@@ -1154,6 +1306,40 @@ Use bold headers, bullet lists, and code blocks.`;
     } finally {
       setBulkImporting(false);
     }
+  };
+
+  const handleCreateDeployHook = async () => {
+    if (!newHookName.trim()) return;
+    try {
+      await api.post(`/deploy/${id}/hooks`, { name: newHookName, branch: newHookBranch });
+      setNewHookName('');
+      loadDeployHooks();
+    } catch (err) { setError(err.response?.data?.message || 'Failed to create deploy hook'); }
+  };
+
+  const handleDeleteDeployHook = async (hookId) => {
+    if (!window.confirm('Delete this deploy hook?')) return;
+    try {
+      await api.delete(`/deploy/${id}/hooks/${hookId}`);
+      loadDeployHooks();
+    } catch {}
+  };
+
+  const handleCreateOutgoingWebhook = async () => {
+    if (!newHookUrl.trim()) return;
+    try {
+      await api.post(`/deploy/${id}/webhooks`, { name: `${newHookType} Alert`, url: newHookUrl, type: newHookType, events: newHookEvents });
+      setNewHookUrl('');
+      loadOutgoingWebhooks();
+    } catch (err) { setError(err.response?.data?.message || 'Failed to create webhook'); }
+  };
+
+  const handleDeleteOutgoingWebhook = async (webhookId) => {
+    if (!window.confirm('Delete this webhook notification?')) return;
+    try {
+      await api.delete(`/deploy/${id}/webhooks/${webhookId}`);
+      loadOutgoingWebhooks();
+    } catch {}
   };
 
   // ── Container lifecycle controls ──────────────────────────────────────────────
@@ -1227,6 +1413,12 @@ Use bold headers, bullet lists, and code blocks.`;
     setEnvKey(key);
     setEnvValue('');
     setShowBulk(false);
+    const existing = envVars.find(e => e.key === key);
+    if (existing && existing.scopes) {
+      setEnvScopes(existing.scopes);
+    } else {
+      setEnvScopes(['production', 'preview', 'development']);
+    }
     setTimeout(() => {
       const valInput = document.querySelector('input[placeholder="value"]');
       if (valInput) valInput.focus();
@@ -2084,6 +2276,7 @@ Use bold headers, bullet lists, and code blocks.`;
         {/* ── Build Logs ── */}
         {activeTab === 'logs' && (
           <div className="fade-in" style={{ display: 'grid', gap: 20 }}>
+            <BuildPhaseTimeline deployment={activeDeployment || deployments?.[0]} />
             {activeDeployment && activeDeployment.status === 'failed' && activeDeployment.aiDiagnosis && (
               <div className="lp-card glass" style={{
                 padding: '24px',
@@ -2678,10 +2871,33 @@ Use bold headers, bullet lists, and code blocks.`;
 
               {/* Add single */}
               {!showBulk && (
-                <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
-                  <input value={envKey} onChange={e => setEnvKey(e.target.value.toUpperCase())} placeholder="VARIABLE_NAME" className="lp-input lp-input-mono" style={{ flex: 1 }} />
-                  <input value={envValue} onChange={e => setEnvValue(e.target.value)} placeholder="value" type={envKey.includes('SECRET') || envKey.includes('KEY') || envKey.includes('PASSWORD') || envKey.includes('TOKEN') ? 'password' : 'text'} className="lp-input" style={{ flex: 2 }} />
-                  <button className="lp-btn-primary" onClick={handleAddEnv} style={{ flexShrink: 0 }}>Add</button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24, padding: 16, background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border)', borderRadius: 12 }}>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <input value={envKey} onChange={e => setEnvKey(e.target.value.toUpperCase())} placeholder="VARIABLE_NAME" className="lp-input lp-input-mono" style={{ flex: 1 }} />
+                    <input value={envValue} onChange={e => setEnvValue(e.target.value)} placeholder="value" type={envKey.includes('SECRET') || envKey.includes('KEY') || envKey.includes('PASSWORD') || envKey.includes('TOKEN') ? 'password' : 'text'} className="lp-input" style={{ flex: 2 }} />
+                    <button className="lp-btn-primary" onClick={handleAddEnv} style={{ flexShrink: 0, height: 38 }}>Add</button>
+                  </div>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingLeft: 4 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Apply Scopes:</span>
+                    {['production', 'preview', 'development'].map(scope => (
+                      <label key={scope} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-main)', cursor: 'pointer', textTransform: 'capitalize' }}>
+                        <input
+                          type="checkbox"
+                          checked={envScopes.includes(scope)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEnvScopes(prev => [...prev, scope]);
+                            } else {
+                              setEnvScopes(prev => prev.filter(s => s !== scope));
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <span>{scope}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -2711,8 +2927,24 @@ Use bold headers, bullet lists, and code blocks.`;
                   <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dim)', fontSize: 13 }}>No environment variables set</div>
                 ) : envVars.map(e => (
                   <div key={e._id} className="lp-env-row">
-                    <span className="mono" style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: 13, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="mono" style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: 13, flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       {e.key}
+                      
+                      {e.scopes && e.scopes.map(s => (
+                        <span key={s} style={{
+                          fontSize: 9,
+                          background: 'rgba(56, 189, 248, 0.05)',
+                          border: '1px solid rgba(56, 189, 248, 0.15)',
+                          color: '#38bdf8',
+                          padding: '1px 5px',
+                          borderRadius: 3,
+                          textTransform: 'capitalize',
+                          fontWeight: 600
+                        }}>
+                          {s}
+                        </span>
+                      ))}
+
                       {e.hasPlaceholder && (
                         <span style={{
                           fontSize: 10,
@@ -2930,6 +3162,272 @@ Use bold headers, bullet lists, and code blocks.`;
                   <button className="lp-btn-primary" onClick={handleSaveSettings} disabled={saveStatus === 'saving'}>
                     {saveStatus === 'saving' ? 'Saving Auto-Heal Settings...' : 'Save Auto-Heal Configuration'}
                   </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Deploy Hooks (Incoming Webhooks) */}
+            <div className="lp-card glass" style={{ padding: 28 }}>
+              <h3 style={{ fontSize: 16, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                📥 Incoming Deploy Hooks
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
+                Trigger automatic redeployments of specific branches by sending an HTTP POST request to these unique URLs.
+              </p>
+
+              {/* Create Deploy Hook Form */}
+              <div style={{ display: 'grid', gap: 14, marginBottom: 24, padding: 20, background: 'rgba(255, 255, 255, 0.02)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-main)' }}>Create Deploy Hook</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'end' }}>
+                  <div>
+                    <div className="lp-section-label" style={{ marginBottom: 6 }}>HOOK NAME</div>
+                    <input
+                      type="text"
+                      placeholder="e.g. Production Deploy"
+                      value={newHookName}
+                      onChange={e => setNewHookName(e.target.value)}
+                      className="lp-input"
+                    />
+                  </div>
+                  <div>
+                    <div className="lp-section-label" style={{ marginBottom: 6 }}>TARGET BRANCH</div>
+                    <select
+                      value={newHookBranch}
+                      onChange={e => setNewHookBranch(e.target.value)}
+                      className="lp-input"
+                      style={{ background: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border)' }}
+                    >
+                      {branches.length > 0 ? (
+                        branches.map(b => <option key={b} value={b}>{b}</option>)
+                      ) : (
+                        <option value="main">main</option>
+                      )}
+                    </select>
+                  </div>
+                  <button 
+                    className="lp-btn-primary" 
+                    onClick={handleCreateDeployHook}
+                    disabled={!newHookName.trim()}
+                    style={{ height: '42px', padding: '0 20px' }}
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+
+              {/* List of Deploy Hooks */}
+              <div style={{ display: 'grid', gap: 12 }}>
+                {deployHooks.length === 0 ? (
+                  <div style={{ color: 'var(--text-dim)', fontSize: 13, textAlign: 'center', padding: '12px 0' }}>
+                    No deploy hooks configured yet.
+                  </div>
+                ) : (
+                  deployHooks.map(hook => {
+                    const hookUrl = `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/deploy/hooks/${hook.token}`;
+                    return (
+                      <div key={hook._id} style={{ display: 'grid', gap: 8, padding: 14, background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border)', borderRadius: 10 }}>
+                        <div className="flex-between">
+                          <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-main)' }}>
+                            {hook.name} <span style={{ fontSize: 11, color: 'var(--accent-secondary)', fontWeight: 500, marginLeft: 8 }}>({hook.branch})</span>
+                          </span>
+                          <button 
+                            onClick={() => handleDeleteDeployHook(hook._id)}
+                            style={{ background: 'none', border: 'none', color: 'var(--accent-danger)', fontSize: 12, cursor: 'pointer', padding: 0 }}
+                          >
+                            ✕ Delete
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <input
+                            readOnly
+                            value={hookUrl}
+                            className="lp-input lp-input-mono"
+                            style={{ flex: 1, fontSize: 11, padding: '6px 10px', height: '32px', cursor: 'text' }}
+                            onFocus={e => e.target.select()}
+                          />
+                          <button
+                            className="lp-btn-secondary"
+                            style={{ padding: '0 12px', fontSize: 11, height: '32px' }}
+                            onClick={() => {
+                              navigator.clipboard.writeText(hookUrl);
+                              alert('Deploy Hook URL copied to clipboard!');
+                            }}
+                          >
+                            📋 Copy
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Outgoing Webhooks Notifications */}
+            <div className="lp-card glass" style={{ padding: 28 }}>
+              <h3 style={{ fontSize: 16, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🔔 Outgoing Build Notifications
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
+                Send real-time build updates and AI resolution diagnostics to your Slack or Discord channels.
+              </p>
+
+              {/* Create Outgoing Webhook Form */}
+              <div style={{ display: 'grid', gap: 14, marginBottom: 24, padding: 20, background: 'rgba(255, 255, 255, 0.02)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-main)' }}>Add Webhook Alert</div>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: 12 }}>
+                    <div>
+                      <div className="lp-section-label" style={{ marginBottom: 6 }}>PLATFORM</div>
+                      <select
+                        value={newHookType}
+                        onChange={e => setNewHookType(e.target.value)}
+                        className="lp-input"
+                        style={{ background: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border)' }}
+                      >
+                        <option value="slack">Slack</option>
+                        <option value="discord">Discord</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div className="lp-section-label" style={{ marginBottom: 6 }}>WEBHOOK URL</div>
+                      <input
+                        type="text"
+                        placeholder="https://hooks.slack.com/services/... or Discord Webhook URL"
+                        value={newHookUrl}
+                        onChange={e => setNewHookUrl(e.target.value)}
+                        className="lp-input lp-input-mono"
+                        style={{ fontSize: 12 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="lp-section-label" style={{ marginBottom: 8 }}>TRIGGER EVENTS</div>
+                    <div style={{ display: 'flex', gap: 20 }}>
+                      {[
+                        { key: 'start', label: 'Build Started' },
+                        { key: 'success', label: 'Build Success' },
+                        { key: 'failure', label: 'Build Failure' }
+                      ].map(event => {
+                        const isChecked = newHookEvents.includes(event.key);
+                        return (
+                          <label key={event.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                              onChange={e => {
+                                if (e.target.checked) {
+                                  setNewHookEvents([...newHookEvents, event.key]);
+                                } else {
+                                  setNewHookEvents(newHookEvents.filter(x => x !== event.key));
+                                }
+                              }}
+                            />
+                            <span>{event.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                    <button 
+                      className="lp-btn-primary" 
+                      onClick={handleCreateOutgoingWebhook}
+                      disabled={!newHookUrl.trim() || newHookEvents.length === 0}
+                    >
+                      Add Webhook
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* List of Outgoing Webhooks */}
+              <div style={{ display: 'grid', gap: 12 }}>
+                {outgoingWebhooks.length === 0 ? (
+                  <div style={{ color: 'var(--text-dim)', fontSize: 13, textAlign: 'center', padding: '12px 0' }}>
+                    No webhook alerts configured yet.
+                  </div>
+                ) : (
+                  outgoingWebhooks.map(webhook => (
+                    <div key={webhook._id} className="flex-between" style={{ padding: 14, background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border)', borderRadius: 10 }}>
+                      <div style={{ display: 'grid', gap: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16 }}>{webhook.type === 'slack' ? '💬' : '👾'}</span>
+                          <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-main)' }}>{webhook.name}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '350px', whiteSpace: 'nowrap' }}>
+                          {webhook.url}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+                          {webhook.events.map(ev => (
+                            <span key={ev} style={{ fontSize: 10, background: 'rgba(255, 255, 255, 0.04)', color: 'var(--text-muted)', padding: '2px 6px', borderRadius: 4, textTransform: 'capitalize' }}>
+                              {ev}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => handleDeleteOutgoingWebhook(webhook._id)}
+                        style={{ background: 'none', border: 'none', color: 'var(--accent-danger)', fontSize: 12, cursor: 'pointer', padding: 0 }}
+                      >
+                        ✕ Remove
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* README Status Badge */}
+            <div className="lp-card glass" style={{ padding: 28 }}>
+              <h3 style={{ fontSize: 16, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🛡️ SVG README Status Badge
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
+                Display the real-time deployment status of your project directly in your GitHub README.md or documentation.
+              </p>
+
+              <div style={{ display: 'grid', gap: 16, padding: 20, background: 'rgba(255, 255, 255, 0.02)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                <div>
+                  <div className="lp-section-label" style={{ marginBottom: 8 }}>LIVE BADGE PREVIEW</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                    <img 
+                      src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/deploy/projects/${id}/badge?t=${Date.now()}`}
+                      alt="Deployment Status" 
+                      style={{ maxHeight: 20 }}
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = "https://img.shields.io/badge/LaunchLive-unknown-grey";
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="lp-section-label" style={{ marginBottom: 6 }}>MARKDOWN SOURCE</div>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <input
+                      readOnly
+                      value={`[![Deployment Status](${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/deploy/projects/${id}/badge)](${window.location.origin}/projects/${id})`}
+                      className="lp-input lp-input-mono"
+                      style={{ flex: 1, fontSize: 11, cursor: 'text' }}
+                      onFocus={e => e.target.select()}
+                    />
+                    <button
+                      className="lp-btn-secondary"
+                      style={{ flexShrink: 0, padding: '8px 16px', fontSize: 12 }}
+                      onClick={() => {
+                        const md = `[![Deployment Status](${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/deploy/projects/${id}/badge)](${window.location.origin}/projects/${id})`;
+                        navigator.clipboard.writeText(md);
+                        alert('Markdown status badge copied!');
+                      }}
+                    >
+                      📋 Copy Markdown
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

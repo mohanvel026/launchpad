@@ -368,7 +368,195 @@ const getRecentActivity = async (req, res) => {
   }
 };
 
+// ─── Incoming Deploy Hooks (Public) ──────────────────────────────────────────
+const triggerDeployHook = async (req, res) => {
+  try {
+    const DeployHook = require('../models/DeployHook.model');
+    const hook = await DeployHook.findOne({ token: req.params.token });
+    if (!hook) return res.status(404).json({ message: 'Deploy hook not found' });
+
+    const project = await Project.findById(hook.project);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const running = await Deployment.findOne({ project: project._id, status: { $in: ['queued', 'building'] } });
+    if (running) return res.status(409).json({ message: 'A build is already in progress' });
+
+    const EnvVar = require('../models/EnvVar.model');
+    const envVars = await EnvVar.find({ project: project._id }).sort({ key: 1 });
+    const envStr = envVars.map(ev => `${ev.key}=${ev.value}`).join('\n');
+    const envVarsHash = crypto.createHash('md5').update(envStr).digest('hex');
+
+    const settingsStr = `${project.installCommand || ''}|${project.buildCommand || ''}|${project.outputDir || ''}|${project.branch || ''}|${project.cpuLimit || ''}|${project.ramLimitMB || ''}`;
+    const settingsHash = crypto.createHash('md5').update(settingsStr).digest('hex');
+
+    const deployment = await Deployment.create({
+      project:       project._id,
+      commitSha:     'hook',
+      commitMessage: `Deploy Hook: ${hook.name}`,
+      branch:        hook.branch,
+      status:        'queued',
+      envVarsHash,
+      settingsHash,
+    });
+
+    await buildQueue.add(
+      { 
+        deploymentId: deployment._id.toString(), 
+        projectId: project._id.toString(),
+        forceRebuild: false
+      },
+      {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 50,
+        removeOnFail: 50
+      }
+    );
+
+    await notifyUpdate(project._id);
+    res.status(202).json({ message: 'Build queued via deploy hook', deployment });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── Deploy Hooks Management (Protected) ─────────────────────────────────────
+const getDeployHooks = async (req, res) => {
+  try {
+    const DeployHook = require('../models/DeployHook.model');
+    const hooks = await DeployHook.find({ project: req.params.projectId });
+    res.json({ hooks });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const createDeployHook = async (req, res) => {
+  try {
+    const { name, branch } = req.body;
+    if (!name || !branch) return res.status(400).json({ message: 'Name and branch are required' });
+
+    const DeployHook = require('../models/DeployHook.model');
+    const token = crypto.randomBytes(24).toString('hex');
+
+    const hook = await DeployHook.create({
+      project: req.params.projectId,
+      name,
+      branch,
+      token
+    });
+
+    res.status(201).json({ hook });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const deleteDeployHook = async (req, res) => {
+  try {
+    const DeployHook = require('../models/DeployHook.model');
+    await DeployHook.findOneAndDelete({ project: req.params.projectId, _id: req.params.hookId });
+    res.json({ message: 'Deploy hook deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── Outgoing Webhooks Management (Protected) ────────────────────────────────
+const getWebhooks = async (req, res) => {
+  try {
+    const Webhook = require('../models/Webhook.model');
+    const webhooks = await Webhook.find({ project: req.params.projectId });
+    res.json({ webhooks });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const createWebhook = async (req, res) => {
+  try {
+    const { name, url, type, events } = req.body;
+    if (!name || !url || !events || !events.length) {
+      return res.status(400).json({ message: 'Name, url, and events are required' });
+    }
+
+    const Webhook = require('../models/Webhook.model');
+    const webhook = await Webhook.create({
+      project: req.params.projectId,
+      name,
+      url,
+      type: type || 'slack',
+      events
+    });
+
+    res.status(201).json({ webhook });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const deleteWebhook = async (req, res) => {
+  try {
+    const Webhook = require('../models/Webhook.model');
+    await Webhook.findOneAndDelete({ project: req.params.projectId, _id: req.params.webhookId });
+    res.json({ message: 'Webhook deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── SVG Badge (Public) ──────────────────────────────────────────────────────
+const getProjectBadge = async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.projectId);
+    if (!project) return res.status(404).send('Project Not Found');
+
+    let color = '#ef4444'; // default: failed
+    let text = 'failed';
+
+    if (project.status === 'live') {
+      color = '#10b981';
+      text = 'live';
+    } else if (project.status === 'building') {
+      color = '#38bdf8';
+      text = 'building';
+    } else if (project.status === 'stopped' || project.status === 'idle') {
+      color = '#64748b';
+      text = project.status;
+    }
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="20">
+  <linearGradient id="b" x2="0" y2="100%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <mask id="a">
+    <rect width="120" height="20" rx="3" fill="#fff"/>
+  </mask>
+  <g mask="url(#a)">
+    <path fill="#555" d="M0 0h55v20H0z"/>
+    <path fill="${color}" d="M55 0h65v20H55z"/>
+    <path fill="url(#b)" d="M0 0h120v20H0z"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
+    <text x="27.5" y="15" fill="#010101" fill-opacity=".3">deploy</text>
+    <text x="27.5" y="14">deploy</text>
+    <text x="87.5" y="15" fill="#010101" fill-opacity=".3">${text}</text>
+    <text x="87.5" y="14">${text}</text>
+  </g>
+</svg>`;
+
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send(svg);
+  } catch (err) {
+    res.status(500).send('Error generating badge');
+  }
+};
+
 module.exports = {
   githubWebhook, triggerDeploy, getDeployments, getDeployment, rollback,
   cancelDeploy, stopProject, startProject, restartProject, getRecentActivity,
+  triggerDeployHook, getDeployHooks, createDeployHook, deleteDeployHook,
+  getWebhooks, createWebhook, deleteWebhook, getProjectBadge
 };

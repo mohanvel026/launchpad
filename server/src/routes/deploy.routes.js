@@ -3,7 +3,9 @@ const { protect } = require('../middleware/auth.middleware');
 const {
   triggerDeploy, getDeployments, getDeployment,
   rollback, githubWebhook,
-  cancelDeploy, stopProject, startProject, restartProject, getRecentActivity
+  cancelDeploy, stopProject, startProject, restartProject, getRecentActivity,
+  triggerDeployHook, getDeployHooks, createDeployHook, deleteDeployHook,
+  getWebhooks, createWebhook, deleteWebhook, getProjectBadge
 } = require('../controllers/deploy.controller');
 
 const router = express.Router();
@@ -11,8 +13,24 @@ const router = express.Router();
 // GitHub calls this on every push — no auth, verified by signature
 router.post('/webhook', githubWebhook);
 
+// Public Incoming Deploy Hook Trigger
+router.post('/hooks/:token', triggerDeployHook);
+
+// Public SVG README Badge
+router.get('/projects/:projectId/badge', getProjectBadge);
+
 // GET recent activity across all user projects
 router.get('/recent-activity',                    protect, getRecentActivity);
+
+// Deploy Hooks Management
+router.get('/:projectId/hooks',                   protect, getDeployHooks);
+router.post('/:projectId/hooks',                  protect, createDeployHook);
+router.delete('/:projectId/hooks/:hookId',        protect, deleteDeployHook);
+
+// Outgoing Webhooks Management
+router.get('/:projectId/webhooks',                protect, getWebhooks);
+router.post('/:projectId/webhooks',               protect, createWebhook);
+router.delete('/:projectId/webhooks/:webhookId',  protect, deleteWebhook);
 
 // Manual deploy trigger
 router.post('/:projectId',                        protect, triggerDeploy);

@@ -5,6 +5,7 @@ const envVarSchema = new mongoose.Schema({
   key:      { type: String, required: true },
   value:    { type: String, required: true },   // stored AES-encrypted
   isSecret: { type: Boolean, default: true },
+  scopes:   { type: [String], enum: ['production', 'preview', 'development'], default: ['production', 'preview', 'development'] },
 }, { timestamps: true });
 
 module.exports = mongoose.model('EnvVar', envVarSchema);

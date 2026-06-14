@@ -761,6 +761,57 @@ buildQueue.process(1, async (job) => {
     await Deployment.findByIdAndUpdate(deploymentId, { $push: { logs: { $each: [line], $slice: -1000 } } });
   };
 
+  const updatePhase = async (phaseName, status) => {
+    const now = new Date();
+    const dep = await Deployment.findById(deploymentId);
+    if (!dep) return;
+    
+    let phases = dep.buildPhases || [];
+    let phase = phases.find(p => p.phase === phaseName);
+    
+    if (!phase) {
+      phase = { phase: phaseName, status: status, startedAt: now };
+      phases.push(phase);
+    } else {
+      phase.status = status;
+      if (status === 'running') {
+        phase.startedAt = now;
+        phase.finishedAt = null;
+        phase.duration = null;
+      } else {
+        phase.finishedAt = now;
+        if (phase.startedAt) {
+          phase.duration = now.getTime() - phase.startedAt.getTime();
+        }
+      }
+    }
+    
+    await Deployment.findByIdAndUpdate(deploymentId, { buildPhases: phases });
+    
+    try {
+      const updatedProj = await Project.findById(projectId);
+      const updatedDeps = await Deployment.find({ project: projectId }).sort({ createdAt: -1 }).limit(10);
+      emitProjectUpdate(projectId, { project: updatedProj, deployments: updatedDeps });
+    } catch {}
+  };
+
+  const initialPhases = [
+    { phase: 'fetch', status: 'pending' },
+    { phase: 'analyze', status: 'pending' },
+    { phase: 'prepare', status: 'pending' },
+    { phase: 'compile', status: 'pending' },
+    { phase: 'deploy', status: 'pending' }
+  ];
+  await Deployment.findByIdAndUpdate(deploymentId, { buildPhases: initialPhases });
+
+  const { notifyWebhooks } = require('../utils/webhookNotifier');
+  await notifyWebhooks(projectId, 'start', {
+    projectName: project.name,
+    branch: deployment.branch || project.branch,
+    commitSha: deployment.commitSha,
+    commitMessage: deployment.commitMessage
+  });
+
   await deployment.updateOne({ status: 'building', startedAt: new Date() });
   await Project.findByIdAndUpdate(projectId, { status: 'building' });
   await notifyUpdate(projectId);
@@ -775,6 +826,7 @@ buildQueue.process(1, async (job) => {
     cloneUrl = cloneUrl.replace('https://', `https://${project.owner.githubAccessToken}@`);
   }
 
+  await updatePhase('fetch', 'running');
   try {
     // ── PRE-FLIGHT: Disk Space Check ──────────────────────────────────────────
     if (!isWindows) {
@@ -811,6 +863,9 @@ buildQueue.process(1, async (job) => {
       await execAsync(`git clone --branch ${project.branch} --depth 1 "${cloneUrl}" "${repoDir}"`);
       await log('   ✅ Fresh clone completed.');
     }
+
+    await updatePhase('fetch', 'success');
+    await updatePhase('analyze', 'running');
 
     // ── SPEED OPT: Skip rebuild if code is unchanged ──────────────────────────
     let currentCommitSha = '';
@@ -896,7 +951,15 @@ buildQueue.process(1, async (job) => {
       }
     }
 
-    let rawEnvs = await EnvVar.find({ project: projectId });
+    const targetEnv = (deployment.branch === project.branch) ? 'production' : 'preview';
+    const envFilter = {
+      project: projectId,
+      $or: [
+        { scopes: targetEnv },
+        { scopes: { $exists: false } }
+      ]
+    };
+    let rawEnvs = await EnvVar.find(envFilter);
 
     // Zero-Touch Autonomous AI Auto-Config: Scan repository for env vars on every deploy, discover and save missing ones automatically!
     await log(`🔍 PHASE 3: Scanning repository for environment variables…`);
@@ -1007,7 +1070,7 @@ buildQueue.process(1, async (job) => {
 
     if (autoFilledCount > 0) {
       await log(`   ✅ [AI Auto-Config] Auto-filled and saved ${autoFilledCount} missing variables to DB.`);
-      rawEnvs = await EnvVar.find({ project: projectId });
+      rawEnvs = await EnvVar.find(envFilter);
     }
 
     const runtimeEnv = { NODE_ENV: 'production' };
@@ -1168,6 +1231,9 @@ buildQueue.process(1, async (job) => {
       console.warn('[Security Shield Check Failed]:', secErr.message);
     }
 
+    await updatePhase('analyze', 'success');
+    await updatePhase('prepare', 'running');
+
     // ── PHASE 3: Prepare Docker ──
     await log(`📝 PHASE 3: Generating optimized build instructions…`);
     const dockerfile = generateDockerfile(stack, repoDir, {
@@ -1197,6 +1263,9 @@ buildQueue.process(1, async (job) => {
       console.warn('[AI Pre-flight Health Check Failed]:', healthErr.message);
       await log(`   ⚠️ AI Pre-flight check skipped (AI service temporarily unavailable).`);
     }
+
+    await updatePhase('prepare', 'success');
+    await updatePhase('compile', 'running');
 
     // ── PHASE 4/5: Build & Run ──
     const tempEnvFile = path.join(repoDir, '.env');
@@ -1332,6 +1401,8 @@ buildQueue.process(1, async (job) => {
         });
       }).then(async () => {
         await log('   ✅ Build successful. Image tagged and ready for deployment.');
+        await updatePhase('compile', 'success');
+        await updatePhase('deploy', 'running');
         // ── Auto-prune dangling images to free disk space ───────────────────────
         try { execSync('docker image prune -f', { stdio: 'pipe' }); } catch {}
       }).catch(async (buildErr) => {
@@ -1609,6 +1680,8 @@ buildQueue.process(1, async (job) => {
 
     } else {
       await log('⚠️ DEVELOPMENT MODE: Running local build on Windows host…');
+      await updatePhase('prepare', 'success');
+      await updatePhase('compile', 'running');
       try {
         const isFullstack = ['fullstack-split', 'mern'].includes(stack);
         const feDir = fs.existsSync(path.join(repoDir, 'client')) ? 'client' : (fs.existsSync(path.join(repoDir, 'frontend')) ? 'frontend' : '.');
@@ -1662,6 +1735,9 @@ buildQueue.process(1, async (job) => {
             await log('ℹ️ No package.json found. Skipping dependency installation & build.');
           }
         }
+
+        await updatePhase('compile', 'success');
+        await updatePhase('deploy', 'running');
 
         // 3. Start local server or set static port
         const isService = ['node', 'next', 'nuxt', 'mern', 'fullstack-split', 'express', 'fastify'].includes(stack);
@@ -1757,11 +1833,21 @@ buildQueue.process(1, async (job) => {
       $inc:           { buildCount: 1 },
     });
 
+    await updatePhase('deploy', 'success');
+
     await Deployment.findByIdAndUpdate(deploymentId, {
       status: 'success', imageTag, finishedAt, duration,
     });
 
     await notifyUpdate(projectId);
+
+    await notifyWebhooks(projectId, 'success', {
+      projectName: project.name,
+      branch: deployment.branch || project.branch,
+      commitSha: deployment.commitSha,
+      commitMessage: deployment.commitMessage,
+      liveUrl
+    });
 
     await log(`✨ ALL PHASES COMPLETE! Deployed in ${(duration / 1000).toFixed(1)}s.`);
     await log(`🚀 Project is now live at: ${liveUrl}`);
@@ -1802,6 +1888,21 @@ buildQueue.process(1, async (job) => {
   } catch (err) {
     await log(`\n🛑 DEPLOYMENT ABORTED: ${err.message}`);
 
+    try {
+      const dep = await Deployment.findById(deploymentId);
+      if (dep && dep.buildPhases) {
+        const updated = dep.buildPhases.map(p => {
+          if (p.status === 'running') {
+            return { ...p, status: 'failed', finishedAt: new Date(), duration: new Date().getTime() - p.startedAt.getTime() };
+          }
+          return p;
+        });
+        await Deployment.findByIdAndUpdate(deploymentId, { buildPhases: updated });
+      }
+    } catch (phaseErr) {
+      console.error('Failed to update buildPhases on error:', phaseErr.message);
+    }
+
     let logsText = '';
     try {
       const fresh   = await Deployment.findById(deploymentId);
@@ -1829,6 +1930,20 @@ buildQueue.process(1, async (job) => {
         }
       });
       await log(`🤖 Diagnosis:\n${formattedSummary}`);
+
+      await notifyWebhooks(projectId, 'failure', {
+        projectName: project.name,
+        branch: deployment.branch || project.branch,
+        commitSha: deployment.commitSha,
+        commitMessage: deployment.commitMessage,
+        aiDiagnosis: {
+          summary: finalDiagnosis.summary || finalDiagnosis.cause || 'Deployment failed.',
+          cause: finalDiagnosis.cause || 'Unknown.',
+          fix: finalDiagnosis.fix || 'Check logs for details.',
+          commands: finalDiagnosis.commands || [],
+          missingEnvVar: finalDiagnosis.missingEnvVar || null
+        }
+      });
     } catch (diagErr) {
       console.error('[Build Worker] Failed to run build error diagnosis:', diagErr.message);
     }

@@ -38,6 +38,7 @@ const getEnvVars = async (req, res) => {
         _id: e._id,
         key: e.key,
         isSecret: e.isSecret,
+        scopes: e.scopes || ['production', 'preview', 'development'],
         hasPlaceholder
       };
     });
@@ -50,7 +51,7 @@ const getEnvVars = async (req, res) => {
 
 // POST /api/env/:projectId — upsert an env var (creates or updates by key)
 const setEnvVar = async (req, res) => {
-  const { key, value, isSecret = true } = req.body;
+  const { key, value, isSecret = true, scopes } = req.body;
   if (!key || !value) return res.status(400).json({ message: 'key and value are required' });
 
   const upperKey = key.trim().toUpperCase();
@@ -86,12 +87,16 @@ const setEnvVar = async (req, res) => {
 
     const envVar = await EnvVar.findOneAndUpdate(
       { project: project._id, key },
-      { value: encryptedValue, isSecret },
+      { 
+        value: encryptedValue, 
+        isSecret,
+        scopes: scopes || ['production', 'preview', 'development']
+      },
       { upsert: true, returnDocument: 'after' }
     );
 
     // Return without the encrypted value
-    res.json({ envVar: { _id: envVar._id, key: envVar.key, isSecret: envVar.isSecret } });
+    res.json({ envVar: { _id: envVar._id, key: envVar.key, isSecret: envVar.isSecret, scopes: envVar.scopes } });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

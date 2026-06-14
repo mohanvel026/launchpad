@@ -33,6 +33,13 @@ const deploymentSchema = new mongoose.Schema({
     status: String,
     details: String
   }],
+  buildPhases: [{
+    phase: { type: String, enum: ['fetch', 'analyze', 'prepare', 'compile', 'deploy'] },
+    status: { type: String, enum: ['pending', 'running', 'success', 'failed'], default: 'pending' },
+    startedAt: { type: Date },
+    finishedAt: { type: Date },
+    duration: { type: Number } // milliseconds
+  }],
   readinessScore:    { type: Number },
   readinessChecks:   [{ name: String, passed: Boolean, recommendation: String }],
   rollbackFrom:      { type: mongoose.Schema.Types.ObjectId, ref: 'Deployment' },
