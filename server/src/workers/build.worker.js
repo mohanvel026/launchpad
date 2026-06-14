@@ -761,7 +761,7 @@ buildQueue.process(1, async (job) => {
     await Deployment.findByIdAndUpdate(deploymentId, { $push: { logs: { $each: [line], $slice: -1000 } } });
   };
 
-  const updatePhase = async (phaseName, status) => {
+  const updatePhase = async (phaseName, status, isCached = false) => {
     const now = new Date();
     const dep = await Deployment.findById(deploymentId);
     if (!dep) return;
@@ -770,10 +770,11 @@ buildQueue.process(1, async (job) => {
     let phase = phases.find(p => p.phase === phaseName);
     
     if (!phase) {
-      phase = { phase: phaseName, status: status, startedAt: now };
+      phase = { phase: phaseName, status: status, startedAt: now, isCached: isCached };
       phases.push(phase);
     } else {
       phase.status = status;
+      if (isCached) phase.isCached = true;
       if (status === 'running') {
         phase.startedAt = now;
         phase.finishedAt = null;
@@ -1074,12 +1075,24 @@ buildQueue.process(1, async (job) => {
     }
 
     const runtimeEnv = { NODE_ENV: 'production' };
+    
+    // Apply deploy hook overrides if present in deployment
+    const overrides = deployment.envOverrides ? Object.fromEntries(deployment.envOverrides) : {};
+    const overrideKeys = Object.keys(overrides);
+    if (overrideKeys.length > 0) {
+      await log(`⚡ Applying ${overrideKeys.length} deployment override variable(s) from hook request…`);
+    }
+
     const decryptErrors = [];
     const blockingKeys = [];
 
     for (const e of rawEnvs) {
       try {
         let val = decryptValue(e.value);
+        if (overrides[e.key] !== undefined) {
+          val = overrides[e.key];
+          await log(`   ↳ Overriding ${e.key} = "${val.slice(0, Math.min(val.length, 3))}..."`);
+        }
         const upperKey = e.key.toUpperCase();
         
         // Detect database key and placeholder patterns
@@ -1139,6 +1152,14 @@ buildQueue.process(1, async (job) => {
       } catch (decErr) {
         decryptErrors.push(e.key);
         console.warn(`[Build Worker] Failed to decrypt env var "${e.key}": ${decErr.message}`);
+      }
+    }
+    // Add new override variables that were not in rawEnvs
+    for (const [key, val] of Object.entries(overrides)) {
+      const exists = rawEnvs.some(e => e.key === key);
+      if (!exists) {
+        runtimeEnv[key] = val;
+        await log(`   ↳ Setting custom env var ${key} = "${val.slice(0, Math.min(val.length, 3))}..."`);
       }
     }
     if (decryptErrors.length > 0) {
@@ -1399,9 +1420,8 @@ buildQueue.process(1, async (job) => {
           clearTimeout(buildTimeout);
           reject(err);
         });
-      }).then(async () => {
         await log('   ✅ Build successful. Image tagged and ready for deployment.');
-        await updatePhase('compile', 'success');
+        await updatePhase('compile', 'success', skipDockerBuild || (hasWarmCache && !forceRebuild));
         await updatePhase('deploy', 'running');
         // ── Auto-prune dangling images to free disk space ───────────────────────
         try { execSync('docker image prune -f', { stdio: 'pipe' }); } catch {}
@@ -1736,7 +1756,7 @@ buildQueue.process(1, async (job) => {
           }
         }
 
-        await updatePhase('compile', 'success');
+        await updatePhase('compile', 'success', !buildNeeded);
         await updatePhase('deploy', 'running');
 
         // 3. Start local server or set static port

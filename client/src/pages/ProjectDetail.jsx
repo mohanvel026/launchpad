@@ -205,11 +205,28 @@ function BuildPhaseTimeline({ deployment }) {
                 <span style={{ fontSize: 12, fontWeight: 600, color: status !== 'pending' ? 'var(--text-main)' : 'var(--text-dim)', textAlign: 'center' }}>
                   {meta.label}
                 </span>
-                {formattedDuration && (
-                  <span style={{ fontSize: 10, color: color, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                    {formattedDuration}
-                  </span>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {formattedDuration && (
+                    <span style={{ fontSize: 10, color: color, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                      {formattedDuration}
+                    </span>
+                  )}
+                  {phaseData.isCached && (
+                    <span style={{
+                      fontSize: 8,
+                      fontWeight: 800,
+                      background: 'rgba(52, 211, 153, 0.12)',
+                      color: '#34d399',
+                      border: '1px solid rgba(52, 211, 153, 0.25)',
+                      padding: '1px 4px',
+                      borderRadius: 4,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em'
+                    }}>
+                      Cached
+                    </span>
+                  )}
+                </div>
               </div>
               
               {idx < PHASES_METADATA.length - 1 && (
@@ -4853,6 +4870,76 @@ Use bold headers, bullet lists, and code blocks.`;
                       </div>
                     ))}
                   </div>
+
+                  {/* Visual Build Duration Chart */}
+                  {buildTrends.history && buildTrends.history.length > 0 && (
+                    <div style={{ padding: '20px 24px', background: 'var(--bg-surface)', borderRadius: 12, border: '1px solid var(--border)', marginBottom: 20 }}>
+                      <div className="lp-section-label" style={{ marginBottom: 16 }}>BUILD DURATION HISTORY (LAST 10 BUILDS)</div>
+                      <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', height: 160, gap: 12, paddingBottom: 10, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
+                        {buildTrends.history.map((h, idx) => {
+                          const durationSec = h.duration ? (h.duration / 1000).toFixed(1) : 0;
+                          const maxDuration = Math.max(...buildTrends.history.map(d => d.duration || 0), 1000);
+                          const pctHeight = Math.max(((h.duration || 0) / maxDuration) * 100, 10);
+                          
+                          let barColor = 'rgba(56, 189, 248, 0.4)';
+                          let hoverColor = 'var(--accent-primary)';
+                          let barBorder = '1px solid rgba(56, 189, 248, 0.6)';
+                          
+                          if (h.status === 'failed') {
+                            barColor = 'rgba(239, 68, 68, 0.3)';
+                            hoverColor = '#ef4444';
+                            barBorder = '1px solid rgba(239, 68, 68, 0.5)';
+                          } else if (h.isAutoHeal) {
+                            barColor = 'rgba(16, 185, 129, 0.3)';
+                            hoverColor = '#10b981';
+                            barBorder = '1px solid rgba(16, 185, 129, 0.5)';
+                          }
+
+                          return (
+                            <div 
+                              key={h._id || idx} 
+                              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1, minWidth: 40, height: '100%', justifyContent: 'end' }}
+                              title={`Commit: ${h.commitMessage || 'No Message'}\nDuration: ${durationSec}s\nStatus: ${h.status}`}
+                            >
+                              <span style={{ fontSize: 10, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{durationSec}s</span>
+                              <div 
+                                className="build-chart-bar"
+                                style={{
+                                  width: '100%',
+                                  height: `${pctHeight}%`,
+                                  background: barColor,
+                                  border: barBorder,
+                                  borderRadius: '4px 4px 0 0',
+                                  transition: 'all 0.2s',
+                                  cursor: 'pointer',
+                                }}
+                                onMouseEnter={(e) => { e.target.style.background = hoverColor; }}
+                                onMouseLeave={(e) => { e.target.style.background = barColor; }}
+                              />
+                              <span style={{ fontSize: 9, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+                                #{idx + 1}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: 'flex', gap: 16, marginTop: 12, fontSize: 11, color: 'var(--text-muted)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 10, height: 10, background: 'rgba(56, 189, 248, 0.4)', border: '1px solid rgba(56, 189, 248, 0.6)', borderRadius: 2 }} />
+                          <span>Success</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 10, height: 10, background: 'rgba(239, 68, 68, 0.3)', border: '1px solid rgba(239, 68, 68, 0.5)', borderRadius: 2 }} />
+                          <span>Failed</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 10, height: 10, background: 'rgba(16, 185, 129, 0.3)', border: '1px solid rgba(16, 185, 129, 0.5)', borderRadius: 2 }} />
+                          <span>Auto-Healed</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {buildTrends.tips?.length > 0 && (
                     <div>
                       <div className="lp-section-label" style={{ marginBottom: 8 }}>AI OPTIMIZATION TIPS</div>

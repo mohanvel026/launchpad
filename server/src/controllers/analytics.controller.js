@@ -68,7 +68,7 @@ const getBuildTrends = async (req, res) => {
       .select('status duration createdAt branch commitMessage isAutoHeal');
 
     const trends = await analyzeBuildTrends(deployments);
-    res.json(trends);
+    res.json({ ...trends, history: deployments.slice(0, 10).reverse() });
   } catch (err) {
     console.error('[BuildTrends]', err.message);
     res.status(500).json({ message: 'Failed to get build trends', error: err.message });

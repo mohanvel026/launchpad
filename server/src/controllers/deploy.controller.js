@@ -389,6 +389,20 @@ const triggerDeployHook = async (req, res) => {
     const settingsStr = `${project.installCommand || ''}|${project.buildCommand || ''}|${project.outputDir || ''}|${project.branch || ''}|${project.cpuLimit || ''}|${project.ramLimitMB || ''}`;
     const settingsHash = crypto.createHash('md5').update(settingsStr).digest('hex');
 
+    // Extract custom environment variable overrides from query params (env_VAR) and request body (env object)
+    const envOverrides = {};
+    for (const key of Object.keys(req.query)) {
+      if (key.startsWith('env_')) {
+        const envKey = key.slice(4);
+        envOverrides[envKey] = req.query[key];
+      }
+    }
+    if (req.body && req.body.env && typeof req.body.env === 'object') {
+      for (const [k, v] of Object.entries(req.body.env)) {
+        envOverrides[k] = String(v);
+      }
+    }
+
     const deployment = await Deployment.create({
       project:       project._id,
       commitSha:     'hook',
@@ -397,6 +411,7 @@ const triggerDeployHook = async (req, res) => {
       status:        'queued',
       envVarsHash,
       settingsHash,
+      envOverrides,
     });
 
     await buildQueue.add(

@@ -33,6 +33,18 @@ const notifyWebhooks = async (projectId, eventType, data) => {
             `• *Fix*: ${aiDiagnosis?.fix || 'Check build logs for details.'}`;
         }
 
+        const dashboardUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/projects/${projectId}`;
+        let slackActionLinks = `<${dashboardUrl}|💻 Open Dashboard>`;
+        let discordActionLinks = `[💻 Open Dashboard](${dashboardUrl})`;
+
+        if (eventType === 'success' && liveUrl) {
+          slackActionLinks += `  |  <${liveUrl}|🔗 Open Live Preview>`;
+          discordActionLinks += `  |  [🔗 Open Live Preview](${liveUrl})`;
+        } else if (eventType === 'failure') {
+          slackActionLinks += `  |  <${dashboardUrl}|🤖 Run AI Auto-Heal>`;
+          discordActionLinks += `  |  [🤖 Run AI Auto-Heal](${dashboardUrl})`;
+        }
+
         if (isSlack) {
           payload = {
             text: title,
@@ -42,7 +54,8 @@ const notifyWebhooks = async (projectId, eventType, data) => {
               text: description,
               fields: [
                 { title: 'Branch', value: branch, short: true },
-                { title: 'Commit', value: commitSha ? `${commitSha} - ${commitMessage}` : 'N/A', short: true }
+                { title: 'Commit', value: commitSha ? `${commitSha} - ${commitMessage}` : 'N/A', short: true },
+                { title: 'Quick Actions', value: slackActionLinks, short: false }
               ],
               footer: 'LaunchLive CI/CD Alert'
             }]
@@ -56,7 +69,8 @@ const notifyWebhooks = async (projectId, eventType, data) => {
               color: colorDecimal,
               fields: [
                 { name: 'Branch', value: branch, inline: true },
-                { name: 'Commit', value: commitSha ? `\`${commitSha}\` - ${commitMessage}` : 'N/A', inline: true }
+                { name: 'Commit', value: commitSha ? `\`${commitSha}\` - ${commitMessage}` : 'N/A', inline: true },
+                { name: 'Quick Actions', value: discordActionLinks, inline: false }
               ],
               timestamp: new Date().toISOString(),
               footer: { text: 'LaunchLive CI/CD Alert' }

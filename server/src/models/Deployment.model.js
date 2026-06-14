@@ -38,8 +38,14 @@ const deploymentSchema = new mongoose.Schema({
     status: { type: String, enum: ['pending', 'running', 'success', 'failed'], default: 'pending' },
     startedAt: { type: Date },
     finishedAt: { type: Date },
-    duration: { type: Number } // milliseconds
+    duration: { type: Number }, // milliseconds
+    isCached: { type: Boolean, default: false }
   }],
+  envOverrides: {
+    type: Map,
+    of: String,
+    default: {}
+  },
   readinessScore:    { type: Number },
   readinessChecks:   [{ name: String, passed: Boolean, recommendation: String }],
   rollbackFrom:      { type: mongoose.Schema.Types.ObjectId, ref: 'Deployment' },
