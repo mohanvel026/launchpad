@@ -985,7 +985,12 @@ buildQueue.process(1, async (job) => {
       containerPort:  containerPort
     });
     fs.writeFileSync(path.join(repoDir, 'Dockerfile'), dockerfile);
-    await log(`   ✅ Dockerfile generated for ${stack.toUpperCase()} environment (Internal Port: ${containerPort}).`);
+    
+    // Write optimized .dockerignore to speed up build context transfer and prevent permission/binary architecture issues
+    const dockerignoreContent = `node_modules\n.git\n.github\ndist\nbuild\n.next\n.nuxt\n.cache\n.npm\n.yarn\ndocker-compose*\nDockerfile*\n.dockerignore\n`;
+    fs.writeFileSync(path.join(repoDir, '.dockerignore'), dockerignoreContent);
+    
+    await log(`   ✅ Dockerfile and .dockerignore generated for ${stack.toUpperCase()} environment (Internal Port: ${containerPort}).`);
 
     // ── AI Pre-flight Health Check ──
     try {
