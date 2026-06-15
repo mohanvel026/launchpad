@@ -213,7 +213,7 @@ export default function AnalyticsDashboard({ projectId }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
       {/* Stats Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 24 }}>
         <StatCard label="Total Traffic"      value={a?.totalVisits?.toLocaleString() || 0}    color="var(--accent-primary)" />
         <StatCard label="Response Latency"   value={`${a?.avgResponseTime || 0}ms`}            color="var(--accent-secondary)" sub="Network Average" />
         <StatCard label="Service Uptime"     value={a?.uptime || '100%'}                       color="#10b981" sub="From deploy history" />
@@ -302,7 +302,7 @@ export default function AnalyticsDashboard({ projectId }) {
       </div>
 
       {/* Two Column Grid: Popular Endpoints & Live Log Stream */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 450px), 1fr))', gap: 24 }}>
         
         {/* Popular Endpoints Column */}
         <div className="lp-card glass" style={{ padding: 24, display: 'flex', flexDirection: 'column' }}>

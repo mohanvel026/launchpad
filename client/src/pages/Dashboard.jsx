@@ -150,7 +150,7 @@ export default function Dashboard() {
         {activeTab === 'Projects' && (
           <div className="fade-in">
             {/* Global Stats Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 32 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: 16, marginBottom: 32 }}>
               {[
                 { label: 'Total Projects', value: projects.length, color: 'var(--text-main)', icon: '📦' },
                 { label: 'Live Deployments', value: live, color: 'var(--accent-success)', icon: '🚀' },
@@ -230,7 +230,7 @@ export default function Dashboard() {
 
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))',
                   gap: 12,
                   width: '100%',
                   textAlign: 'left',
@@ -264,7 +264,7 @@ export default function Dashboard() {
                 <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Try searching with a different term.</p>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 380px), 1fr))', gap: 16 }}>
                 {filtered.map(project => {
                   const health = project.lastHealthScore ?? 100;
                   const hasCritical = (project.vulnSummary?.critical || 0) > 0;

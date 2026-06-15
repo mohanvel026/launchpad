@@ -128,7 +128,7 @@ export default function MetricsChart({ projectId, socketRef }) {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 24 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))', gap: 24 }}>
       
       {/* 🧠 AI Runtime Health Telemetry (Full Width) */}
       {healthStatus && (
@@ -171,7 +171,7 @@ export default function MetricsChart({ projectId, socketRef }) {
                 </button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 16 }}>
                 {healthStatus.anomalies.map((a, idx) => (
                   <div key={idx} className="glass" style={{ padding: 18, borderRadius: 12, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -239,7 +239,7 @@ export default function MetricsChart({ projectId, socketRef }) {
       {/* Instance Health */}
       <div className="lp-card glass" style={{ gridColumn: '1 / -1', padding: 32 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 24 }}>Traffic & Health</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 32 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 32 }}>
           <div>
             <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Network Ingress</div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{stats.rxMB || 0} MB</div>

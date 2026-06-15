@@ -4161,7 +4161,7 @@ Use bold headers, bullet lists, and code blocks.`;
               <div style={{ display: 'grid', gap: 14, marginBottom: 24, padding: 20, background: 'rgba(255, 255, 255, 0.02)', borderRadius: 12, border: '1px solid var(--border)' }}>
                 <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-main)' }}>Add Webhook Alert</div>
                 <div style={{ display: 'grid', gap: 12 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 12 }}>
                     <div>
                       <div className="lp-section-label" style={{ marginBottom: 6 }}>PLATFORM</div>
                       <select
@@ -4333,7 +4333,7 @@ Use bold headers, bullet lists, and code blocks.`;
               <div style={{ display: 'grid', gap: 24 }}>
                 <div>
                   <div className="lp-section-label" style={{ marginBottom: 12 }}>SELECT TARGET REGIONS</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 14 }}>
                     {[
                       { key: 'us-ashburn-1', label: 'US East (Ashburn)', ping: '240ms' },
                       { key: 'uk-london-1',  label: 'Europe (London)',   ping: '124ms' },
@@ -5007,7 +5007,7 @@ Use bold headers, bullet lists, and code blocks.`;
 
               {/* Sub-tab 1: Systems Guide */}
               {guideSubTab === 'systems' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 24 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))', gap: 24 }}>
                   {[
                     {
                       title: 'AI Auto-Healing & Self-Correction',
@@ -5135,7 +5135,7 @@ Use bold headers, bullet lists, and code blocks.`;
 
               {/* Sub-tab 2: SRE AI Chat */}
               {guideSubTab === 'chat' && (
-                <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, minHeight: '600px', alignItems: 'stretch' }}>
+                <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 24, minHeight: '600px', alignItems: 'stretch' }}>
                   {/* Left Pane: Chat Window */}
                   <div className="lp-card glass" style={{ display: 'flex', flexDirection: 'column', padding: 24, height: '650px', background: 'rgba(9, 9, 14, 0.4)' }}>
                     {/* Chat Header */}
@@ -5474,7 +5474,7 @@ Use bold headers, bullet lists, and code blocks.`;
                           <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
                             Welcome to the DevOps Sandbox! This interactive simulator lets you trigger real-world production outages and watch LaunchLive's <strong>Zero-Touch Self-Healing system</strong> diagnose and repair them automatically.
                           </p>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, fontSize: 12.5, color: 'var(--text-dim)' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12, fontSize: 12.5, color: 'var(--text-dim)' }}>
                             <div style={{ background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 8 }}>
                               <strong>1. SRE Flow Diagram:</strong> Click any of the nodes (e.g. 💻 Developer, 🧠 AI SRE Agent) to learn what that part of the infrastructure does under the hood.
                             </div>
@@ -5611,7 +5611,7 @@ Use bold headers, bullet lists, and code blocks.`;
                             </button>
                           </div>
                           
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 16 }}>
                             <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.03)', borderLeft: '3px solid var(--accent-danger)', borderRadius: '4px' }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-danger)', textTransform: 'uppercase', marginBottom: 4 }}>⚠️ The Problem (Without LaunchLive)</div>
                               <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>{desc.why}</div>
@@ -5622,7 +5622,7 @@ Use bold headers, bullet lists, and code blocks.`;
                             </div>
                           </div>
 
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 16 }}>
                             <div style={{ padding: 12, background: 'rgba(16, 185, 129, 0.03)', borderLeft: '3px solid var(--accent-success)', borderRadius: '4px' }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-success)', textTransform: 'uppercase', marginBottom: 4 }}>💡 Real-World Value</div>
                               <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>{desc.value}</div>
@@ -5824,7 +5824,7 @@ Use bold headers, bullet lists, and code blocks.`;
                     {/* Simulated Console + Telemetry Metrics Grid */}
                     <div style={{
                       display: 'grid',
-                      gridTemplateColumns: activeSimulation ? 'repeat(auto-fit, minmax(300px, 1fr))' : '1fr',
+                      gridTemplateColumns: activeSimulation ? 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))' : '1fr',
                       gap: 20,
                       alignItems: 'stretch'
                     }}>
@@ -5892,7 +5892,7 @@ Use bold headers, bullet lists, and code blocks.`;
                             </div>
 
                             {/* Gauges Grid */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 }}>
                               {/* CPU Meter */}
                               <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.02)' }}>
                                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>CPU Load</div>
@@ -5917,7 +5917,7 @@ Use bold headers, bullet lists, and code blocks.`;
                             </div>
 
                             {/* Details Row */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 }}>
                               {/* HTTP status */}
                               <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div>
@@ -6120,7 +6120,7 @@ Use bold headers, bullet lists, and code blocks.`;
         {/* ── Live Metrics + Cost Estimator ── */}
         {activeTab === 'metrics' && (
           <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 16 }}>
               {[
                 { label: 'Total Deployments', value: deployments.length },
                 { label: 'Successful', value: deployments.filter(d => d.status === 'success').length, color: 'var(--accent-success)' },
@@ -6149,7 +6149,7 @@ Use bold headers, bullet lists, and code blocks.`;
               {costLoading && <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--text-muted)' }}><div className="loading-spinner" style={{ width: 16, height: 16 }} /> Analyzing usage patterns...</div>}
               {costData && (
                 <div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 20 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: 16, marginBottom: 20 }}>
                     {[
                       { label: 'Current Monthly Cost', value: `$${costData.currentMonthlyCostUSD}`, color: '#34d399' },
                       { label: 'Projected (next month)', value: `$${costData.projectedCostUSD}`, color: '#fbbf24' },
@@ -6202,7 +6202,7 @@ Use bold headers, bullet lists, and code blocks.`;
               {trendsLoading && <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--text-muted)' }}><div className="loading-spinner" style={{ width: 16, height: 16 }} /> Analyzing build history...</div>}
               {buildTrends && (
                 <div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 20 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: 16, marginBottom: 20 }}>
                     {[
                       { label: 'Avg Build Time', value: buildTrends.avgBuildTimeMs ? `${(buildTrends.avgBuildTimeMs/1000).toFixed(1)}s` : 'N/A', color: 'var(--accent-primary)' },
                       { label: 'Success Rate', value: `${buildTrends.successRate}%`, color: buildTrends.successRate >= 80 ? '#34d399' : buildTrends.successRate >= 50 ? '#fbbf24' : '#f87171' },
@@ -6339,7 +6339,7 @@ Use bold headers, bullet lists, and code blocks.`;
               {vulnData && !vulnLoading && (
                 <div>
                   {/* Summary Cards */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 12, marginBottom: 24 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 110px), 1fr))', gap: 12, marginBottom: 24 }}>
                     {[
                       { label: 'Critical', count: vulnData.summary?.critical || 0, color: '#f87171', bg: 'rgba(248,113,113,0.1)' },
                       { label: 'High', count: vulnData.summary?.high || 0, color: '#fb923c', bg: 'rgba(251,146,60,0.1)' },
@@ -6493,7 +6493,7 @@ Use bold headers, bullet lists, and code blocks.`;
                   <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 13 }}>Specify a PR number and branch above to spawn a dedicated test container.</p>
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: 20 }}>
                   {previews.map(p => (
                     <div key={p.prNumber} className="lp-card glass" style={{ padding: 20, border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 14 }}>
                       <div>

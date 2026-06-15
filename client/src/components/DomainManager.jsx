@@ -384,7 +384,7 @@ export default function DomainManager({ project, onUpdate }) {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 28, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 28, alignItems: 'start' }}>
             
             {/* 1. Custom Domain Management Card */}
             <div className="lp-card glass" style={{ padding: 26, border: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -606,7 +606,7 @@ export default function DomainManager({ project, onUpdate }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
                   <span>⚠️</span> DNS Resolution Mismatch Detected
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 14 }}>
                   <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)' }}>
                     <div style={{ color: 'var(--text-muted)', marginBottom: 6, fontSize: 10, textTransform: 'uppercase', fontWeight: 600 }}>Expected Value (CNAME / IP)</div>
                     <code style={{ color: '#10b981', wordBreak: 'break-all', fontWeight: 700, fontSize: 12 }}>{dnsStatus.targetCname}</code>
@@ -861,7 +861,7 @@ export default function DomainManager({ project, onUpdate }) {
                   </>
                 )}
               </h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, fontSize: 13 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 12, fontSize: 13 }}>
                 <div>
                   <span className="text-muted">Target CNAME Target:</span> <code style={{ color: 'var(--accent-primary)', display: 'block', marginTop: 4 }}>{dnsStatus.targetCname}</code>
                 </div>
