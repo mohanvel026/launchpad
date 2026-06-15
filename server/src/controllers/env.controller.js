@@ -198,6 +198,22 @@ const getEnvHistory = async (req, res) => {
   }
 };
 
+// GET /api/env/:projectId/:key/reveal — decrypt and reveal a single env var value
+const revealEnvVar = async (req, res) => {
+  try {
+    const project = await verifyAccess(req.params.projectId, req.user._id);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const envVar = await EnvVar.findOne({ project: project._id, key: req.params.key });
+    if (!envVar) return res.status(404).json({ message: 'Environment variable not found' });
+
+    const decryptedValue = decrypt(envVar.value);
+    res.json({ key: envVar.key, value: decryptedValue });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // POST /api/env/:projectId/history/:historyId/restore — restore an env var to a previous value
 const restoreEnvHistory = async (req, res) => {
   try {
