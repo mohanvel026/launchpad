@@ -656,7 +656,7 @@ function TelemetryReportWidget({ data, projectId }) {
   );
 }
 
-export default function AIChat({ projectId }) {
+export default function AIChat({ projectId, activeTab = '', deployments = [], cpuUsage = null, ramUsage = null }) {
   const [messages, setMessages] = useState([
     {
       role:    'assistant',
@@ -685,6 +685,16 @@ export default function AIChat({ projectId }) {
       const res = await api.post(`/ai/${projectId}/chat`, {
         message: text,
         history: messages.slice(-6),
+        context: {
+          activeTab,
+          recentDeploys: deployments.slice(0, 3).map(d => ({
+            status: d.status,
+            message: d.commitMessage,
+            duration: d.duration,
+            error: d.aiDiagnosis?.summary || d.aiErrorSummary || ''
+          })),
+          metrics: { cpu: cpuUsage, ram: ramUsage }
+        }
       });
       setMessages((prev) => [...prev, { role: 'assistant', content: res.data.reply }]);
     } catch (err) {
@@ -708,6 +718,16 @@ export default function AIChat({ projectId }) {
       const res = await api.post(`/ai/${projectId}/chat`, {
         message: q,
         history: messages.slice(-6),
+        context: {
+          activeTab,
+          recentDeploys: deployments.slice(0, 3).map(d => ({
+            status: d.status,
+            message: d.commitMessage,
+            duration: d.duration,
+            error: d.aiDiagnosis?.summary || d.aiErrorSummary || ''
+          })),
+          metrics: { cpu: cpuUsage, ram: ramUsage }
+        }
       });
       setMessages((prev) => [...prev, { role: 'assistant', content: res.data.reply }]);
     } catch (err) {

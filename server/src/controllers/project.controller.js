@@ -277,7 +277,7 @@ const registerWebhook = async (req, res) => {
 };
 
 const updateProject = async (req, res) => {
-  const allowed = ['name', 'branch', 'installCommand', 'buildCommand', 'outputDir', 'autoHeal', 'autoHealStrategy', 'regions', 'cronSchedule', 'cronEnabled'];
+  const allowed = ['name', 'branch', 'installCommand', 'buildCommand', 'outputDir', 'autoHeal', 'autoHealStrategy', 'regions', 'cronSchedule', 'cronEnabled', 'healthCheckPath'];
   const updates = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];

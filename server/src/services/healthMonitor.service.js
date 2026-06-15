@@ -10,7 +10,7 @@ const monitors = new Map();
  * Polls docker logs every 90 seconds, runs AI inspection, stores result, and auto-restarts on critical failures.
  */
 function startMonitoring(project) {
-  const { _id: projectId, containerId, stack } = project;
+  const { _id: projectId, containerId } = project;
   if (!containerId || containerId === 'local-static') return;
 
   // Stop existing monitor if any
@@ -19,19 +19,27 @@ function startMonitoring(project) {
   const intervalId = setInterval(async () => {
     try {
       const Project = require('../models/Project.model');
+      const proj = await Project.findById(projectId);
+      if (!proj) {
+        stopMonitoring(projectId);
+        return;
+      }
+
+      const currentContainerId = proj.containerId;
+      const stack = proj.stack || 'unknown';
 
       // 1. Verify container exists and get its running state
       let containerState = ''; // 'running' | 'stopped' | 'missing'
       try {
-        const inspectOut = execSync(`docker inspect -f "{{.State.Status}}" ${containerId}`, { stdio: 'pipe', timeout: 15000 }).toString().trim();
+        const inspectOut = execSync(`docker inspect -f "{{.State.Status}}" ${currentContainerId}`, { stdio: 'pipe', timeout: 15000 }).toString().trim();
         containerState = inspectOut; // e.g., 'running', 'exited', 'paused'
       } catch (e) {
-        console.error(`[HealthMonitor] docker inspect failed for container ${containerId}:`, e.message);
+        console.error(`[HealthMonitor] docker inspect failed for container ${currentContainerId}:`, e.message);
         containerState = 'missing';
       }
 
       if (containerState === 'missing') {
-        console.warn(`[HealthMonitor] Container ${containerId} is missing for project ${projectId}.`);
+        console.warn(`[HealthMonitor] Container ${currentContainerId} is missing for project ${projectId}.`);
         await Project.findByIdAndUpdate(projectId, { lastHealthScore: 0, status: 'failed' });
         await notifyUpdate(projectId);
         stopMonitoring(projectId);
@@ -39,16 +47,16 @@ function startMonitoring(project) {
       }
 
       if (containerState !== 'running') {
-        console.warn(`[HealthMonitor] Container ${containerId} is not running (state: ${containerState}). Attempting recovery restart...`);
+        console.warn(`[HealthMonitor] Container ${currentContainerId} is not running (state: ${containerState}). Attempting recovery restart...`);
         try {
           const { startContainer } = require('./docker.service');
-          await startContainer(containerId);
-          console.log(`[HealthMonitor] Container ${containerId} started successfully during recovery.`);
+          await startContainer(currentContainerId);
+          console.log(`[HealthMonitor] Container ${currentContainerId} started successfully during recovery.`);
           await Project.findByIdAndUpdate(projectId, { lastHealthScore: 60, status: 'live' });
           await notifyUpdate(projectId);
           return; // Skip log analysis this tick, let it boot
         } catch (startErr) {
-          console.error(`[HealthMonitor] Failed to start container ${containerId}:`, startErr.message);
+          console.error(`[HealthMonitor] Failed to start container ${currentContainerId}:`, startErr.message);
           await Project.findByIdAndUpdate(projectId, { lastHealthScore: 10, status: 'failed' });
           await notifyUpdate(projectId);
           return;
@@ -58,99 +66,155 @@ function startMonitoring(project) {
       // 2. Container is running, fetch logs
       let logs = '';
       try {
-        logs = execSync(`docker logs --tail 200 --since 90s ${containerId} 2>&1`, { timeout: 20000 }).toString();
+        logs = execSync(`docker logs --tail 200 --since 90s ${currentContainerId} 2>&1`, { timeout: 20000 }).toString();
       } catch (e) {
-        console.error(`[HealthMonitor] docker logs failed for container ${containerId}:`, e.message);
+        console.error(`[HealthMonitor] docker logs failed for container ${currentContainerId}:`, e.message);
         logs = e.stdout?.toString() || e.stderr?.toString() || '';
       }
 
-      if (!logs.trim()) return; // Nothing to analyze
+      // AI log inspection
+      let logHealthScore = 100;
+      let logAnomalies = [];
+      let logHealthy = true;
 
-      const result = await inspectRuntimeLogs(logs, stack || 'unknown');
-      const healthScore = result.isHealthy ? 100 : Math.max(10, 100 - (result.anomalies.length * 25));
+      if (logs.trim()) {
+        const result = await inspectRuntimeLogs(logs, stack);
+        logHealthy = result.isHealthy;
+        logAnomalies = result.anomalies || [];
+        logHealthScore = result.isHealthy ? 100 : Math.max(10, 100 - (logAnomalies.length * 25));
+      }
+
+      // 3. HTTP Health Check URL pinging
+      let httpHealthy = true;
+      let httpAnomaly = null;
+      let httpScorePenalty = 0;
+
+      if (proj.healthCheckPath && proj.port) {
+        const pathToCheck = proj.healthCheckPath.startsWith('/') ? proj.healthCheckPath : `/${proj.healthCheckPath}`;
+        const checkUrl = `http://localhost:${proj.port}${pathToCheck}`;
+        
+        try {
+          const axios = require('axios');
+          const response = await axios.get(checkUrl, {
+            headers: {
+              'User-Agent': 'LaunchLive-SRE/1.0',
+              'X-LaunchLive-Monitor': 'true'
+            },
+            timeout: 5000,
+            validateStatus: () => true // resolve promise for all status codes
+          });
+          
+          if (response.status < 200 || response.status >= 300) {
+            httpHealthy = false;
+            httpAnomaly = `HTTP check failed with status ${response.status} on ${pathToCheck}`;
+            httpScorePenalty = 35;
+          }
+        } catch (httpErr) {
+          httpHealthy = false;
+          httpAnomaly = `HTTP check connection error on ${pathToCheck}: ${httpErr.message}`;
+          httpScorePenalty = 50;
+        }
+      }
+
+      const finalHealthScore = Math.max(10, logHealthScore - httpScorePenalty);
+      const isOverallHealthy = logHealthy && httpHealthy;
+      const allAnomalies = [...logAnomalies, ...(httpAnomaly ? [httpAnomaly] : [])];
 
       const existing = monitors.get(String(projectId)) || {};
-      
       const previousScore = existing.lastScore ?? 100;
-      if (healthScore < 70 && previousScore >= 70) {
+
+      // Raise health drop notification
+      if (finalHealthScore < 70 && previousScore >= 70) {
         try {
           const Notification = require('../models/Notification.model');
           const { emitNotification } = require('../sockets/logs.socket');
-          const proj = await Project.findById(projectId);
-          if (proj) {
-            const notif = await Notification.create({
-              user: proj.owner,
-              title: `⚠️ Container Health Drop: ${proj.name}`,
-              message: `Container health score dropped to ${healthScore}% due to anomalies detected in logs: ${result.anomalies?.slice(0, 3).join(', ') || 'runtime errors'}.`,
-              type: 'warning',
-              project: proj._id,
-            });
-            emitNotification(proj.owner.toString(), notif);
-          }
+          const notif = await Notification.create({
+            user: proj.owner,
+            title: `⚠️ Container Health Drop: ${proj.name}`,
+            message: `Container health score dropped to ${finalHealthScore}% due to: ${allAnomalies.slice(0, 3).join(', ') || 'runtime health anomalies'}.`,
+            type: 'warning',
+            project: proj._id,
+          });
+          emitNotification(proj.owner.toString(), notif);
         } catch (notifErr) {
           console.error('[HealthMonitor] Failed to create drop notification:', notifErr.message);
         }
       }
 
+      // Track consecutive failures
+      let consecutiveFailures = existing.consecutiveFailures || 0;
+      if (finalHealthScore < 30) {
+        consecutiveFailures += 1;
+      } else {
+        consecutiveFailures = 0;
+      }
+
       monitors.set(String(projectId), {
         ...existing,
         intervalId,
-        lastScore: healthScore,
+        lastScore: finalHealthScore,
         lastCheckedAt: new Date(),
-        anomalies: result.anomalies || [],
-        isHealthy: result.isHealthy,
+        anomalies: allAnomalies,
+        isHealthy: isOverallHealthy,
+        consecutiveFailures,
       });
 
       // ── Persist score to DB on every monitoring tick ──────────────────────────
       try {
-        await Project.findByIdAndUpdate(projectId, { lastHealthScore: healthScore });
+        await Project.findByIdAndUpdate(projectId, { lastHealthScore: finalHealthScore });
         await notifyUpdate(projectId);
       } catch (dbErr) {
         console.warn(`[HealthMonitor] DB persist failed for ${projectId}:`, dbErr.message);
       }
 
       // ── Auto-recovery: restart container if critically unhealthy ──────────────
-      if (healthScore < 30 && containerId) {
+      if (finalHealthScore < 30 && currentContainerId) {
         const prevRecovery = existing.lastRecoveryAt;
         const now = Date.now();
-        // Only attempt recovery once every 5 minutes to avoid restart loops
-        if (!prevRecovery || (now - new Date(prevRecovery).getTime()) > 5 * 60 * 1000) {
-          console.warn(`[HealthMonitor] 🔴 Critical health (${healthScore}) for project ${projectId}. Auto-restarting container...`);
-          try {
-            await restartContainer(containerId);
-            console.log(`[HealthMonitor] ✅ Container ${containerId} restarted successfully.`);
-            
+        const isGracePeriod = prevRecovery && (now - new Date(prevRecovery).getTime()) < 60 * 1000;
+
+        if (isGracePeriod) {
+          console.log(`[HealthMonitor] Project ${projectId} is inside the 60s recovery grace period. Skipping restart check.`);
+        } else if (consecutiveFailures >= 3) {
+          // Only attempt recovery once every 5 minutes to avoid restart loops
+          if (!prevRecovery || (now - new Date(prevRecovery).getTime()) > 5 * 60 * 1000) {
+            console.warn(`[HealthMonitor] 🔴 Critical health (${finalHealthScore}) for project ${projectId} after ${consecutiveFailures} consecutive failures. Auto-restarting container...`);
             try {
-              const Notification = require('../models/Notification.model');
-              const { emitNotification } = require('../sockets/logs.socket');
-              const proj = await Project.findById(projectId);
-              if (proj) {
+              await restartContainer(currentContainerId);
+              console.log(`[HealthMonitor] ✅ Container ${currentContainerId} restarted successfully.`);
+              
+              try {
+                const Notification = require('../models/Notification.model');
+                const { emitNotification } = require('../sockets/logs.socket');
                 const notif = await Notification.create({
                   user: proj.owner,
                   title: `🔄 Auto-Restart Initiated: ${proj.name}`,
-                  message: `LaunchLive SRE auto-restarted the container for ${proj.name} due to critical health score (${healthScore}%).`,
+                  message: `LaunchLive SRE auto-restarted the container for ${proj.name} due to critical health score (${finalHealthScore}%).`,
                   type: 'warning',
                   project: proj._id,
                 });
                 emitNotification(proj.owner.toString(), notif);
+              } catch (notifErr) {
+                console.error('[HealthMonitor] Failed to create restart notification:', notifErr.message);
               }
-            } catch (notifErr) {
-              console.error('[HealthMonitor] Failed to create restart notification:', notifErr.message);
+
+              monitors.set(String(projectId), {
+                ...monitors.get(String(projectId)) || {},
+                lastRecoveryAt: new Date(),
+                lastScore: 60,
+                isHealthy: true,
+                anomalies: [],
+                consecutiveFailures: 0,
+              });
+
+              // Update DB to reflect recovery attempt
+              try {
+                await Project.findByIdAndUpdate(projectId, { lastHealthScore: 60, status: 'live' });
+                await notifyUpdate(projectId);
+              } catch {}
+            } catch (restartErr) {
+              console.error(`[HealthMonitor] ❌ Container restart failed for ${currentContainerId}:`, restartErr.message);
             }
-            monitors.set(String(projectId), {
-              ...monitors.get(String(projectId)) || {},
-              lastRecoveryAt: new Date(),
-              lastScore: 60,
-              isHealthy: true,
-              anomalies: [],
-            });
-            // Update DB to reflect recovery attempt
-            try {
-              await Project.findByIdAndUpdate(projectId, { lastHealthScore: 60, status: 'live' });
-              await notifyUpdate(projectId);
-            } catch {}
-          } catch (restartErr) {
-            console.error(`[HealthMonitor] ❌ Container restart failed for ${containerId}:`, restartErr.message);
           }
         }
       }
@@ -159,7 +223,7 @@ function startMonitoring(project) {
     }
   }, 90_000); // 90 seconds
 
-  monitors.set(String(projectId), { intervalId, lastScore: 100, anomalies: [], isHealthy: true, lastCheckedAt: null });
+  monitors.set(String(projectId), { intervalId, lastScore: 100, anomalies: [], isHealthy: true, lastCheckedAt: null, consecutiveFailures: 0 });
 }
 
 function stopMonitoring(projectId) {

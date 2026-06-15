@@ -17,7 +17,7 @@ const checkApiKeys = () => {
 
 // ─── POST /api/ai/:projectId/chat ─────────────────────────────────────────────
 const chatWithAI = async (req, res) => {
-  const { message, history = [] } = req.body;
+  const { message, history = [], context } = req.body;
   if (!message) return res.status(400).json({ message: 'message is required' });
 
   try {
@@ -52,6 +52,30 @@ const chatWithAI = async (req, res) => {
       }
     }
 
+    let richContextPrompt = '';
+    if (context) {
+      const { activeTab, recentDeploys, metrics } = context;
+      richContextPrompt += '\nActive User Interface Context:\n';
+      if (activeTab) {
+        richContextPrompt += `- Developer is currently looking at tab: "${activeTab}"\n`;
+      }
+      if (recentDeploys && Array.isArray(recentDeploys) && recentDeploys.length > 0) {
+        richContextPrompt += `- Recent deployment history:\n`;
+        recentDeploys.forEach((dep, idx) => {
+          const statusStr = dep.status || 'unknown';
+          const msgStr = dep.message ? ` - ${dep.message}` : '';
+          const durStr = dep.duration ? ` (duration: ${(dep.duration / 1000).toFixed(1)}s)` : '';
+          const errStr = dep.error ? ` (AI Diagnosis: ${dep.error})` : '';
+          richContextPrompt += `  * Run ${idx + 1}: ${statusStr}${msgStr}${durStr}${errStr}\n`;
+        });
+      }
+      if (metrics) {
+        const cpuStr = (metrics.cpu !== undefined && metrics.cpu !== null) ? `${metrics.cpu}%` : 'unknown';
+        const ramStr = (metrics.ram !== undefined && metrics.ram !== null) ? `${metrics.ram}MB` : 'unknown';
+        richContextPrompt += `- Active Container Metrics: CPU: ${cpuStr}, RAM: ${ramStr}\n`;
+      }
+    }
+
     // Build rich contextual DevOps System Prompt
     const systemPrompt = `You are LaunchLive DevOps AI, an elite cloud systems SRE expert.
 Context:
@@ -59,6 +83,7 @@ Context:
 - Current Framework/Stack: ${project.stack}
 - Project Active Status: ${project.status}
 - Latest Deployment: ${latestDeploy ? `${latestDeploy.status} (${latestDeploy.commitMessage || 'No msg'})` : 'None'}
+${richContextPrompt}
 ${repoContext ? `- Live Repository Scan Details:\n${repoContext}` : ''}
 ${latestDeploy && latestDeploy.status === 'failed' && latestDeploy.logs ? `- Recent Failure Logs (truncated): \n${latestDeploy.logs.slice(-25).join('\n')}` : ''}
 

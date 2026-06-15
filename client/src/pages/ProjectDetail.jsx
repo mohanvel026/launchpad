@@ -563,6 +563,8 @@ export default function ProjectDetail() {
   const [runtimeLogs, setRuntimeLogs] = useState([]);
   const [deploying,   setDeploying]   = useState(false);
   const [activeTab,   setActiveTab]   = useState('deployments');
+  const [cpuUsage,    setCpuUsage]    = useState(null);
+  const [ramUsage,    setRamUsage]    = useState(null);
   const [showDeployDropdown, setShowDeployDropdown] = useState(false);
   const [error,       setError]       = useState('');
   const [saveStatus,  setSaveStatus]  = useState('');
@@ -580,7 +582,7 @@ export default function ProjectDetail() {
   const [aiScanning, setAiScanning] = useState(false);
 
   // Settings
-  const [settings, setSettings] = useState({ installCommand: '', buildCommand: '', outputDir: '', branch: '', autoHeal: false, autoHealStrategy: 'push-on-success' });
+  const [settings, setSettings] = useState({ installCommand: '', buildCommand: '', outputDir: '', branch: '', autoHeal: false, autoHealStrategy: 'push-on-success', healthCheckPath: '' });
   const [activeDeployment, setActiveDeployment] = useState(null);
   const [showDiff, setShowDiff] = useState(false);
   const [quickEnvValue, setQuickEnvValue] = useState('');
@@ -1051,6 +1053,7 @@ Use bold headers, bullet lists, and code blocks.`;
         branch:         p.branch         || 'main',
         autoHeal:       !!p.autoHeal,
         autoHealStrategy: p.autoHealStrategy || 'push-on-success',
+        healthCheckPath: p.healthCheckPath || '',
       });
       setRegions(p.regions || ['us-ashburn-1']);
       setCronSchedule(p.cronSchedule || '');
@@ -1203,6 +1206,7 @@ Use bold headers, bullet lists, and code blocks.`;
     socket.on('connect', () => {
       console.log('[Socket] Connected, joining project:', id);
       socket.emit('join:project', id);
+      socket.emit('join:metrics', id);
       // Re-join active deployment room if activeTab is logs
       const latestDep = deploymentsRef.current?.[0];
       if (activeTabRef.current === 'logs' && latestDep && (latestDep.status === 'building' || latestDep.status === 'queued')) {
@@ -1241,12 +1245,18 @@ Use bold headers, bullet lists, and code blocks.`;
       setRuntimeLogs(prev => [...prev, line]);
     });
 
+    socket.on('metrics', (stats) => {
+      if (stats.cpu !== undefined) setCpuUsage(stats.cpu);
+      if (stats.memMB !== undefined) setRamUsage(stats.memMB);
+    });
+
     socket.on('connect_error', (err) => console.warn('Socket error:', err.message));
 
     socketRef.current = socket;
 
     return () => {
       console.log('[Socket] Cleaning up socket connection...');
+      socket.emit('leave:metrics', id);
       socket.disconnect();
     };
   }, [id]);
@@ -3735,6 +3745,7 @@ Use bold headers, bullet lists, and code blocks.`;
                   { label: 'INSTALL COMMAND', key: 'installCommand', placeholder: 'npm install', mono: true },
                   { label: 'BUILD COMMAND',   key: 'buildCommand',   placeholder: 'npm run build', mono: true },
                   { label: 'OUTPUT DIRECTORY',key: 'outputDir',      placeholder: 'dist', mono: true },
+                  { label: 'HEALTH CHECK PATH', key: 'healthCheckPath', placeholder: '/api/health', mono: true },
                 ].map(({ label, key, placeholder, mono }) => (
                   <div key={key}>
                     <div className="lp-section-label">{label}</div>
@@ -6458,7 +6469,13 @@ Use bold headers, bullet lists, and code blocks.`;
         {/* ── AI Co-Pilot ── */}
         {activeTab === 'ai' && (
           <div className="fade-in">
-            <AIChat projectId={id} />
+            <AIChat
+              projectId={id}
+              activeTab={activeTab}
+              deployments={deployments}
+              cpuUsage={cpuUsage}
+              ramUsage={ramUsage}
+            />
           </div>
         )}
 
