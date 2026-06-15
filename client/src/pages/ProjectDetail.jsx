@@ -648,6 +648,12 @@ export default function ProjectDetail() {
   const [commitStatus, setCommitStatus] = useState('');
   const [commitMessage, setCommitMessage] = useState('');
 
+  // Container Console States
+  const [terminalCommand, setTerminalCommand] = useState('');
+  const [terminalOutput, setTerminalOutput] = useState('');
+  const [terminalRunning, setTerminalRunning] = useState(false);
+  const [terminalExitCode, setTerminalExitCode] = useState(null);
+
   const filteredLogsWithIndex = logs
     .map((line, index) => ({ line, index }))
     .filter(({ line }) => {
@@ -1435,6 +1441,30 @@ Use bold headers, bullet lists, and code blocks.`;
       alert(err.response?.data?.message || 'Failed to clear volume');
     } finally {
       setVolumeActionLoading(false);
+    }
+  };
+
+  const handleRunTerminalCommand = async (cmdToRun = terminalCommand) => {
+    if (!cmdToRun || !cmdToRun.trim()) return;
+    setTerminalRunning(true);
+    setTerminalExitCode(null);
+    setTerminalOutput(prev => prev + (prev ? '\n' : '') + `$ ${cmdToRun}\n[Executing...]`);
+    try {
+      const res = await api.post(`/projects/${id}/exec`, { command: cmdToRun.trim() });
+      setTerminalOutput(prev => {
+        const cleanPrev = prev.replace(/\n\[Executing\.\.\.\]$/, '');
+        return cleanPrev + `\n${res.data.output || '(No command output)'}\n[Exit Code: ${res.data.exitCode}]`;
+      });
+      setTerminalExitCode(res.data.exitCode);
+    } catch (err) {
+      console.error('[Terminal exec error]', err);
+      setTerminalOutput(prev => {
+        const cleanPrev = prev.replace(/\n\[Executing\.\.\.\]$/, '');
+        return cleanPrev + `\nError running command: ${err.response?.data?.message || err.message}`;
+      });
+    } finally {
+      setTerminalRunning(false);
+      setTerminalCommand('');
     }
   };
 
@@ -3567,7 +3597,8 @@ Use bold headers, bullet lists, and code blocks.`;
 
         {/* ── Runtime Logs ── */}
         {activeTab === 'runtime-logs' && (
-          <div className="lp-terminal fade-in">
+          <>
+            <div className="lp-terminal fade-in">
             <div className="lp-terminal-header" style={{ position: 'relative' }}>
               <div className="lp-terminal-dots">
                 <div className="lp-terminal-dot" style={{ background: '#ff5f57' }} />
@@ -3589,7 +3620,125 @@ Use bold headers, bullet lists, and code blocks.`;
               <div ref={runtimeLogsEndRef} />
             </div>
           </div>
-        )}
+
+          {/* 💻 Container Terminal Console (Docker Exec) */}
+          <div className="lp-card glass" style={{ marginTop: 24, padding: 28, borderLeft: '4px solid var(--accent-primary)' }}>
+            <div className="flex-between" style={{ marginBottom: 6 }}>
+              <h3 style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                💻 Container Web Console
+              </h3>
+              <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                🔒 SANDBOXED
+              </span>
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
+              Execute diagnostic commands directly inside your running container instance.
+            </p>
+
+            {!project.containerId || project.containerId === 'local-static' ? (
+              <div style={{ padding: 18, background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border)', borderRadius: 10, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                Terminal is unavailable because the project container is not active or running.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Command Presets */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 600, marginRight: 4 }}>PRESETS:</span>
+                  {[
+                    { label: '📂 List Files (ls)', cmd: 'ls -la' },
+                    { label: '🟢 Node Version', cmd: 'node -v' },
+                    { label: '📦 NPM Packages', cmd: 'npm list --depth=0' },
+                    { label: '🔒 Env Keys', cmd: 'env | cut -d= -f1' },
+                    { label: '💾 Disk Free (df)', cmd: 'df -h' }
+                  ].map(preset => (
+                    <button 
+                      key={preset.cmd}
+                      onClick={() => handleRunTerminalCommand(preset.cmd)}
+                      disabled={terminalRunning}
+                      className="lp-btn-secondary"
+                      style={{ padding: '4px 10px', fontSize: 11, height: 'auto', background: 'rgba(255,255,255,0.02)' }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Input Line */}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span style={{ position: 'absolute', left: 14, fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--accent-primary)', pointerEvents: 'none' }}>$</span>
+                    <input
+                      type="text"
+                      value={terminalCommand}
+                      onChange={e => setTerminalCommand(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          handleRunTerminalCommand();
+                        }
+                      }}
+                      placeholder="Type troubleshooting command (e.g. ls -la, node -v) and press Enter..."
+                      className="lp-input lp-input-mono"
+                      style={{ paddingLeft: 30, fontSize: 13 }}
+                      disabled={terminalRunning}
+                    />
+                  </div>
+                  <button
+                    className="lp-btn-primary"
+                    onClick={() => handleRunTerminalCommand()}
+                    disabled={terminalRunning || !terminalCommand.trim()}
+                    style={{ padding: '0 20px', height: 42, display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    {terminalRunning ? (
+                      <>
+                        <div className="loading-spinner" style={{ width: 14, height: 14, borderColor: '#fff', borderTopColor: 'transparent' }} />
+                        Running...
+                      </>
+                    ) : (
+                      <>⚡ Run</>
+                    )}
+                  </button>
+                </div>
+
+                {/* Terminal Output */}
+                {terminalOutput && (
+                  <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div className="flex-between">
+                      <div className="lp-section-label" style={{ margin: 0 }}>EXECUTION CONSOLE</div>
+                      <button 
+                        onClick={() => { setTerminalOutput(''); setTerminalExitCode(null); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: 11, cursor: 'pointer', padding: 0 }}
+                      >
+                        Clear Terminal Output
+                      </button>
+                    </div>
+
+                    <div style={{
+                      background: '#040406',
+                      border: terminalExitCode === null 
+                        ? '1px solid var(--border)' 
+                        : terminalExitCode === 0 
+                          ? '1px solid rgba(16, 185, 129, 0.4)' 
+                          : '1px solid rgba(239, 68, 68, 0.4)',
+                      borderRadius: 10,
+                      padding: 16,
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      color: '#10b981',
+                      maxHeight: '350px',
+                      overflowY: 'auto',
+                      whiteSpace: 'pre-wrap',
+                      boxShadow: 'inset 0 0 10px rgba(0,0,0,0.8)'
+                    }}>
+                      {terminalOutput}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
         {/* ── Environment Variables ── */}
         {activeTab === 'env' && (

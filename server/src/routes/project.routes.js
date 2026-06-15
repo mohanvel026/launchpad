@@ -5,7 +5,7 @@ const {
   deleteProject, getUserRepos, analyzeRepo, registerWebhook, updateProject,
   clearProjectStuckBuild, resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus,
   checkSubdomainAvailability, getProjectDockerfile, saveProjectDockerfile, lintProjectDockerfile,
-  getProjectVolumeDetails, clearProjectVolume
+  getProjectVolumeDetails, clearProjectVolume, executeContainerCommand
 } = require('../controllers/project.controller');
 
 const router = express.Router();
@@ -66,5 +66,8 @@ router.post('/:id/sync-status', protect, syncProjectStatus);
 // Volume management routes
 router.get('/:id/volume/files', protect, getProjectVolumeDetails);
 router.post('/:id/volume/clear', protect, clearProjectVolume);
+
+// Container interactive terminal command executor route
+router.post('/:id/exec', protect, executeContainerCommand);
 
 module.exports = router;

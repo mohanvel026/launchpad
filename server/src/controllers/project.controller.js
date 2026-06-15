@@ -740,6 +740,39 @@ const clearProjectVolume = async (req, res) => {
   }
 };
 
+// POST /api/projects/:id/exec
+const executeContainerCommand = async (req, res) => {
+  const { command } = req.body;
+  if (!command || !command.trim()) {
+    return res.status(400).json({ message: 'Command is required' });
+  }
+
+  try {
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+    if (!project.containerId || project.containerId === 'local-static') {
+      return res.status(400).json({ message: 'Container is not currently running or active' });
+    }
+
+    const { exec } = require('child_process');
+    const sanitizedCmd = command.replace(/"/g, '\\"');
+    const fullExecCmd = `docker exec ${project.containerId} sh -c "${sanitizedCmd}" 2>&1`;
+
+    exec(fullExecCmd, { timeout: 15000 }, (error, stdout, stderr) => {
+      const output = stdout || stderr || (error ? error.message : '');
+      res.json({
+        exitCode: error ? error.code : 0,
+        output
+      });
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // GET /api/projects/check-subdomain
 const checkSubdomainAvailability = async (req, res) => {
   const { subdomain } = req.query;
@@ -761,5 +794,5 @@ module.exports = {
   resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus,
   checkSubdomainAvailability,
   getProjectDockerfile, saveProjectDockerfile, lintProjectDockerfile,
-  getProjectVolumeDetails, clearProjectVolume,
+  getProjectVolumeDetails, clearProjectVolume, executeContainerCommand,
 };
