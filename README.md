@@ -83,3 +83,17 @@ To host LaunchPad on your own server:
    ```bash
    pm2 start infra/ecosystem.config.js
    ```
+
+---
+
+## What I Learned (Key Takeaways)
+
+Building LaunchPad provided deep hands-on experience in full-stack architecture, DevOps automation, and SRE design:
+
+*   **Dynamic Reverse Proxying**: Managed reverse-proxy configurations dynamically with Nginx templates, rewriting domain configs on-the-fly and applying hot-reloads to route subdomains automatically.
+*   **Production Process Management**: Utilized PM2 fork and cluster modes, establishing persistent socket connections and managing production server instances with zero-downtime restarts.
+*   **Containerized Environments**: Leveraged Docker APIs (Dockerode) to programmatically spawn, configure, and isolate runtime environments, mount persistent volumes, and monitor CPU/RAM utilization.
+*   **Asynchronous Processing**: Designed robust build queues and container lifecycle workflows using Redis and Bull MQ to handle high-concurrency deployment workloads.
+*   **Securing Application Secrets**: Implemented high-entropy AES-256 encryption systems for project environment variables with safe background key rotation mechanisms.
+*   **SRE Auto-Healing & Monitoring**: Engineered background daemons that dynamically analyze system runtime logs, perform automated HTTP container pings, and coordinate auto-recovery triggers to handle service degradation.
+*   **Generative AI SRE Co-Pilot**: Integrated Gemini and Groq API pipelines to compile rich contextual prompts (health metrics, recent logs, tab states) for real-time AI code diagnostics and interactive chat assistance.
