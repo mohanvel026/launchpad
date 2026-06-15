@@ -585,7 +585,7 @@ export default function ProjectDetail() {
   const [historyLoading, setHistoryLoading] = useState(false);
 
   // Settings
-  const [settings, setSettings] = useState({ installCommand: '', buildCommand: '', outputDir: '', branch: '', autoHeal: false, autoHealStrategy: 'push-on-success', healthCheckPath: '' });
+  const [settings, setSettings] = useState({ installCommand: '', buildCommand: '', outputDir: '', branch: '', autoHeal: false, autoHealStrategy: 'push-on-success', healthCheckPath: '', persistentPath: '' });
   const [activeDeployment, setActiveDeployment] = useState(null);
   const [showDiff, setShowDiff] = useState(false);
   const [quickEnvValue, setQuickEnvValue] = useState('');
@@ -628,6 +628,12 @@ export default function ProjectDetail() {
   const [regions, setRegions] = useState(['us-ashburn-1']);
   const [cronSchedule, setCronSchedule] = useState('');
   const [cronEnabled, setCronEnabled] = useState(false);
+
+  // Persistent Volume States
+  const [volumeDetails, setVolumeDetails] = useState({ exists: false, totalSize: 0, files: [] });
+  const [volumeLoading, setVolumeLoading] = useState(false);
+  const [volumeActionLoading, setVolumeActionLoading] = useState(false);
+  const [volumeError, setVolumeError] = useState(null);
   const [badgeTimestamp] = useState(() => Date.now());
   const [regionsSaving, setRegionsSaving] = useState(false);
   const [cronSaving, setCronSaving] = useState(false);
@@ -1057,6 +1063,7 @@ Use bold headers, bullet lists, and code blocks.`;
         autoHeal:       !!p.autoHeal,
         autoHealStrategy: p.autoHealStrategy || 'push-on-success',
         healthCheckPath: p.healthCheckPath || '',
+        persistentPath: p.persistentPath || '',
       });
       setRegions(p.regions || ['us-ashburn-1']);
       setCronSchedule(p.cronSchedule || '');
@@ -1397,6 +1404,38 @@ Use bold headers, bullet lists, and code blocks.`;
       setLogs(fetched?.logs || []);
       setActiveDeployment(fetched);
     } catch { setLogs(['Failed to load logs.']); }
+  };
+
+  const fetchVolumeDetails = async () => {
+    if (!id) return;
+    setVolumeLoading(true);
+    setVolumeError(null);
+    try {
+      const res = await api.get(`/projects/${id}/volume/files`);
+      setVolumeDetails(res.data);
+    } catch (err) {
+      console.error('[Volume fetch error]', err);
+      setVolumeError(err.response?.data?.message || 'Failed to fetch volume files');
+    } finally {
+      setVolumeLoading(false);
+    }
+  };
+
+  const handleClearVolume = async () => {
+    if (!window.confirm('WARNING: Are you sure you want to delete all files in the persistent volume? This will restart your container and cannot be undone.')) {
+      return;
+    }
+    setVolumeActionLoading(true);
+    try {
+      await api.post(`/projects/${id}/volume/clear`);
+      await fetchVolumeDetails();
+      alert('Volume cleared and container restarted successfully!');
+    } catch (err) {
+      console.error('[Volume clear error]', err);
+      alert(err.response?.data?.message || 'Failed to clear volume');
+    } finally {
+      setVolumeActionLoading(false);
+    }
   };
 
   const handleSaveSettings = async () => {
@@ -1950,6 +1989,10 @@ Use bold headers, bullet lists, and code blocks.`;
           handleAiScanMissingVars();
         }, 0);
       }
+    } else if (activeTab === 'settings') {
+      setTimeout(() => {
+        fetchVolumeDetails();
+      }, 0);
     }
 
     return () => {
@@ -3828,6 +3871,7 @@ Use bold headers, bullet lists, and code blocks.`;
                   { label: 'BUILD COMMAND',   key: 'buildCommand',   placeholder: 'npm run build', mono: true },
                   { label: 'OUTPUT DIRECTORY',key: 'outputDir',      placeholder: 'dist', mono: true },
                   { label: 'HEALTH CHECK PATH', key: 'healthCheckPath', placeholder: '/api/health', mono: true },
+                  { label: 'PERSISTENT MOUNT PATH (VOLUME BIND)', key: 'persistentPath', placeholder: '/app/data', mono: true },
                 ].map(({ label, key, placeholder, mono }) => (
                   <div key={key}>
                     <div className="lp-section-label">{label}</div>
@@ -4643,6 +4687,124 @@ Use bold headers, bullet lists, and code blocks.`;
                       )}
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+
+            {/* 🐳 Persistent Volume Manager Card */}
+            <div className="lp-card glass" style={{ 
+              padding: 28,
+              borderLeft: '4px solid var(--accent-primary)',
+              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, rgba(129, 140, 248, 0.02) 100%)'
+            }}>
+              <h3 style={{ fontSize: 16, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                📦 Persistent Volume Manager
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
+                Manage files stored in your container's persistent storage path. Changes take effect immediately.
+              </p>
+
+              {!settings.persistentPath ? (
+                <div style={{ padding: 18, background: 'rgba(255, 255, 255, 0.02)', borderRadius: 10, border: '1px solid var(--border)', textAlign: 'center' }}>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                    Persistent Volume is not active for this project.
+                  </div>
+                  <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 6, marginBottom: 0 }}>
+                    Specify a mount path (e.g., <code style={{ color: 'var(--accent-primary)' }}>/app/data</code>) in the Build Configuration card above and redeploy to enable.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 20 }}>
+                  <div className="flex-between" style={{ padding: '12px 18px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', borderRadius: 10 }}>
+                    <div>
+                      <div className="lp-section-label" style={{ margin: 0, fontSize: 10 }}>MOUNT PATH</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                        {settings.persistentPath}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div className="lp-section-label" style={{ margin: 0, fontSize: 10 }}>TOTAL STORAGE USED</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-primary)', marginTop: 2 }}>
+                        {volumeDetails.totalSize > 0 
+                          ? `${(volumeDetails.totalSize / 1024).toFixed(2)} KB` 
+                          : '0.00 KB (Empty)'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex-between" style={{ marginBottom: 10 }}>
+                      <div className="lp-section-label" style={{ margin: 0 }}>VOLUME FILE EXPLORER</div>
+                      <button 
+                        className="lp-btn-secondary" 
+                        onClick={fetchVolumeDetails} 
+                        disabled={volumeLoading}
+                        style={{ padding: '4px 10px', height: 'auto', fontSize: 11 }}
+                      >
+                        {volumeLoading ? 'Scanning...' : '🔄 Refresh Files'}
+                      </button>
+                    </div>
+
+                    {volumeError && (
+                      <div className="lp-status-bar error" style={{ fontSize: 12, padding: '8px 12px', marginBottom: 10 }}>
+                        {volumeError}
+                      </div>
+                    )}
+
+                    <div style={{
+                      maxHeight: '220px',
+                      overflowY: 'auto',
+                      border: '1px solid var(--border)',
+                      borderRadius: 10,
+                      background: 'rgba(0,0,0,0.15)'
+                    }}>
+                      {volumeLoading ? (
+                        <div className="flex-center" style={{ padding: '40px 0' }}>
+                          <div className="loading-spinner" style={{ width: 20, height: 20 }} />
+                        </div>
+                      ) : !volumeDetails.files || volumeDetails.files.length === 0 ? (
+                        <div style={{ color: 'var(--text-dim)', fontSize: 12, textAlign: 'center', padding: '32px 0' }}>
+                          No files found in persistent storage volume.
+                        </div>
+                      ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'left' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
+                              <th style={{ padding: '10px 14px', color: 'var(--text-muted)', fontWeight: 600 }}>File Path</th>
+                              <th style={{ padding: '10px 14px', color: 'var(--text-muted)', fontWeight: 600, width: '100px' }}>Size</th>
+                              <th style={{ padding: '10px 14px', color: 'var(--text-muted)', fontWeight: 600, width: '140px' }}>Last Modified</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {volumeDetails.files.map((file, idx) => (
+                              <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                                <td style={{ padding: '10px 14px', fontFamily: 'var(--font-mono)', color: file.isDirectory ? 'var(--accent-primary)' : 'var(--text-main)' }}>
+                                  {file.isDirectory ? `📂 ${file.name}/` : `📄 ${file.name}`}
+                                </td>
+                                <td style={{ padding: '10px 14px', color: 'var(--text-muted)' }}>
+                                  {file.isDirectory ? '-' : `${(file.size / 1024).toFixed(2)} KB`}
+                                </td>
+                                <td style={{ padding: '10px 14px', color: 'var(--text-dim)' }}>
+                                  {new Date(file.mtime).toLocaleDateString()} {new Date(file.mtime).toLocaleTimeString()}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 6 }}>
+                    <button 
+                      className="lp-btn-danger" 
+                      onClick={handleClearVolume} 
+                      disabled={volumeActionLoading || volumeLoading}
+                      style={{ padding: '10px 20px', fontSize: 12 }}
+                    >
+                      {volumeActionLoading ? 'Wiping Volume...' : '⚠️ Wipe Volume Storage'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

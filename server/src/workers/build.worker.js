@@ -1524,6 +1524,16 @@ buildQueue.process(1, async (job) => {
         '--memory', `${ram}m`
       ];
 
+      if (project.persistentPath) {
+        const fs = require('fs');
+        const path = require('path');
+        const hostVolumeDir = path.resolve(path.join(__dirname, '../../volumes', projectId.toString()));
+        if (!fs.existsSync(hostVolumeDir)) {
+          fs.mkdirSync(hostVolumeDir, { recursive: true });
+        }
+        dockerArgs.push('-v', `${hostVolumeDir}:${project.persistentPath}`);
+      }
+
       for (const [k, v] of Object.entries(runtimeEnv)) {
         dockerArgs.push('-e', `${k}=${v}`);
       }

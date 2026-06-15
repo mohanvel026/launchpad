@@ -55,6 +55,7 @@ const projectSchema = new mongoose.Schema({
   cronEnabled:        { type: Boolean, default: false },
   readinessScore:     { type: Number },
   healthCheckPath:    { type: String, default: '' },
+  persistentPath:     { type: String, default: '' },
 }, { timestamps: true });
 
 projectSchema.index({ owner: 1 });

@@ -202,8 +202,10 @@ const deleteProject = async (req, res) => {
     
     // Clean up server resources to save storage
     try {
+      const fs = require('fs');
       const containerName = `lp-${project._id.toString().slice(-8)}`;
       const repoDir = path.join(__dirname, '../../repos', project._id.toString());
+      const volumeDir = path.join(__dirname, '../../volumes', project._id.toString());
       
       // Stop and remove docker container, remove repo files
       const targetContainer = project.containerId || containerName;
@@ -211,6 +213,11 @@ const deleteProject = async (req, res) => {
       await execPromise(`docker rm -f ${containerName} || true`);
       await execPromise(`docker ps -a --filter "name=${containerName}-" --format "{{.ID}}" | xargs -r docker rm -f || true`);
       await execPromise(`rm -rf ${repoDir} || true`);
+      
+      // Remove volume bind mount directory
+      if (fs.existsSync(volumeDir)) {
+        fs.rmSync(volumeDir, { recursive: true, force: true });
+      }
       
       // Remove Nginx configuration
       try {
@@ -277,7 +284,7 @@ const registerWebhook = async (req, res) => {
 };
 
 const updateProject = async (req, res) => {
-  const allowed = ['name', 'branch', 'installCommand', 'buildCommand', 'outputDir', 'autoHeal', 'autoHealStrategy', 'regions', 'cronSchedule', 'cronEnabled', 'healthCheckPath'];
+  const allowed = ['name', 'branch', 'installCommand', 'buildCommand', 'outputDir', 'autoHeal', 'autoHealStrategy', 'regions', 'cronSchedule', 'cronEnabled', 'healthCheckPath', 'persistentPath'];
   const updates = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -635,6 +642,104 @@ const lintProjectDockerfile = async (req, res) => {
   }
 };
 
+// GET /api/projects/:id/volume/files
+const getProjectVolumeDetails = async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const fs = require('fs');
+    const path = require('path');
+    const volumeDir = path.resolve(path.join(__dirname, '../../volumes', project._id.toString()));
+
+    let totalSize = 0;
+    let files = [];
+
+    const getDirFilesRecursive = (dirPath, baseDir) => {
+      let results = [];
+      if (!fs.existsSync(dirPath)) return results;
+      try {
+        const list = fs.readdirSync(dirPath);
+        for (const file of list) {
+          const filePath = path.join(dirPath, file);
+          const stat = fs.statSync(filePath);
+          const relPath = path.relative(baseDir, filePath).replace(/\\/g, '/');
+          if (stat.isDirectory()) {
+            results.push({
+              name: relPath,
+              isDirectory: true,
+              size: 0,
+              mtime: stat.mtime
+            });
+            results = results.concat(getDirFilesRecursive(filePath, baseDir));
+          } else {
+            results.push({
+              name: relPath,
+              isDirectory: false,
+              size: stat.size,
+              mtime: stat.mtime
+            });
+            totalSize += stat.size;
+          }
+        }
+      } catch (err) {
+        console.warn(`[getProjectVolumeDetails] Error scanning ${dirPath}:`, err.message);
+      }
+      return results;
+    };
+
+    if (fs.existsSync(volumeDir)) {
+      files = getDirFilesRecursive(volumeDir, volumeDir);
+    }
+
+    res.json({
+      exists: fs.existsSync(volumeDir),
+      persistentPath: project.persistentPath || '',
+      totalSize,
+      files
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /api/projects/:id/volume/clear
+const clearProjectVolume = async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }]
+    });
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const fs = require('fs');
+    const path = require('path');
+    const volumeDir = path.resolve(path.join(__dirname, '../../volumes', project._id.toString()));
+
+    if (fs.existsSync(volumeDir)) {
+      fs.rmSync(volumeDir, { recursive: true, force: true });
+      fs.mkdirSync(volumeDir, { recursive: true });
+    }
+
+    // Auto-restart container to recreate databases/files if running
+    if (project.containerId && project.containerId !== 'local-static') {
+      try {
+        const { restartContainer } = require('../services/docker.service');
+        await restartContainer(project.containerId);
+      } catch (restartErr) {
+        console.warn('[clearProjectVolume] Failed to restart container after volume clear:', restartErr.message);
+      }
+    }
+
+    res.json({ message: 'Volume cleared and container restarted successfully' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // GET /api/projects/check-subdomain
 const checkSubdomainAvailability = async (req, res) => {
   const { subdomain } = req.query;
@@ -656,4 +761,5 @@ module.exports = {
   resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus,
   checkSubdomainAvailability,
   getProjectDockerfile, saveProjectDockerfile, lintProjectDockerfile,
+  getProjectVolumeDetails, clearProjectVolume,
 };

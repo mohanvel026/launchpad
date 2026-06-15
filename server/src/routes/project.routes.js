@@ -4,7 +4,8 @@ const {
   getProjects, createProject, getProject,
   deleteProject, getUserRepos, analyzeRepo, registerWebhook, updateProject,
   clearProjectStuckBuild, resizeResourceLimits, deploymentReadinessCheck, syncProjectStatus,
-  checkSubdomainAvailability, getProjectDockerfile, saveProjectDockerfile, lintProjectDockerfile
+  checkSubdomainAvailability, getProjectDockerfile, saveProjectDockerfile, lintProjectDockerfile,
+  getProjectVolumeDetails, clearProjectVolume
 } = require('../controllers/project.controller');
 
 const router = express.Router();
@@ -61,5 +62,9 @@ router.post('/:id/readme/commit', protect, commitReadme);
 
 // POST /api/projects/:id/sync-status — repair project status from deployment history
 router.post('/:id/sync-status', protect, syncProjectStatus);
+
+// Volume management routes
+router.get('/:id/volume/files', protect, getProjectVolumeDetails);
+router.post('/:id/volume/clear', protect, clearProjectVolume);
 
 module.exports = router;
