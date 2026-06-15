@@ -785,6 +785,29 @@ textarea.lp-input {
   text-decoration: underline !important;
 }
 
+/* ─── Responsive Form Row ─── */
+.lp-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+
+/* ─── Responsive Timeline / Deployment Row ─── */
+.lp-deployment-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 24px;
+}
+.lp-deployment-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 16px 0;
+}
+
 @media (max-width: 900px) {
   :root {
     --page-padding-x: 16px;
@@ -795,24 +818,26 @@ textarea.lp-input {
     padding: 12px 0;
   }
   .lp-header-inner {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
     padding-left: 16px;
     padding-right: 16px;
+    gap: 12px;
   }
   .lp-header-left {
     flex-wrap: wrap;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 8px;
-    width: 100%;
+    width: auto;
   }
   .lp-header-right {
     flex-wrap: wrap;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 8px;
-    width: 100%;
-    margin-top: 4px;
+    width: auto;
+    margin-top: 0;
   }
   .lp-header-separator {
     display: none;
@@ -821,7 +846,7 @@ textarea.lp-input {
     font-size: 14px;
     max-width: 100%;
     white-space: normal;
-    text-align: center;
+    text-align: left;
   }
   .lp-header-pill {
     font-size: 11px;
@@ -831,7 +856,7 @@ textarea.lp-input {
     padding-left: 16px;
     padding-right: 16px;
     gap: 8px 16px;
-    justify-content: center;
+    justify-content: flex-start;
     flex-wrap: wrap;
   }
   .lp-project-info-inner span {
@@ -841,7 +866,7 @@ textarea.lp-input {
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
   }
   .lp-info-bar-link {
     max-width: 180px;
@@ -904,6 +929,24 @@ textarea.lp-input {
     padding: 20px 16px;
     height: auto;
     overflow-y: visible;
+  }
+
+  /* Responsive Form and Timeline Overrides */
+  .lp-form-row {
+    grid-template-columns: 1fr !important;
+    align-items: stretch !important;
+  }
+  .lp-deployment-row {
+    flex-wrap: wrap !important;
+    padding: 12px 16px !important;
+    align-items: flex-start !important;
+  }
+  .lp-deployment-actions {
+    width: 100% !important;
+    padding: 8px 0 12px 40px !important; /* Align with info text */
+    justify-content: flex-start !important;
+    border-top: 1px dashed rgba(255, 255, 255, 0.05);
+    margin-top: 4px;
   }
 }
 

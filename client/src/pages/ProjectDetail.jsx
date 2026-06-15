@@ -2930,9 +2930,7 @@ Use bold headers, bullet lists, and code blocks.`;
                     const isActive = dep.status === 'queued' || dep.status === 'building';
                     const dur = formatDuration(dep.duration);
                     return (
-                      <div key={dep._id} style={{
-                        display: 'flex', alignItems: 'stretch', gap: 0,
-                        padding: '0 24px',
+                      <div key={dep._id} className="lp-deployment-row" style={{
                         borderBottom: i < deployments.length - 1 ? '1px solid var(--border)' : 'none',
                         background: isProduction ? 'rgba(52,211,153,0.03)' : isActive ? 'rgba(56,189,248,0.02)' : 'transparent',
                         transition: 'background 0.2s',
@@ -3045,7 +3043,7 @@ Use bold headers, bullet lists, and code blocks.`;
                         </div>
 
                         {/* Action buttons */}
-                        <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center', padding: '16px 0' }}>
+                        <div className="lp-deployment-actions">
                           <button className="lp-btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => viewLogs(dep)}>Logs</button>
                           {!isProduction && dep.status === 'success' && (
                             <button
@@ -4021,7 +4019,7 @@ Use bold headers, bullet lists, and code blocks.`;
               {/* Create Deploy Hook Form */}
               <div style={{ display: 'grid', gap: 14, marginBottom: 24, padding: 20, background: 'rgba(255, 255, 255, 0.02)', borderRadius: 12, border: '1px solid var(--border)' }}>
                 <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-main)' }}>Create Deploy Hook</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'end' }}>
+                <div className="lp-form-row" style={{ gap: 12 }}>
                   <div>
                     <div className="lp-section-label" style={{ marginBottom: 6 }}>HOOK NAME</div>
                     <input
@@ -4119,7 +4117,7 @@ Use bold headers, bullet lists, and code blocks.`;
               <div style={{ display: 'grid', gap: 14, marginBottom: 24, padding: 20, background: 'rgba(255, 255, 255, 0.02)', borderRadius: 12, border: '1px solid var(--border)' }}>
                 <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-main)' }}>Add Webhook Alert</div>
                 <div style={{ display: 'grid', gap: 12 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
                     <div>
                       <div className="lp-section-label" style={{ marginBottom: 6 }}>PLATFORM</div>
                       <select
@@ -5732,7 +5730,7 @@ Use bold headers, bullet lists, and code blocks.`;
                             </div>
 
                             {/* Gauges Grid */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
                               {/* CPU Meter */}
                               <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.02)' }}>
                                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>CPU Load</div>
@@ -5757,7 +5755,7 @@ Use bold headers, bullet lists, and code blocks.`;
                             </div>
 
                             {/* Details Row */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
                               {/* HTTP status */}
                               <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div>
@@ -6179,7 +6177,7 @@ Use bold headers, bullet lists, and code blocks.`;
               {vulnData && !vulnLoading && (
                 <div>
                   {/* Summary Cards */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 12, marginBottom: 24 }}>
                     {[
                       { label: 'Critical', count: vulnData.summary?.critical || 0, color: '#f87171', bg: 'rgba(248,113,113,0.1)' },
                       { label: 'High', count: vulnData.summary?.high || 0, color: '#fb923c', bg: 'rgba(251,146,60,0.1)' },
