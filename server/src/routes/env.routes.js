@@ -1,9 +1,11 @@
 const express     = require('express');
 const { protect } = require('../middleware/auth.middleware');
 const {
-  getEnvVars, setEnvVar, deleteEnvVar, rotateProjectEnvKeys, revealEnvVar
+  getEnvVars, setEnvVar, deleteEnvVar, rotateProjectEnvKeys, revealEnvVar,
+  getEnvHistory, restoreEnvHistory
 } = require('../controllers/env.controller');
 const Project = require('../models/Project.model');
+const EnvVarHistory = require('../models/EnvVarHistory.model');
 const path    = require('path');
 const fs      = require('fs');
 
@@ -23,6 +25,12 @@ router.post('/:projectId/rotate',   protect, rotateProjectEnvKeys);
 
 // DELETE /api/env/:projectId/:key  — delete an env var
 router.delete('/:projectId/:key',   protect, deleteEnvVar);
+
+// GET  /api/env/:projectId/history — get env var audit logs
+router.get('/:projectId/history', protect, getEnvHistory);
+
+// POST /api/env/:projectId/history/:historyId/restore — restore historical env var state
+router.post('/:projectId/history/:historyId/restore', protect, restoreEnvHistory);
 
 // POST /api/env/:projectId/bulk — bulk import array of { key, value } pairs
 router.post('/:projectId/bulk', protect, async (req, res) => {
@@ -88,6 +96,7 @@ router.post('/:projectId/bulk', protect, async (req, res) => {
       const encryptedValue = encrypt(value || '');
 
       const existing = await EnvVar.findOne({ project: project._id, key: trimmedKey });
+      const action = existing ? 'update' : 'create';
       if (existing) {
         await EnvVar.findByIdAndUpdate(existing._id, { value: encryptedValue });
         updated++;
@@ -95,6 +104,16 @@ router.post('/:projectId/bulk', protect, async (req, res) => {
         await EnvVar.create({ project: project._id, key: trimmedKey, value: encryptedValue });
         created++;
       }
+
+      await EnvVarHistory.create({
+        project: project._id,
+        key: trimmedKey,
+        value: encryptedValue,
+        scopes: ['production', 'preview', 'development'],
+        action,
+        user: req.user._id
+      });
+
       results.push(trimmedKey);
     }
 

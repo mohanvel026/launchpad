@@ -1,6 +1,7 @@
-const CryptoJS = require('crypto-js');
-const EnvVar   = require('../models/EnvVar.model');
-const Project  = require('../models/Project.model');
+const CryptoJS      = require('crypto-js');
+const EnvVar        = require('../models/EnvVar.model');
+const Project       = require('../models/Project.model');
+const EnvVarHistory = require('../models/EnvVarHistory.model');
 
 const encrypt = (value) =>
   CryptoJS.AES.encrypt(value, process.env.ENCRYPTION_KEY).toString();
@@ -83,6 +84,9 @@ const setEnvVar = async (req, res) => {
     const project = await verifyAccess(req.params.projectId, req.user._id);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
+    const existing = await EnvVar.findOne({ project: project._id, key });
+    const action = existing ? 'update' : 'create';
+
     const encryptedValue = encrypt(value);
 
     const envVar = await EnvVar.findOneAndUpdate(
@@ -94,6 +98,16 @@ const setEnvVar = async (req, res) => {
       },
       { upsert: true, returnDocument: 'after' }
     );
+
+    // Track in History Audit Log
+    await EnvVarHistory.create({
+      project: project._id,
+      key,
+      value: encryptedValue,
+      scopes: scopes || ['production', 'preview', 'development'],
+      action,
+      user: req.user._id
+    });
 
     // Return without the encrypted value
     res.json({ envVar: { _id: envVar._id, key: envVar.key, isSecret: envVar.isSecret, scopes: envVar.scopes } });
@@ -108,7 +122,19 @@ const deleteEnvVar = async (req, res) => {
     const project = await verifyAccess(req.params.projectId, req.user._id);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    await EnvVar.findOneAndDelete({ project: project._id, key: req.params.key });
+    const existing = await EnvVar.findOne({ project: project._id, key: req.params.key });
+    if (existing) {
+      // Track deletion in history
+      await EnvVarHistory.create({
+        project: project._id,
+        key: req.params.key,
+        value: null,
+        scopes: existing.scopes,
+        action: 'delete',
+        user: req.user._id
+      });
+      await EnvVar.findOneAndDelete({ project: project._id, key: req.params.key });
+    }
     res.json({ message: 'Env var deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -155,20 +181,74 @@ const rotateProjectEnvKeys = async (req, res) => {
   }
 };
 
-// GET /api/env/:projectId/:key/reveal — decrypt and return a single env var value
-const revealEnvVar = async (req, res) => {
+// GET /api/env/:projectId/history — return audit log of env var revisions
+const getEnvHistory = async (req, res) => {
   try {
     const project = await verifyAccess(req.params.projectId, req.user._id);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const envVar = await EnvVar.findOne({ project: project._id, key: req.params.key });
-    if (!envVar) return res.status(404).json({ message: 'Variable not found' });
+    const history = await EnvVarHistory.find({ project: project._id })
+      .populate('user', 'name email')
+      .sort({ timestamp: -1 })
+      .limit(50);
 
-    const decryptedValue = decrypt(envVar.value);
-    res.json({ value: decryptedValue });
+    res.json({ history });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-module.exports = { getEnvVars, setEnvVar, deleteEnvVar, rotateProjectEnvKeys, revealEnvVar };
+// POST /api/env/:projectId/history/:historyId/restore — restore an env var to a previous value
+const restoreEnvHistory = async (req, res) => {
+  try {
+    const project = await verifyAccess(req.params.projectId, req.user._id);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const entry = await EnvVarHistory.findOne({ _id: req.params.historyId, project: project._id });
+    if (!entry) return res.status(404).json({ message: 'History entry not found' });
+
+    if (entry.action === 'delete') {
+      await EnvVar.findOneAndDelete({ project: project._id, key: entry.key });
+      await EnvVarHistory.create({
+        project: project._id,
+        key: entry.key,
+        value: null,
+        scopes: entry.scopes,
+        action: 'delete',
+        user: req.user._id
+      });
+    } else {
+      await EnvVar.findOneAndUpdate(
+        { project: project._id, key: entry.key },
+        {
+          value: entry.value,
+          scopes: entry.scopes,
+          isSecret: true
+        },
+        { upsert: true }
+      );
+      await EnvVarHistory.create({
+        project: project._id,
+        key: entry.key,
+        value: entry.value,
+        scopes: entry.scopes,
+        action: 'restore',
+        user: req.user._id
+      });
+    }
+
+    res.json({ message: `Successfully restored variable "${entry.key}" to historical state.` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = {
+  getEnvVars,
+  setEnvVar,
+  deleteEnvVar,
+  rotateProjectEnvKeys,
+  revealEnvVar,
+  getEnvHistory,
+  restoreEnvHistory
+};

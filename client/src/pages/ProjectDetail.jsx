@@ -580,6 +580,9 @@ export default function ProjectDetail() {
   const [showVal,  setShowVal]  = useState({});
   const [decryptedVals, setDecryptedVals] = useState({});
   const [aiScanning, setAiScanning] = useState(false);
+  const [envHistory, setEnvHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Settings
   const [settings, setSettings] = useState({ installCommand: '', buildCommand: '', outputDir: '', branch: '', autoHeal: false, autoHealStrategy: 'push-on-success', healthCheckPath: '' });
@@ -1598,6 +1601,39 @@ Use bold headers, bullet lists, and code blocks.`;
     await api.delete(`/env/${id}/${key}`);
     setEnvVars(prev => prev.filter(e => e.key !== key));
     setEnvChanged(true);
+  };
+
+  const handleLoadEnvHistory = async () => {
+    const nextShow = !showHistory;
+    setShowHistory(nextShow);
+    if (nextShow) {
+      setHistoryLoading(true);
+      try {
+        const res = await api.get(`/env/${id}/history`);
+        setEnvHistory(res.data.history || []);
+      } catch (err) {
+        setError(err.response?.data?.message || 'Failed to load environment variable history');
+      } finally {
+        setHistoryLoading(false);
+      }
+    }
+  };
+
+  const handleRestoreEnvHistory = async (historyId) => {
+    try {
+      setSaveStatus('restoring');
+      await api.post(`/env/${id}/history/${historyId}/restore`);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus(''), 3000);
+      setEnvChanged(true);
+      const histRes = await api.get(`/env/${id}/history`);
+      setEnvHistory(histRes.data.history || []);
+      loadEnvVars();
+    } catch (err) {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus(''), 3000);
+      setError(err.response?.data?.message || 'Failed to restore environment variable');
+    }
   };
 
   const handleShowClick = async (key, envId) => {
@@ -3544,8 +3580,11 @@ Use bold headers, bullet lists, and code blocks.`;
                   <button className="lp-btn-secondary" style={{ padding: '7px 14px', fontSize: 13, background: 'linear-gradient(135deg, rgba(56,189,248,0.1) 0%, rgba(59,130,246,0.1) 100%)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8' }} onClick={handleAiAutoDetect} disabled={aiScanning}>
                     {aiScanning ? 'Scanning...' : '🔍 AI Auto-Detect'}
                   </button>
-                  <button className="lp-btn-secondary" style={{ padding: '7px 14px', fontSize: 13 }} onClick={() => setShowBulk(!showBulk)}>
+                  <button className="lp-btn-secondary" style={{ padding: '7px 14px', fontSize: 13 }} onClick={() => { setShowBulk(!showBulk); if(showHistory) setShowHistory(false); }}>
                     {showBulk ? 'Manual' : '📋 Bulk Import'}
+                  </button>
+                  <button className="lp-btn-secondary" style={{ padding: '7px 14px', fontSize: 13, background: showHistory ? 'rgba(56,189,248,0.1)' : 'none', border: showHistory ? '1px solid var(--accent-primary)' : '1px solid var(--border)', color: showHistory ? 'var(--accent-primary)' : 'var(--text-main)' }} onClick={handleLoadEnvHistory}>
+                    {showHistory ? '✕ Close History' : '📜 View Audit Log'}
                   </button>
                 </div>
               </div>
@@ -3676,6 +3715,51 @@ Use bold headers, bullet lists, and code blocks.`;
                     </button>
                     <button className="lp-btn-secondary" onClick={() => { setShowBulk(false); setBulkEnv(''); }}>Cancel</button>
                   </div>
+                </div>
+              )}
+
+              {/* Env var history log */}
+              {showHistory && (
+                <div style={{ marginBottom: 24, padding: 16, background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border)', borderRadius: 12 }}>
+                  <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-main)' }}>
+                    <span>📜</span> Environment Variable Audit Log & Rollback
+                  </h4>
+                  {historyLoading ? (
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 12 }}>
+                      <div className="loading-spinner" style={{ width: 14, height: 14 }} /> Loading audit logs...
+                    </div>
+                  ) : envHistory.length === 0 ? (
+                    <div style={{ padding: 12, color: 'var(--text-dim)', fontSize: 13 }}>No version history recorded yet.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 300, overflowY: 'auto', paddingRight: 6 }}>
+                      {envHistory.map((h) => {
+                        const dateStr = new Date(h.timestamp).toLocaleString();
+                        const actionColor = h.action === 'delete' ? 'var(--accent-danger)' : h.action === 'create' ? 'var(--accent-success)' : 'var(--accent-primary)';
+                        return (
+                          <div key={h._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.15)', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.02)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12.5, color: 'var(--text-main)' }}>{h.key}</span>
+                                <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', color: actionColor, textTransform: 'uppercase' }}>
+                                  {h.action}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                {dateStr} • by <span style={{ color: 'var(--text-dim)' }}>{h.user?.name || h.user?.email || 'System'}</span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleRestoreEnvHistory(h._id)}
+                              className="lp-btn-secondary"
+                              style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, border: '1px solid rgba(255,255,255,0.08)' }}
+                            >
+                              ⏪ Restore
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
