@@ -285,14 +285,36 @@ const selectActiveKey = (keyPool, isGroq = true) => {
   return earliestKey || keyPool[0];
 };
 
+const hasActiveKeys = (keyPool) => {
+  const now = Date.now();
+  return keyPool.some(k => {
+    const expires = cooldownKeys.get(k);
+    return !expires || expires < now;
+  });
+};
+
 const markKeyRateLimited = (key, cooldownMs = 60000) => {
   console.warn(`[AI Key Pool] Rate-limit (429) detected. Quarantining key ${key.slice(0, 8)}... for ${cooldownMs / 1000}s`);
   cooldownKeys.set(key, Date.now() + cooldownMs);
 };
 
-const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0) => {
+const GROQ_MODEL_FALLBACKS = [
+  CONFIG.GROQ_MODEL, // llama-3.3-70b-versatile
+  'mixtral-8x7b-32768',
+  'llama-3.1-8b-instant'
+];
+
+const GEMINI_MODEL_FALLBACKS = [
+  CONFIG.GEMINI_MODEL, // gemini-2.0-flash
+  'gemini-1.5-flash',
+  'gemini-1.5-pro'
+];
+
+const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0, modelIndex = 0) => {
   const keyPool = getGroqKeyPool();
   if (keyPool.length === 0) throw new Error('No GROQ_API_KEY configured.');
+
+  const model = GROQ_MODEL_FALLBACKS[modelIndex % GROQ_MODEL_FALLBACKS.length];
 
   for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
     const key = selectActiveKey(keyPool, true);
@@ -302,7 +324,7 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
       const res = await httpClient.post(
         'https://api.groq.com/openai/v1/chat/completions',
         {
-          model: CONFIG.GROQ_MODEL,
+          model: model,
           max_tokens: maxTokens,
           temperature: 0.2,
           messages: [
@@ -320,10 +342,16 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
     } catch (err) {
       const status = err.response?.status;
       const errMessage = err.response?.data?.error?.message || err.message || '';
-      console.warn(`[Groq API Error] Key ${key.slice(0, 8)}... failed. Status: ${status}. Error: ${errMessage}`);
+      console.warn(`[Groq API Error] Key ${key.slice(0, 8)}... failed for model ${model}. Status: ${status}. Error: ${errMessage}`);
 
       if (isRateLimitedOrExhausted(err)) {
         markKeyRateLimited(key, 60000); // 1 min quarantine
+        
+        // Cascade model fallback immediately
+        if (modelIndex < GROQ_MODEL_FALLBACKS.length - 1) {
+          console.warn(`[Groq] Model ${model} rate-limited. Retrying with fallback model ${GROQ_MODEL_FALLBACKS[modelIndex + 1]}...`);
+          return callGroq(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt, modelIndex + 1);
+        }
       } else if (isInvalidKeyError(err)) {
         markKeyRateLimited(key, 86400000); // 24 hours quarantine
       }
@@ -338,7 +366,7 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
         const delay = CONFIG.RETRY_BASE_MS * Math.pow(2, retryAttempt) + Math.random() * 200;
         console.warn(`[Groq] Failover/Congestion retry ${retryAttempt + 1} in ${Math.round(delay)}ms...`);
         await sleep(delay);
-        return callGroq(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1);
+        return callGroq(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1, modelIndex);
       }
       throw err;
     }
@@ -346,9 +374,11 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
   throw new Error('All Groq keys exhausted or rate-limited.');
 };
 
-const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0) => {
+const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0, modelIndex = 0) => {
   const keyPool = getGeminiKeyPool();
   if (keyPool.length === 0) throw new Error('No GEMINI_API_KEY configured.');
+
+  const model = GEMINI_MODEL_FALLBACKS[modelIndex % GEMINI_MODEL_FALLBACKS.length];
 
   for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
     const key = selectActiveKey(keyPool, false);
@@ -356,7 +386,7 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
 
     try {
       const res = await httpClient.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.GEMINI_MODEL}:generateContent?key=${key}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
         {
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{ parts: [{ text: userPrompt }] }],
@@ -372,10 +402,16 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
     } catch (err) {
       const status = err.response?.status;
       const errMessage = err.response?.data?.error?.message || err.message || '';
-      console.warn(`[Gemini API Error] Key ${key.slice(0, 8)}... failed. Status: ${status}. Error: ${errMessage}`);
+      console.warn(`[Gemini API Error] Key ${key.slice(0, 8)}... failed for model ${model}. Status: ${status}. Error: ${errMessage}`);
 
       if (isRateLimitedOrExhausted(err)) {
         markKeyRateLimited(key, 60000); // 1 min quarantine
+        
+        // Cascade model fallback immediately
+        if (modelIndex < GEMINI_MODEL_FALLBACKS.length - 1) {
+          console.warn(`[Gemini] Model ${model} rate-limited. Retrying with fallback model ${GEMINI_MODEL_FALLBACKS[modelIndex + 1]}...`);
+          return callGemini(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt, modelIndex + 1);
+        }
       } else if (isInvalidKeyError(err)) {
         markKeyRateLimited(key, 86400000); // 24 hours quarantine
       }
@@ -390,7 +426,7 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
         const delay = CONFIG.RETRY_BASE_MS * Math.pow(2, retryAttempt) + Math.random() * 200;
         console.warn(`[Gemini] Failover/Congestion retry ${retryAttempt + 1} in ${Math.round(delay)}ms...`);
         await sleep(delay);
-        return callGemini(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1);
+        return callGemini(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1, modelIndex);
       }
       throw err;
     }
@@ -419,19 +455,53 @@ const callAI = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false)
   const { sanitizedText: cleanSystemPrompt } = extractAndReplaceSecrets(systemPrompt, secretMap);
   const { sanitizedText: cleanUserPrompt } = extractAndReplaceSecrets(userPrompt, secretMap);
 
+  const geminiPool = getGeminiKeyPool();
+  const groqPool = getGroqKeyPool();
+
+  const geminiAvailable = geminiPool.length > 0 && hasActiveKeys(geminiPool);
+  const groqAvailable = groqPool.length > 0 && hasActiveKeys(groqPool);
+
   let rawResponse = null;
 
-  // Try Gemini first as it is highly stable, free, and has an active key in .env
-  try {
-    rawResponse = await callGemini(cleanSystemPrompt, cleanUserPrompt, maxTokens, isJson);
-  } catch (geminiErr) {
-    console.warn(formatApiError('Gemini', geminiErr));
-    console.info('[AI] Failing over to Groq...');
+  if (geminiAvailable && !groqAvailable) {
+    console.info('[AI] Gemini active keys available. Trying Gemini...');
+    try {
+      rawResponse = await callGemini(cleanSystemPrompt, cleanUserPrompt, maxTokens, isJson);
+    } catch (geminiErr) {
+      console.warn(formatApiError('Gemini', geminiErr));
+      console.info('[AI] Failing over to Groq...');
+      try {
+        rawResponse = await callGroq(cleanSystemPrompt, cleanUserPrompt, maxTokens, isJson);
+      } catch (groqErr) {
+        console.error(formatApiError('Groq', groqErr));
+      }
+    }
+  } else if (groqAvailable && !geminiAvailable) {
+    console.info('[AI] Groq active keys available. Trying Groq...');
     try {
       rawResponse = await callGroq(cleanSystemPrompt, cleanUserPrompt, maxTokens, isJson);
     } catch (groqErr) {
-      console.error(formatApiError('Groq', groqErr));
-      rawResponse = null;
+      console.warn(formatApiError('Groq', groqErr));
+      console.info('[AI] Failing over to Gemini...');
+      try {
+        rawResponse = await callGemini(cleanSystemPrompt, cleanUserPrompt, maxTokens, isJson);
+      } catch (geminiErr) {
+        console.error(formatApiError('Gemini', geminiErr));
+      }
+    }
+  } else {
+    // Default order: Try Gemini first, then failover to Groq
+    try {
+      rawResponse = await callGemini(cleanSystemPrompt, cleanUserPrompt, maxTokens, isJson);
+    } catch (geminiErr) {
+      console.warn(formatApiError('Gemini', geminiErr));
+      console.info('[AI] Failing over to Groq...');
+      try {
+        rawResponse = await callGroq(cleanSystemPrompt, cleanUserPrompt, maxTokens, isJson);
+      } catch (groqErr) {
+        console.error(formatApiError('Groq', groqErr));
+        rawResponse = null;
+      }
     }
   }
 
