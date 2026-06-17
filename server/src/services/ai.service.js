@@ -229,21 +229,23 @@ const getCleanKeyPool = (varsArray) => {
 };
 
 const getGroqKeyPool = () => {
-  return getCleanKeyPool([
-    process.env.GROQ_API_KEY,
-    process.env.GROQ_API_KEY_2,
-    process.env.GROQ_API_KEY_3,
-    process.env.GROQ_API_KEYS
-  ]);
+  const envVars = [];
+  for (const key in process.env) {
+    if (key.startsWith('GROQ_API_KEY')) {
+      envVars.push(process.env[key]);
+    }
+  }
+  return getCleanKeyPool(envVars);
 };
 
 const getGeminiKeyPool = () => {
-  return getCleanKeyPool([
-    process.env.GEMINI_API_KEY,
-    process.env.GEMINI_API_KEY_2,
-    process.env.GEMINI_API_KEY_3,
-    process.env.GEMINI_API_KEYS
-  ]);
+  const envVars = [];
+  for (const key in process.env) {
+    if (key.startsWith('GEMINI_API_KEY')) {
+      envVars.push(process.env[key]);
+    }
+  }
+  return getCleanKeyPool(envVars);
 };
 
 // Round-robin counters for keys
