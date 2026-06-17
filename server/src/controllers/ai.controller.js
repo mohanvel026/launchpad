@@ -916,6 +916,105 @@ const commitReadme = async (req, res) => {
   }
 };
 
+const debugKeys = async (req, res) => {
+  try {
+    const axios = require('axios');
+
+    const results = {
+      groq: [],
+      gemini: []
+    };
+
+    // Scan env for Groq
+    for (const key in process.env) {
+      if (key.startsWith('GROQ_API_KEY')) {
+        const val = process.env[key] || '';
+        const isPlural = key === 'GROQ_API_KEYS';
+        const rawKeys = isPlural ? val.split(',') : [val];
+        
+        for (const k of rawKeys) {
+          const trimmed = k.trim();
+          if (!trimmed || trimmed === 'placeholder') continue;
+          
+          let status = 'Unknown';
+          let errorMsg = null;
+          
+          try {
+            await axios.post(
+              'https://api.groq.com/openai/v1/chat/completions',
+              {
+                model: 'llama-3.3-70b-versatile',
+                messages: [{ role: 'user', content: 'respond with ok' }]
+              },
+              {
+                headers: { Authorization: `Bearer ${trimmed}` },
+                timeout: 5000
+              }
+            );
+            status = 'VALID';
+          } catch (err) {
+            status = err.response?.status || 'Error';
+            errorMsg = err.response?.data?.error?.message || err.message;
+          }
+          
+          results.groq.push({
+            envVar: key,
+            keyLength: trimmed.length,
+            obfuscated: trimmed.length > 10 ? `${trimmed.slice(0, 8)}...${trimmed.slice(-6)}` : 'too-short',
+            status,
+            errorMsg
+          });
+        }
+      }
+    }
+
+    // Scan env for Gemini
+    for (const key in process.env) {
+      if (key.startsWith('GEMINI_API_KEY')) {
+        const val = process.env[key] || '';
+        const isPlural = key === 'GEMINI_API_KEYS';
+        const rawKeys = isPlural ? val.split(',') : [val];
+        
+        for (const k of rawKeys) {
+          const trimmed = k.trim();
+          if (!trimmed || trimmed === 'placeholder') continue;
+          
+          let status = 'Unknown';
+          let errorMsg = null;
+          
+          try {
+            await axios.post(
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${trimmed}`,
+              {
+                contents: [{ parts: [{ text: 'respond with ok' }] }]
+              },
+              {
+                timeout: 5000
+              }
+            );
+            status = 'VALID';
+          } catch (err) {
+            status = err.response?.status || 'Error';
+            errorMsg = err.response?.data?.error?.message || err.message;
+          }
+          
+          results.gemini.push({
+            envVar: key,
+            keyLength: trimmed.length,
+            obfuscated: trimmed.length > 10 ? `${trimmed.slice(0, 8)}...${trimmed.slice(-6)}` : 'too-short',
+            status,
+            errorMsg
+          });
+        }
+      }
+    }
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   chatWithAI,
   suggestFix,
@@ -929,4 +1028,5 @@ module.exports = {
   auditSecurity,
   devopsSummary,
   analyzeTrafficInsights,
+  debugKeys,
 };

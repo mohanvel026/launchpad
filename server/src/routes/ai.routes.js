@@ -12,9 +12,13 @@ const {
   auditSecurity,
   devopsSummary,
   analyzeTrafficInsights,
+  debugKeys,
 } = require('../controllers/ai.controller');
 
 const router = express.Router();
+
+// GET /api/ai/debug-keys — SRE diagnostic to test API keys
+router.get('/debug-keys', protect, debugKeys);
 
 // POST /api/ai/:projectId/chat        — chat with AI about your deployment
 router.post('/:projectId/chat',        protect, chatWithAI);
