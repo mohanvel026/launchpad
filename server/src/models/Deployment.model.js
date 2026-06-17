@@ -6,6 +6,8 @@ const deploymentSchema = new mongoose.Schema({
   commitSha:      { type: String },
   commitMessage:  { type: String },
   branch:         { type: String },
+  githubAuthor:    { type: String },
+  githubAvatarUrl: { type: String },
   status:         { type: String, enum: ['queued', 'building', 'success', 'failed'], default: 'queued' },
   logs:           [{ type: String }],
   imageTag:       { type: String },

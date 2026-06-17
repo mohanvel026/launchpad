@@ -3061,7 +3061,20 @@ Use bold headers, bullet lists, and code blocks.`;
                             {dep.branch && <span>↳ {dep.branch}</span>}
                             {dur && <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>⏱ {dur}</span>}
                             <span>{new Date(dep.createdAt).toLocaleString()}</span>
-                            {dep.triggeredBy?.username && <span style={{ color: 'var(--text-muted)' }}>by @{dep.triggeredBy.username}</span>}
+                            {dep.githubAuthor ? (
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)' }}>
+                                {dep.githubAvatarUrl && (
+                                  <img
+                                    src={dep.githubAvatarUrl}
+                                    alt={dep.githubAuthor}
+                                    style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }}
+                                  />
+                                )}
+                                by @{dep.githubAuthor}
+                              </span>
+                            ) : (
+                              dep.triggeredBy?.username && <span style={{ color: 'var(--text-muted)' }}>by @{dep.triggeredBy.username}</span>
+                            )}
                           </div>
 
                           {/* Release Notes section */}

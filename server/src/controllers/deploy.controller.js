@@ -62,11 +62,16 @@ const githubWebhook = async (req, res) => {
     const settingsStr = `${project.installCommand || ''}|${project.buildCommand || ''}|${project.outputDir || ''}|${project.branch || ''}|${project.cpuLimit || ''}|${project.ramLimitMB || ''}`;
     const settingsHash = crypto.createHash('md5').update(settingsStr).digest('hex');
 
+    const githubAuthor = head_commit?.author?.username || sender?.login || 'github-user';
+    const githubAvatarUrl = sender?.avatar_url || '';
+
     const deployment = await Deployment.create({
       project:       project._id,
       commitSha:     commitSha?.slice(0, 7),
       commitMessage: head_commit?.message || 'Push triggered deploy',
       branch,
+      githubAuthor,
+      githubAvatarUrl,
       status:        'queued',
       envVarsHash,
       settingsHash,
