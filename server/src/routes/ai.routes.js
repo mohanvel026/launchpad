@@ -13,12 +13,16 @@ const {
   devopsSummary,
   analyzeTrafficInsights,
   debugKeys,
+  getVpsLogs,
 } = require('../controllers/ai.controller');
 
 const router = express.Router();
 
 // GET /api/ai/debug-keys — SRE diagnostic to test API keys
 router.get('/debug-keys', protect, debugKeys);
+
+// GET /api/ai/vps-logs — Fetch server PM2 error & out logs for remote debugging
+router.get('/vps-logs', protect, getVpsLogs);
 
 // POST /api/ai/:projectId/chat        — chat with AI about your deployment
 router.post('/:projectId/chat',        protect, chatWithAI);

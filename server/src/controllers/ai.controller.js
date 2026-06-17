@@ -1015,6 +1015,49 @@ const debugKeys = async (req, res) => {
   }
 };
 
+const getVpsLogs = async (req, res) => {
+  try {
+    const { exec } = require('child_process');
+    
+    exec('pm2 jlist', (err, stdout, stderr) => {
+      if (err) {
+        const homedir = require('os').homedir();
+        const logPath = require('path').join(homedir, '.pm2/logs/launchpad-server-error.log');
+        const fs = require('fs');
+        if (fs.existsSync(logPath)) {
+          const content = fs.readFileSync(logPath, 'utf8').split('\n').slice(-150).join('\n');
+          return res.json({ logs: content });
+        }
+        return res.status(500).json({ error: 'Failed to run pm2 jlist and log file not found', detail: err.message });
+      }
+      
+      try {
+        const apps = JSON.parse(stdout);
+        const app = apps.find(a => a.name === 'launchpad-server');
+        if (app) {
+          const fs = require('fs');
+          const errLog = app.pm2_env.pm_err_log_path;
+          const outLog = app.pm2_env.pm_out_log_path;
+          
+          let logs = '';
+          if (fs.existsSync(errLog)) {
+            logs += `--- ERROR LOG (${errLog}) ---\n` + fs.readFileSync(errLog, 'utf8').split('\n').slice(-150).join('\n') + '\n';
+          }
+          if (fs.existsSync(outLog)) {
+            logs += `--- OUT LOG (${outLog}) ---\n` + fs.readFileSync(outLog, 'utf8').split('\n').slice(-150).join('\n') + '\n';
+          }
+          return res.json({ logs });
+        }
+        return res.status(404).json({ error: 'App launchpad-server not found in PM2 list' });
+      } catch (e) {
+        return res.status(500).json({ error: 'Failed to parse pm2 jlist', detail: e.message, raw: stdout });
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   chatWithAI,
   suggestFix,
@@ -1029,4 +1072,5 @@ module.exports = {
   devopsSummary,
   analyzeTrafficInsights,
   debugKeys,
+  getVpsLogs,
 };
