@@ -310,11 +310,9 @@ const GEMINI_MODEL_FALLBACKS = [
   'gemini-1.5-pro'
 ];
 
-const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0, modelIndex = 0) => {
+const callGroqWithModel = async (model, systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0) => {
   const keyPool = getGroqKeyPool();
   if (keyPool.length === 0) throw new Error('No GROQ_API_KEY configured.');
-
-  const model = GROQ_MODEL_FALLBACKS[modelIndex % GROQ_MODEL_FALLBACKS.length];
 
   for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
     const key = selectActiveKey(keyPool, true);
@@ -346,12 +344,6 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
 
       if (isRateLimitedOrExhausted(err)) {
         markKeyRateLimited(key, 60000); // 1 min quarantine
-        
-        // Cascade model fallback immediately
-        if (modelIndex < GROQ_MODEL_FALLBACKS.length - 1) {
-          console.warn(`[Groq] Model ${model} rate-limited. Retrying with fallback model ${GROQ_MODEL_FALLBACKS[modelIndex + 1]}...`);
-          return callGroq(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt, modelIndex + 1);
-        }
       } else if (isInvalidKeyError(err)) {
         markKeyRateLimited(key, 86400000); // 24 hours quarantine
       }
@@ -366,19 +358,35 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
         const delay = CONFIG.RETRY_BASE_MS * Math.pow(2, retryAttempt) + Math.random() * 200;
         console.warn(`[Groq] Failover/Congestion retry ${retryAttempt + 1} in ${Math.round(delay)}ms...`);
         await sleep(delay);
-        return callGroq(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1, modelIndex);
+        return callGroqWithModel(model, systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1);
       }
       throw err;
     }
   }
-  throw new Error('All Groq keys exhausted or rate-limited.');
+  throw new Error(`All Groq keys exhausted or rate-limited for model ${model}.`);
 };
 
-const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0, modelIndex = 0) => {
+const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false) => {
+  let lastErr = null;
+  for (const model of GROQ_MODEL_FALLBACKS) {
+    try {
+      console.info(`[Groq] Attempting call with model: ${model}`);
+      return await callGroqWithModel(model, systemPrompt, userPrompt, maxTokens, isJson, 0);
+    } catch (err) {
+      lastErr = err;
+      if (isRateLimitedOrExhausted(err) || err.message.includes('rate-limited') || err.message.includes('exhausted')) {
+        console.warn(`[Groq] Model ${model} failed due to rate limits. Cascading to next fallback model...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr || new Error('All Groq models rate-limited.');
+};
+
+const callGeminiWithModel = async (model, systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0) => {
   const keyPool = getGeminiKeyPool();
   if (keyPool.length === 0) throw new Error('No GEMINI_API_KEY configured.');
-
-  const model = GEMINI_MODEL_FALLBACKS[modelIndex % GEMINI_MODEL_FALLBACKS.length];
 
   for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
     const key = selectActiveKey(keyPool, false);
@@ -406,12 +414,6 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
 
       if (isRateLimitedOrExhausted(err)) {
         markKeyRateLimited(key, 60000); // 1 min quarantine
-        
-        // Cascade model fallback immediately
-        if (modelIndex < GEMINI_MODEL_FALLBACKS.length - 1) {
-          console.warn(`[Gemini] Model ${model} rate-limited. Retrying with fallback model ${GEMINI_MODEL_FALLBACKS[modelIndex + 1]}...`);
-          return callGemini(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt, modelIndex + 1);
-        }
       } else if (isInvalidKeyError(err)) {
         markKeyRateLimited(key, 86400000); // 24 hours quarantine
       }
@@ -426,12 +428,30 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
         const delay = CONFIG.RETRY_BASE_MS * Math.pow(2, retryAttempt) + Math.random() * 200;
         console.warn(`[Gemini] Failover/Congestion retry ${retryAttempt + 1} in ${Math.round(delay)}ms...`);
         await sleep(delay);
-        return callGemini(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1, modelIndex);
+        return callGeminiWithModel(model, systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1);
       }
       throw err;
     }
   }
-  throw new Error('All Gemini keys rate-limited.');
+  throw new Error(`All Gemini keys rate-limited for model ${model}.`);
+};
+
+const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false) => {
+  let lastErr = null;
+  for (const model of GEMINI_MODEL_FALLBACKS) {
+    try {
+      console.info(`[Gemini] Attempting call with model: ${model}`);
+      return await callGeminiWithModel(model, systemPrompt, userPrompt, maxTokens, isJson, 0);
+    } catch (err) {
+      lastErr = err;
+      if (isRateLimitedOrExhausted(err) || err.message.includes('rate-limited') || err.message.includes('quota')) {
+        console.warn(`[Gemini] Model ${model} failed due to rate limits. Cascading to next fallback model...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr || new Error('All Gemini models rate-limited.');
 };
 
 // ─── Orchestration: Groq → Gemini Failover ────────────────────────────────────
