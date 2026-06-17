@@ -685,6 +685,7 @@ export default function ProjectDetail() {
   const [cpuLimit, setCpuLimit] = useState(0.5);
   const [ramLimitMB, setRamLimitMB] = useState(256);
   const [resizing, setResizing] = useState(false);
+  const [registeringWebhook, setRegisteringWebhook] = useState(false);
 
   // Container controls
   const [containerAction, setContainerAction] = useState(null); // 'stopping'|'starting'|'restarting'|'cancelling'
@@ -1724,6 +1725,21 @@ Use bold headers, bullet lists, and code blocks.`;
     if (!window.confirm(`Permanently delete "${project?.name}"? This cannot be undone.`)) return;
     await api.delete(`/projects/${id}`);
     navigate('/dashboard');
+  };
+
+  const handleRegisterWebhook = async () => {
+    setRegisteringWebhook(true);
+    try {
+      const res = await api.post(`/projects/${id}/webhook`);
+      setSettings(prev => ({ ...prev, webhookId: res.data.webhookId }));
+      alert('GitHub Auto-Deploy webhook successfully registered!');
+      loadProject();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to register webhook on GitHub. Ensure your account is authenticated with write access.');
+    } finally {
+      setRegisteringWebhook(false);
+    }
   };
 
   const handleResizeLimits = async () => {
@@ -4970,12 +4986,52 @@ Use bold headers, bullet lists, and code blocks.`;
               borderLeft: '4px solid #f59e0b',
               background: 'linear-gradient(135deg, rgba(245,158,11,0.05) 0%, rgba(251,191,36,0.02) 100%)'
             }}>
-              <h3 style={{ fontSize: 16, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-                🔔 GitHub Auto-Deploy Webhook
-              </h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
-                Add this webhook to your GitHub repository to trigger automatic deployments on every push to <code style={{ color: 'var(--accent-primary)' }}>{settings.branch || 'main'}</code>.
-              </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ fontSize: 16, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    🔔 GitHub Auto-Deploy Webhook
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>
+                    Enable automatic deployments on every push to <code style={{ color: 'var(--accent-primary)' }}>{settings.branch || 'main'}</code>.
+                  </p>
+                </div>
+                {settings.webhookId ? (
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 16px',
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                    borderRadius: 30,
+                    color: 'var(--accent-success)',
+                    fontSize: 13,
+                    fontWeight: 600
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    Auto-Deploy Active
+                  </div>
+                ) : (
+                  <button
+                    className="lp-btn-primary"
+                    style={{
+                      fontSize: 13,
+                      padding: '8px 16px',
+                      background: 'var(--gradient-primary)',
+                      border: 'none',
+                      borderRadius: 8,
+                      color: '#fff',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(56, 189, 248, 0.2)'
+                    }}
+                    onClick={handleRegisterWebhook}
+                    disabled={registeringWebhook}
+                  >
+                    {registeringWebhook ? 'Registering...' : '⚡ Setup Auto-Deploy on GitHub'}
+                  </button>
+                )}
+              </div>
               <div style={{ display: 'grid', gap: 14 }}>
                 {/* Webhook URL */}
                 <div>

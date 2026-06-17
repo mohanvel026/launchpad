@@ -32,8 +32,13 @@ const githubWebhook = async (req, res) => {
     }
   }
 
-  const { repository, ref, after: commitSha, head_commit } = req.body;
+  const { repository, ref, after: commitSha, head_commit, deleted } = req.body;
   if (!repository) return res.status(400).json({ message: 'No repository in payload' });
+
+  // Ignore branch deletion events to prevent erroneous container rebuild attempts
+  if (deleted || commitSha === '0000000000000000000000000000000000000000') {
+    return res.status(200).json({ message: 'Branch deletion event, ignoring webhook trigger' });
+  }
 
   const repoFullName = repository.full_name;
   const branch       = ref?.replace('refs/heads/', '') || 'main';

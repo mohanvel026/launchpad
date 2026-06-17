@@ -42,15 +42,20 @@ const listUserRepos = async (accessToken) => {
 const createWebhook = async (accessToken, repoFullName, callbackUrl) => {
   const api = githubApi(accessToken);
   try {
+    const config = {
+      url:          callbackUrl,
+      content_type: 'json',
+      insecure_ssl: '0',
+    };
+    if (process.env.GITHUB_WEBHOOK_SECRET) {
+      config.secret = process.env.GITHUB_WEBHOOK_SECRET;
+    }
+
     const res = await api.post(`/repos/${repoFullName}/hooks`, {
       name:   'web',
       active: true,
       events: ['push'],
-      config: {
-        url:          callbackUrl,
-        content_type: 'json',
-        insecure_ssl: '0',
-      },
+      config,
     });
     return res.data.id;
   } catch (err) {
