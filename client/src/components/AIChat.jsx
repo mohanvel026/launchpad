@@ -1,14 +1,48 @@
 import { useState, useRef, useEffect } from 'react';
 import api from '../lib/api';
 
-function CodeBlock({ code, language }) {
+function CodeBlock({ code, language, projectId }) {
   const [copied, setCopied] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [output, setOutput] = useState('');
+  const [showOutput, setShowOutput] = useState(false);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const isCommandRunnable = (cmd, lang) => {
+    if (!projectId) return false;
+    const l = (lang || '').toLowerCase();
+    if (['bash', 'sh', 'shell', 'npm', 'npx', 'git', 'docker'].includes(l)) return true;
+    if (!lang || l === 'code' || l === 'javascript' || l === 'js') {
+      const trimmed = cmd.trim();
+      if (trimmed.includes('\n') && !trimmed.startsWith('npm') && !trimmed.startsWith('git') && !trimmed.startsWith('pm2')) {
+        return false;
+      }
+      const firstWord = trimmed.split(/\s+/)[0];
+      return ['npm', 'npx', 'git', 'node', 'pm2', 'curl', 'ls', 'pwd', 'cat', 'grep', 'mkdir', 'rm', 'cp', 'mv', 'docker', 'apt'].includes(firstWord);
+    }
+    return false;
+  };
+
+  const handleRunCommand = async () => {
+    setRunning(true);
+    setShowOutput(true);
+    setOutput('Executing command inside container...');
+    try {
+      const res = await api.post(`/projects/${projectId}/exec`, { command: code });
+      setOutput(res.data.output || '(No output returned)');
+    } catch (err) {
+      setOutput(err.response?.data?.message || err.message || 'Execution error');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const showRunButton = isCommandRunnable(code, language);
 
   return (
     <div style={{
@@ -35,43 +69,110 @@ function CodeBlock({ code, language }) {
         alignItems: 'center'
       }}>
         <span>{language || 'code'}</span>
-        <button
-          onClick={handleCopy}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: copied ? '#34d399' : 'var(--accent-primary)',
-            cursor: 'pointer',
-            fontSize: '11px',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            padding: 0
-          }}
-        >
-          {copied ? (
-            <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              Copied!
-            </>
-          ) : (
-            <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              Copy
-            </>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {showRunButton && (
+            <button
+              onClick={handleRunCommand}
+              disabled={running}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: running ? '#e2e8f0' : 'var(--accent-primary)',
+                cursor: 'pointer',
+                fontSize: '11px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: 0
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              {running ? 'Running...' : 'Run in Console'}
+            </button>
           )}
-        </button>
+          <button
+            onClick={handleCopy}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: copied ? '#34d399' : 'var(--accent-primary)',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: 0
+            }}
+          >
+            {copied ? (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Copied!
+              </>
+            ) : (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Copy
+              </>
+            )}
+          </button>
+        </div>
       </div>
       <pre style={{ margin: 0, padding: '12px', overflowX: 'auto', color: '#e2e8f0', lineHeight: 1.5 }}>
         <code>{code}</code>
       </pre>
+
+      {showOutput && (
+        <div style={{
+          borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+          background: '#040407',
+          padding: '10px 12px'
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: '10px',
+            color: 'var(--text-dim)',
+            marginBottom: '6px'
+          }}>
+            <span>TERMINAL OUTPUT</span>
+            <button
+              onClick={() => setShowOutput(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-dim)',
+                cursor: 'pointer',
+                fontSize: '10px'
+              }}
+            >
+              Clear
+            </button>
+          </div>
+          <pre style={{
+            margin: 0,
+            whiteSpace: 'pre-wrap',
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            color: running ? '#94a3b8' : '#34d399',
+            maxHeight: '150px',
+            overflowY: 'auto'
+          }}>
+            {output}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
 
 // Format standard text message paragraphs and simple bold marks
-function formatMessageContent(content) {
+function formatMessageContent(content, projectId) {
   if (typeof content !== 'string') return content;
   const parts = content.split(/(```[\s\S]*?```)/g);
 
@@ -81,7 +182,7 @@ function formatMessageContent(content) {
       const language = match ? match[1] : '';
       const code = match ? match[2].trim() : part.slice(3, -3).trim();
 
-      return <CodeBlock key={index} code={code} language={language} />;
+      return <CodeBlock key={index} code={code} language={language} projectId={projectId} />;
     }
 
     const lines = part.split('\n');
@@ -820,7 +921,7 @@ export default function AIChat({ projectId, activeTab = '', deployments = [], cp
                 boxShadow: msg.role === 'user' ? '0 8px 24px rgba(56, 189, 248, 0.2)' : 'none',
                 border: msg.role === 'user' ? 'none' : '1px solid var(--border)'
               }}>
-                {formatMessageContent(msg.content)}
+                {formatMessageContent(msg.content, projectId)}
                 
                 {/* Visual SRE Custom Interactive Widgets */}
                 {msg.sreReport && msg.sreReport.type === 'audit-security'   && <SecurityReportWidget data={msg.sreReport.data} />}
