@@ -2,7 +2,7 @@ const fs         = require('fs');
 const path       = require('path');
 const Project    = require('../models/Project.model');
 const Deployment = require('../models/Deployment.model');
-const { callAI, generateOptimizationAdvice, getGeminiKeyPool, getGroqKeyPool } = require('../services/ai.service');
+const { callAI, generateOptimizationAdvice, getGeminiKeyPool, getGroqKeyPool, compressLogs } = require('../services/ai.service');
 
 /**
  * Standard API error responder if keys are missing
@@ -13,6 +13,42 @@ const checkApiKeys = () => {
   if (!hasGemini && !hasGroq) {
     throw new Error('No valid API keys found. Please add GEMINI_API_KEY or GROQ_API_KEY to your .env');
   }
+};
+
+// ─── Lightweight Repository Tree Helper ───────────────────────────────────────
+const getLightweightRepoTree = (dir, depth = 0, maxDepth = 2) => {
+  if (depth > maxDepth) return '';
+  let result = '';
+  try {
+    const files = fs.readdirSync(dir);
+    // Sort directories first, files second
+    const stats = files.map(file => {
+      const fullPath = path.join(dir, file);
+      try {
+        return { file, isDir: fs.statSync(fullPath).isDirectory() };
+      } catch {
+        return { file, isDir: false };
+      }
+    });
+    
+    stats.sort((a, b) => {
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
+      return a.file.localeCompare(b.file);
+    });
+
+    stats.forEach(({ file, isDir }) => {
+      if (['node_modules', '.git', 'dist', 'build', '.next', '.nuxt', 'out', 'coverage', '.cache', 'tmp'].includes(file)) return;
+      const prefix = '  '.repeat(depth) + (isDir ? '📁 ' : '📄 ');
+      result += `${prefix}${file}\n`;
+      if (isDir) {
+        result += getLightweightRepoTree(path.join(dir, file), depth + 1, maxDepth);
+      }
+    });
+  } catch (err) {
+    // Ignore error
+  }
+  return result;
 };
 
 // ─── POST /api/ai/:projectId/chat ─────────────────────────────────────────────
@@ -33,6 +69,13 @@ const chatWithAI = async (req, res) => {
       .sort({ createdAt: -1 })
       .select('status commitMessage aiErrorSummary logs stack');
 
+    // Compress build failure logs if present to optimize token constraints
+    let compressedFailureLogs = '';
+    if (latestDeploy && latestDeploy.status === 'failed' && latestDeploy.logs) {
+      const rawLogs = Array.isArray(latestDeploy.logs) ? latestDeploy.logs.join('\n') : String(latestDeploy.logs);
+      compressedFailureLogs = compressLogs(rawLogs, 3000);
+    }
+
     // Build rich, live contextual repository details to empower custom SRE questions
     let repoContext = '';
     const repoPath = path.join(__dirname, '../../repos', project._id.toString());
@@ -40,10 +83,22 @@ const chatWithAI = async (req, res) => {
       try {
         const rootFiles = fs.readdirSync(repoPath);
         repoContext += `- Root files in workspace: ${rootFiles.slice(0, 30).join(', ')}\n`;
-        
+
+        const tree = getLightweightRepoTree(repoPath, 0, 2);
+        if (tree) {
+          repoContext += `- Repository Directory Structure (up to depth 2):\n${tree.slice(0, 1500)}\n`;
+        }
+
+        const dockerfilePath = path.join(repoPath, 'Dockerfile');
+        if (fs.existsSync(dockerfilePath)) {
+          repoContext += `- Dockerfile Content:\n\`\`\`dockerfile\n${fs.readFileSync(dockerfilePath, 'utf8').slice(0, 800)}\n\`\`\`\n`;
+        }
+
         const pkgPath = path.join(repoPath, 'package.json');
         if (fs.existsSync(pkgPath)) {
           const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+          const scripts = pkg.scripts || {};
+          repoContext += `- package.json Scripts: ${JSON.stringify(scripts)}\n`;
           const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
           repoContext += `- Dependencies installed: ${Object.keys(deps).slice(0, 40).join(', ')}\n`;
         }
@@ -85,7 +140,7 @@ Context:
 - Latest Deployment: ${latestDeploy ? `${latestDeploy.status} (${latestDeploy.commitMessage || 'No msg'})` : 'None'}
 ${richContextPrompt}
 ${repoContext ? `- Live Repository Scan Details:\n${repoContext}` : ''}
-${latestDeploy && latestDeploy.status === 'failed' && latestDeploy.logs ? `- Recent Failure Logs (truncated): \n${latestDeploy.logs.slice(-25).join('\n')}` : ''}
+${compressedFailureLogs ? `- Recent Failure Logs (Cleaned & Compressed): \n${compressedFailureLogs}` : ''}
 
 Your tone should be highly professional, technical, direct, and helpful. Always provide actionable tips, commands, or config templates when asked.
 
@@ -153,7 +208,8 @@ const suggestFix = async (req, res) => {
     }
 
     const fileStructure = filesList.length ? filesList.join(', ') : 'No files found or unable to access repository';
-    const logs = latestDeploy.logs?.slice(-40).join('\n') || 'No logs available';
+    const rawLogs = latestDeploy.logs ? (Array.isArray(latestDeploy.logs) ? latestDeploy.logs.join('\n') : String(latestDeploy.logs)) : '';
+    const logs = compressLogs(rawLogs, 3000) || 'No logs available';
 
     const systemPrompt = `You are LaunchLive DevOps AI. Analyze the build failure and write a 2-3 sentence technical diagnosis.
 Be precise. State the exact file, parameter, or command that failed, and tell the developer the exact fix.`;
@@ -162,7 +218,7 @@ Be precise. State the exact file, parameter, or command that failed, and tell th
 Build Status: ${latestDeploy.status}
 Files present: ${fileStructure}
 
-Recent Build/Runtime Logs:
+Recent Build/Runtime Logs (Cleaned & Compressed):
 ${logs}`;
 
     const suggestion = await callAI(systemPrompt, userPrompt, 400, false);

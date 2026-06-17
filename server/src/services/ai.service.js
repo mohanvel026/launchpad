@@ -27,6 +27,103 @@ const httpClient = axios.create({
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+const extractAndReplaceSecrets = (text, secretMap = new Map()) => {
+  if (typeof text !== 'string') return { sanitizedText: text, secretMap };
+
+  let sanitizedText = text;
+
+  // Helper to add a secret to the map and return a placeholder
+  const addSecret = (secret) => {
+    if (!secret || secret.length < 5 || secret.includes('[REDACTED') || secret.startsWith('_LL_SECRET_')) {
+      return secret;
+    }
+    // Check if already in map
+    for (const [placeholder, val] of secretMap.entries()) {
+      if (val === secret) return placeholder;
+    }
+    const placeholder = `_LL_SECRET_${secretMap.size}_`;
+    secretMap.set(placeholder, secret);
+    return placeholder;
+  };
+
+  // 1. Google API Key Pattern
+  const googleRegex = /AIzaSy[A-Za-z0-9_-]{35}/g;
+  sanitizedText = sanitizedText.replace(googleRegex, (match) => addSecret(match));
+
+  // 2. AWS Access Key Pattern
+  const awsRegex = /(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/g;
+  sanitizedText = sanitizedText.replace(awsRegex, (match) => addSecret(match));
+
+  // 3. Database connection string credentials (password part)
+  const uriRegex = /(mongodb(?:\+srv)?|postgresql|postgres|mysql|redis|amqp|amqps):\/\/([^/:]+):([^/]+)@/gi;
+  sanitizedText = sanitizedText.replace(uriRegex, (match, protocol, user, pass) => {
+    const redactedPass = addSecret(pass);
+    return `${protocol}://${user}:${redactedPass}@`;
+  });
+
+  // 4. Hardcoded cryptographic assignments
+  const secretAssignRegex = /(jwt_secret|jwtSecret|sessionSecret|cookieSecret|api_key|apiKey|db_password|dbPassword|auth_token|authToken|token|password|secret|pass|key)(\s*[:=]\s*)(['"`])([a-zA-Z0-9_\-!@#$%/+=]{8,128})\3/gi;
+  sanitizedText = sanitizedText.replace(secretAssignRegex, (match, key, opWithSpaces, quote, val) => {
+    const redactedVal = addSecret(val);
+    return `${key}${opWithSpaces}${quote}${redactedVal}${quote}`;
+  });
+
+  // 5. Private Key blocks (PEM)
+  const pemRegex = /-----BEGIN[A-Z ]+PRIVATE KEY-----[^-]+-----END[A-Z ]+PRIVATE KEY-----/g;
+  sanitizedText = sanitizedText.replace(pemRegex, (match) => addSecret(match));
+
+  return { sanitizedText, secretMap };
+};
+
+const restoreSecrets = (text, secretMap) => {
+  if (typeof text !== 'string' || !secretMap || secretMap.size === 0) return text;
+  let restored = text;
+  
+  // Sort placeholders descending by numeric index to prevent substring collision
+  const sortedPlaceholders = Array.from(secretMap.keys()).sort((a, b) => {
+    const matchA = a.match(/\d+/);
+    const matchB = b.match(/\d+/);
+    const numA = matchA ? parseInt(matchA[0], 10) : 0;
+    const numB = matchB ? parseInt(matchB[0], 10) : 0;
+    return numB - numA;
+  });
+
+  for (const placeholder of sortedPlaceholders) {
+    const secret = secretMap.get(placeholder);
+    restored = restored.split(placeholder).join(secret);
+  }
+  return restored;
+};
+
+const isRateLimitedOrExhausted = (err) => {
+  const status = err.response?.status;
+  if (status === 429 || status === 424 || status === 503) return true;
+  
+  const errMessage = (err.response?.data?.error?.message || err.message || '').toLowerCase();
+  if (errMessage.toLowerCase().includes('rate limit') || 
+      errMessage.toLowerCase().includes('too many requests') || 
+      errMessage.toLowerCase().includes('quota') || 
+      errMessage.toLowerCase().includes('exhausted') || 
+      errMessage.toLowerCase().includes('overloaded') || 
+      errMessage.toLowerCase().includes('capacity exceeded') ||
+      errMessage.toLowerCase().includes('model_overloaded') ||
+      errMessage.toLowerCase().includes('resource_exhausted')) {
+    return true;
+  }
+  return false;
+};
+
+const isInvalidKeyError = (err) => {
+  const status = err.response?.status;
+  if (status === 401 || status === 403) return true;
+  
+  const errMessage = (err.response?.data?.error?.message || err.message || '').toLowerCase();
+  if (errMessage.toLowerCase().includes('api key') && (errMessage.toLowerCase().includes('invalid') || errMessage.toLowerCase().includes('expired') || errMessage.toLowerCase().includes('unauthorized') || errMessage.toLowerCase().includes('not found'))) {
+    return true;
+  }
+  return false;
+};
+
 const formatApiError = (provider, err) => {
   if (err.response)          return `[${provider} HTTP ${err.response.status}] ${JSON.stringify(err.response.data)}`;
   if (err.code === 'ECONNABORTED') return `[${provider}] Timeout after ${CONFIG.TIMEOUT_MS}ms`;
@@ -191,14 +288,13 @@ const markKeyRateLimited = (key, cooldownMs = 60000) => {
   cooldownKeys.set(key, Date.now() + cooldownMs);
 };
 
-const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false) => {
+const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0) => {
   const keyPool = getGroqKeyPool();
   if (keyPool.length === 0) throw new Error('No GROQ_API_KEY configured.');
 
-  // Try each key in the pool before giving up
-  for (let attempt = 0; attempt < keyPool.length; attempt++) {
+  for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
     const key = selectActiveKey(keyPool, true);
-    if (!key) throw new Error('All Groq keys exhausted or rate-limited.');
+    if (!key) continue;
 
     try {
       const res = await httpClient.post(
@@ -224,12 +320,23 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
       const errMessage = err.response?.data?.error?.message || err.message || '';
       console.warn(`[Groq API Error] Key ${key.slice(0, 8)}... failed. Status: ${status}. Error: ${errMessage}`);
 
-      if (status === 429 || status === 401 || status === 403 || status === 400) {
-        // Quarantine 429 for 1 minute, and auth/bad request errors for 1 hour
-        markKeyRateLimited(key, status === 429 ? 60000 : 3600000);
-        if (attempt < keyPool.length - 1) {
-          continue;
-        }
+      if (isRateLimitedOrExhausted(err)) {
+        markKeyRateLimited(key, 60000); // 1 min quarantine
+      } else if (isInvalidKeyError(err)) {
+        markKeyRateLimited(key, 86400000); // 24 hours quarantine
+      }
+
+      // Rotate to next key if we have more
+      if (rotateAttempt < keyPool.length - 1) {
+        continue;
+      }
+
+      // If all keys fail, handle retries with backoff
+      if (retryAttempt < CONFIG.MAX_RETRIES && (status === 429 || status >= 500 || err.code === 'ECONNABORTED')) {
+        const delay = CONFIG.RETRY_BASE_MS * Math.pow(2, retryAttempt) + Math.random() * 200;
+        console.warn(`[Groq] Failover/Congestion retry ${retryAttempt + 1} in ${Math.round(delay)}ms...`);
+        await sleep(delay);
+        return callGroq(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1);
       }
       throw err;
     }
@@ -241,52 +348,52 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
   const keyPool = getGeminiKeyPool();
   if (keyPool.length === 0) throw new Error('No GEMINI_API_KEY configured.');
 
-  try {
-    for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
-      const key = selectActiveKey(keyPool, false);
-      if (!key) throw new Error('All Gemini keys rate-limited.');
+  for (let rotateAttempt = 0; rotateAttempt < keyPool.length; rotateAttempt++) {
+    const key = selectActiveKey(keyPool, false);
+    if (!key) continue;
 
-      try {
-        const res = await httpClient.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.GEMINI_MODEL}:generateContent?key=${key}`,
-          {
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ parts: [{ text: userPrompt }] }],
-            generationConfig: {
-              maxOutputTokens: maxTokens,
-              temperature: 0.2,
-              ...(isJson && { responseMimeType: 'application/json' }),
-            },
+    try {
+      const res = await httpClient.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.GEMINI_MODEL}:generateContent?key=${key}`,
+        {
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ parts: [{ text: userPrompt }] }],
+          generationConfig: {
+            maxOutputTokens: maxTokens,
+            temperature: 0.2,
+            ...(isJson && { responseMimeType: 'application/json' }),
           },
-          { timeout: 10000 }
-        );
-        return res.data.candidates[0].content.parts[0].text;
-      } catch (err) {
-        const status = err.response?.status;
-        const errMessage = err.response?.data?.error?.message || err.message || '';
-        console.warn(`[Gemini API Error] Key ${key.slice(0, 8)}... failed. Status: ${status}. Error: ${errMessage}`);
+        },
+        { timeout: 10000 }
+      );
+      return res.data.candidates[0].content.parts[0].text;
+    } catch (err) {
+      const status = err.response?.status;
+      const errMessage = err.response?.data?.error?.message || err.message || '';
+      console.warn(`[Gemini API Error] Key ${key.slice(0, 8)}... failed. Status: ${status}. Error: ${errMessage}`);
 
-        if (status === 429 || status === 400 || status === 403) {
-          // Quarantine 429 for 1 minute, and auth/bad request errors for 1 hour
-          markKeyRateLimited(key, status === 429 ? 60000 : 3600000);
-          if (rotateAttempt < keyPool.length - 1) {
-            continue;
-          }
-        }
-        throw err;
+      if (isRateLimitedOrExhausted(err)) {
+        markKeyRateLimited(key, 60000); // 1 min quarantine
+      } else if (isInvalidKeyError(err)) {
+        markKeyRateLimited(key, 86400000); // 24 hours quarantine
       }
+
+      // Rotate to next key if we have more
+      if (rotateAttempt < keyPool.length - 1) {
+        continue;
+      }
+
+      // If all keys fail, handle retries with backoff
+      if (retryAttempt < CONFIG.MAX_RETRIES && (status === 429 || status >= 500 || err.code === 'ECONNABORTED')) {
+        const delay = CONFIG.RETRY_BASE_MS * Math.pow(2, retryAttempt) + Math.random() * 200;
+        console.warn(`[Gemini] Failover/Congestion retry ${retryAttempt + 1} in ${Math.round(delay)}ms...`);
+        await sleep(delay);
+        return callGemini(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1);
+      }
+      throw err;
     }
-    throw new Error('All Gemini keys rate-limited.');
-  } catch (err) {
-    const status = err.response?.status;
-    if (retryAttempt < CONFIG.MAX_RETRIES && (status === 429 || status >= 500)) {
-      const delay = CONFIG.RETRY_BASE_MS * Math.pow(2, retryAttempt) + Math.random() * 200;
-      console.warn(`[Gemini] Failover/Congestion retry ${retryAttempt + 1} in ${Math.round(delay)}ms...`);
-      await sleep(delay);
-      return callGemini(systemPrompt, userPrompt, maxTokens, isJson, retryAttempt + 1);
-    }
-    throw err;
   }
+  throw new Error('All Gemini keys rate-limited.');
 };
 
 // ─── Orchestration: Groq → Gemini Failover ────────────────────────────────────
@@ -305,19 +412,32 @@ const callAI = async (systemPrompt, userPrompt, maxTokens = 600, isJson = false)
   }
   lastRequestTime = Date.now();
 
+  // Reversible Security Sanitizer
+  const secretMap = new Map();
+  const { sanitizedText: cleanSystemPrompt } = extractAndReplaceSecrets(systemPrompt, secretMap);
+  const { sanitizedText: cleanUserPrompt } = extractAndReplaceSecrets(userPrompt, secretMap);
+
+  let rawResponse = null;
+
   // Try Gemini first as it is highly stable, free, and has an active key in .env
   try {
-    return await callGemini(systemPrompt, userPrompt, maxTokens, isJson);
+    rawResponse = await callGemini(cleanSystemPrompt, cleanUserPrompt, maxTokens, isJson);
   } catch (geminiErr) {
     console.warn(formatApiError('Gemini', geminiErr));
     console.info('[AI] Failing over to Groq...');
     try {
-      return await callGroq(systemPrompt, userPrompt, maxTokens, isJson);
+      rawResponse = await callGroq(cleanSystemPrompt, cleanUserPrompt, maxTokens, isJson);
     } catch (groqErr) {
       console.error(formatApiError('Groq', groqErr));
-      return null;
+      rawResponse = null;
     }
   }
+
+  // Restore secrets in response
+  if (rawResponse) {
+    return restoreSecrets(rawResponse, secretMap);
+  }
+  return null;
 };
 
 // ─── Feature 1: Smart Build Error Analyzer ────────────────────────────────────
@@ -1406,6 +1526,7 @@ Respond ONLY with a valid JSON object matching this schema:
 module.exports = {
   callAI,
   generateAiText,
+  compressLogs,
   safeParseJson,
   cleanJson,
   analyzeError,
@@ -1434,4 +1555,6 @@ module.exports = {
   getGroqKeyPool,
   selectActiveKey,
   markKeyRateLimited,
+  extractAndReplaceSecrets,
+  restoreSecrets,
 };

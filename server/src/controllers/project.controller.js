@@ -375,11 +375,15 @@ const resizeResourceLimits = async (req, res) => {
         // Allocate a new runtime port for zero-downtime hot-swap
         const newPort = await getNextFreePort();
 
-        // Extract env variables
+        // Extract env variables safely
         const envVars = {};
         info.Config.Env.forEach(e => {
-          const [k, v] = e.split('=');
-          envVars[k] = v;
+          const index = e.indexOf('=');
+          if (index !== -1) {
+            const k = e.slice(0, index);
+            const v = e.slice(index + 1);
+            envVars[k] = v;
+          }
         });
 
         // Run the new container with modified resource boundaries

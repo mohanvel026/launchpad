@@ -215,9 +215,13 @@ const provisionDatabaseContainer = async (projectId, dbType, log) => {
     
     const envs = inspectData.Config.Env || [];
     for (const env of envs) {
-      const [k, val] = env.split('=');
-      if (['MYSQL_PASSWORD', 'POSTGRES_PASSWORD', 'MONGO_INITDB_ROOT_PASSWORD'].includes(k)) {
-        existingPassword = val;
+      const index = env.indexOf('=');
+      if (index !== -1) {
+        const k = env.slice(0, index);
+        const val = env.slice(index + 1);
+        if (['MYSQL_PASSWORD', 'POSTGRES_PASSWORD', 'MONGO_INITDB_ROOT_PASSWORD'].includes(k)) {
+          existingPassword = val;
+        }
       }
     }
   } catch (err) {

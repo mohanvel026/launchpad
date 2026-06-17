@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const util = require('util');
 const execAsync = util.promisify(require('child_process').exec);
-const { callAI, safeParseJson } = require('./ai.service');
+const { callAI, safeParseJson, compressLogs } = require('./ai.service');
 
 // Helper to list all code files in the repository recursively
 function listFiles(dir, baseDir = dir, fileList = []) {
@@ -130,6 +130,7 @@ Rules:
 5. If the error is a missing dependency or unresolved import (e.g. "failed to resolve import 'X'", "Cannot find module 'X'", "Can't resolve 'X'", etc.), you MUST patch `package.json` to add the missing package 'X' to the "dependencies" object (use a suitable stable version or "latest").
 6. Respond with ONLY the raw JSON object. Do not wrap it in markdown blocks or backticks.`;
 
+    const compressedLogs = compressLogs(logs, 4000);
     const userPrompt = `Stack: ${stack}
 Files in repository:
 ${filesInRepo.map(f => `- ${f}`).join('\n')}
@@ -137,8 +138,8 @@ ${filesInRepo.map(f => `- ${f}`).join('\n')}
 Content of relevant files:
 ${Object.entries(filesContent).map(([f, c]) => `=== FILE: ${f} ===\n${c}\n=== END ===`).join('\n\n')}
 
-Build/Runtime error logs:
-${logs}`;
+Build/Runtime error logs (Cleaned & Compressed):
+${compressedLogs}`;
 
     const raw = await callAI(systemPrompt, userPrompt, 1500, true);
     if (!raw) return null;
