@@ -4,4 +4,5 @@ dist/
 repos/
 .DS_Store
 *.log
-scratch/
+scratch/
+dump.rdb
