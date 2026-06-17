@@ -35,15 +35,45 @@ connectDB().then(() => {
   const { startMonitoring } = require('./services/healthMonitor.service');
   const { stopContainer } = require('./services/docker.service');
 
-  // 1. Resume active container monitors on server boot
-  Project.find({ status: 'live' })
-    .then(projects => {
-      console.log(`[HealthMonitor] Restoring health monitoring for ${projects.length} live projects...`);
-      projects.forEach(p => {
-        if (p.containerId) startMonitoring(p);
-      });
+  // 1. Resume active container monitors and audit project statuses on server boot
+  Project.find({ containerId: { $exists: true, $ne: null } })
+    .then(async projects => {
+      const Docker = require('dockerode');
+      const docker = new Docker(
+        process.platform === 'win32'
+          ? { host: '127.0.0.1', port: 2375 }
+          : { socketPath: '/var/run/docker.sock' }
+      );
+
+      console.log(`[HealthMonitor] Auditing container states for ${projects.length} projects on boot...`);
+
+      for (const p of projects) {
+        let isRunning = false;
+        try {
+          const container = docker.getContainer(p.containerId);
+          const inspect = await container.inspect();
+          isRunning = inspect.State.Running;
+        } catch (err) {
+          isRunning = false;
+        }
+
+        if (isRunning) {
+          if (p.status !== 'live') {
+            console.log(`[HealthMonitor] Container for project ${p.name} is running but status was ${p.status}. Restoring status to live.`);
+            await Project.findByIdAndUpdate(p._id, { status: 'live', lastHealthScore: 100 });
+            p.status = 'live'; // Update in-memory status
+          }
+          startMonitoring(p);
+        } else {
+          // If status was live but container is not running, it crashed during server offline
+          if (p.status === 'live') {
+            console.log(`[HealthMonitor] Container for project ${p.name} is not running but status was live. Marking as failed.`);
+            await Project.findByIdAndUpdate(p._id, { status: 'failed', lastHealthScore: 0 });
+          }
+        }
+      }
     })
-    .catch(err => console.error('[HealthMonitor] Restoring failed:', err));
+    .catch(err => console.error('[HealthMonitor] Restoring and status audit failed:', err));
 
   // 2. Clear stuck building previews on server boot
   Project.updateMany(
