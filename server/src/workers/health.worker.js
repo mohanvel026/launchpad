@@ -26,19 +26,26 @@ const startHealthChecker = () => {
           const container = docker.getContainer(project.containerId);
           const info      = await container.inspect();
 
-          // Only mark as failed if it's supposed to be running (status: 'live') but isn't
-          if (!info.State.Running && project.status === 'live') {
-            console.log(`[Health-Check] Container crashed for project ${project.name} — updating status`);
-            await Project.findByIdAndUpdate(project._id, { status: 'failed' });
+          if (info.State.Running) {
+            if (project.status === 'failed') {
+              console.log(`[Health-Check] Container is running again for project ${project.name} — restoring status to live`);
+              await Project.findByIdAndUpdate(project._id, { status: 'live' });
+            }
+          } else {
+            // Only mark as failed if it's supposed to be running (status: 'live') but isn't
+            if (project.status === 'live') {
+              console.log(`[Health-Check] Container crashed for project ${project.name} — updating status`);
+              await Project.findByIdAndUpdate(project._id, { status: 'failed' });
 
-            // Notify owner if they have opt-in notifications
-            if (project.owner?.email && project.owner.notifyOnCrash !== false) {
-              await sendDeployNotification(project.owner.email, {
-                projectName: project.name,
-                status:      'failed',
-                url:         `${process.env.CLIENT_URL || 'http://localhost:3000'}/projects/${project._id}`,
-                commitMsg:   'Container crashed — auto-detected by SRE health checker',
-              });
+              // Notify owner if they have opt-in notifications
+              if (project.owner?.email && project.owner.notifyOnCrash !== false) {
+                await sendDeployNotification(project.owner.email, {
+                  projectName: project.name,
+                  status:      'failed',
+                  url:         `${process.env.CLIENT_URL || 'http://localhost:3000'}/projects/${project._id}`,
+                  commitMsg:   'Container crashed — auto-detected by SRE health checker',
+                });
+              }
             }
           }
         } catch (err) {

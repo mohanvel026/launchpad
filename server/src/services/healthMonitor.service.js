@@ -161,7 +161,12 @@ function startMonitoring(project) {
 
       // ── Persist score to DB on every monitoring tick ──────────────────────────
       try {
-        await Project.findByIdAndUpdate(projectId, { lastHealthScore: finalHealthScore });
+        const updateData = { lastHealthScore: finalHealthScore };
+        // If the container is healthy now (score >= 70) but the status was failed, auto-promote to live
+        if (finalHealthScore >= 70 && proj.status === 'failed') {
+          updateData.status = 'live';
+        }
+        await Project.findByIdAndUpdate(projectId, updateData);
         await notifyUpdate(projectId);
       } catch (dbErr) {
         console.warn(`[HealthMonitor] DB persist failed for ${projectId}:`, dbErr.message);
