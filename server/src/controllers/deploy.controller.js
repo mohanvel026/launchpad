@@ -32,7 +32,7 @@ const githubWebhook = async (req, res) => {
     }
   }
 
-  const { repository, ref, after: commitSha, head_commit, deleted } = req.body;
+  const { repository, ref, after: commitSha, head_commit, deleted, sender } = req.body;
   if (!repository) return res.status(400).json({ message: 'No repository in payload' });
 
   // Ignore branch deletion events to prevent erroneous container rebuild attempts
