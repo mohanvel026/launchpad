@@ -379,7 +379,7 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
 
   const chmodHelper = 'RUN find . -name "*.sh" -exec chmod +x {} + 2>/dev/null || true\nRUN chmod +x node_modules/.bin/* 2>/dev/null || true\n';
 
-  const viteOptimizeStep = '\nRUN node -e " \\\n  const fs = require(\'fs\'); \\\n  const files = [\'vite.config.js\', \'vite.config.ts\', \'vite.config.mjs\', \'vite.config.cjs\']; \\\n  for (const f of files) { \\\n    if (fs.existsSync(f)) { \\\n      let code = fs.readFileSync(f, \'utf8\'); \\\n      if (!code.includes(\'reportCompressedSize\')) { \\\n        code = code.replace(/plugins\\\\s*:\\\\s*\\\\[/, \'build: { reportCompressedSize: false, sourcemap: false, rollupOptions: { maxParallelFileOps: 2 } },\\\\n  plugins: [\'); \\\n        fs.writeFileSync(f, code); \\\n        console.log(\'SRE: Injected Vite memory optimizations\'); \\\n      } \\\n      break; \\\n    } \\\n  } \\\n" 2>/dev/null || true\n';
+  const viteOptimizeStep = '\nRUN node -e " \\\n  const fs = require(\'fs\'); \\\n  const files = [\'vite.config.js\', \'vite.config.ts\', \'vite.config.mjs\', \'vite.config.cjs\']; \\\n  for (const f of files) { \\\n    if (fs.existsSync(f)) { \\\n      let code = fs.readFileSync(f, \'utf8\'); \\\n      if (!code.includes(\'reportCompressedSize\')) { \\\n        code = code.replace(/plugins\\\\s*:\\\\s*\\\\[/, \\\'build: { minify: false, reportCompressedSize: false, sourcemap: false, rollupOptions: { maxParallelFileOps: 2, output: { manualChunks(id) { if (id.includes(\\\\\'node_modules\\\\\')) { if (id.includes(\\\\\'recharts\\\\\') || id.includes(\\\\\'d3\\\\\')) return \\\\\'vendor-charts\\\\\'; if (id.includes(\\\\\'lucide-react\\\\\')) return \\\\\'vendor-icons\\\\\'; if (id.includes(\\\\\'firebase\\\\\')) return \\\\\'vendor-firebase\\\\\'; return \\\\\'vendor\\\\\'; } } } } },\\\\n  plugins: [\\\'); \\\n        fs.writeFileSync(f, code); \\\n        console.log(\'SRE: Injected Vite memory optimizations\'); \\\n      } \\\n      break; \\\n    } \\\n  } \\\n" 2>/dev/null || true\n';
 
   const containerPort = options.containerPort || 3000;
 
@@ -554,7 +554,7 @@ ENV ${e.key}=$${e.key}`)
       const feCodeGenSteps = detectCodeGenSteps(repoPath, '', 'frontend');
       return `FROM node:${nodeVersion}-alpine AS builder
 WORKDIR /app
-ENV NODE_OPTIONS="--max-old-space-size=512"
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}
@@ -582,7 +582,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
       }
       return `FROM node:${nodeVersion}-alpine AS builder
 WORKDIR /app
-ENV NODE_OPTIONS="--max-old-space-size=512"
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}
@@ -655,7 +655,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
       const frontendBuilderStage = `# ── Stage 1: Build Frontend (runs in PARALLEL with Stage 2) ──
 FROM node:${nodeVersion}-alpine AS fe-builder
 WORKDIR /app/frontend
-ENV NODE_OPTIONS="--max-old-space-size=512"
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 ${pmSetup}
 COPY ${feDir}/package*.json${feLockStr} ./
 ${installRunInstruction}
@@ -1016,7 +1016,7 @@ CMD ["/app/start.sh"]`;
       }
       return `FROM node:${nodeVersion}-alpine AS builder
 WORKDIR /app
-ENV NODE_OPTIONS="--max-old-space-size=512"
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}

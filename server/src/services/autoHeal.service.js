@@ -127,7 +127,7 @@ Rules:
 2. In "replacementContent", provide the modified replacement code.
 3. If you need to create a new file, set "originalContent" to an empty string "".
 4. If you don't know how to fix the error, return an empty array for "patches".
-5. If the error is a missing dependency or unresolved import (e.g. "failed to resolve import 'X'", "Cannot find module 'X'", "Can't resolve 'X'", etc.), you MUST patch `package.json` to add the missing package 'X' to the "dependencies" object (use a suitable stable version or "latest").
+5. If the error is a missing dependency or unresolved import (e.g. "failed to resolve import 'X'", "Cannot find module 'X'", "Can't resolve 'X'", etc.), you MUST patch \`package.json\` to add the missing package 'X' to the "dependencies" object (use a suitable stable version or "latest").
 6. Respond with ONLY the raw JSON object. Do not wrap it in markdown blocks or backticks.`;
 
     const compressedLogs = compressLogs(logs, 4000);
