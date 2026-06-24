@@ -658,7 +658,7 @@ COPY ${feDir}/package*.json${feLockStr} ./
 ${installRunInstruction}
 COPY ${feDir}/ .
 ${chmodHelper}${envArgs}${feCodeGenSteps}
-RUN ${buildCmd} 2>/dev/null || npx vite build || true`;
+RUN ${buildCmd} || npx vite build`;
 
       if (beStack === 'go') {
         const hasProto = (() => { try { return fs.readdirSync(bePath).some(f => f.endsWith('.proto')); } catch { return false; } })();
@@ -1020,7 +1020,7 @@ COPY package*.json ${lockFile} ./
 ${installRunInstruction}
 COPY . .
 ${chmodHelper}${envArgs}${feCodeGenSteps}
-RUN ${buildCmd} 2>/dev/null || npx nuxt build || true
+RUN ${buildCmd} || npx nuxt build
 
 FROM node:${nodeVersion}-alpine
 RUN apk add --no-cache curl tini ca-certificates${hasPrisma ? ' openssl libc6-compat' : ''}
