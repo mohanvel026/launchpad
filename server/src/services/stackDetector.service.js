@@ -549,6 +549,7 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
       const lockFile = exists(repoPath, pm.lockfile) ? pm.lockfile : '';
       const feCodeGenSteps = detectCodeGenSteps(repoPath, '', 'frontend');
       return `FROM node:${nodeVersion}-alpine AS builder
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
@@ -577,6 +578,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
         runCmd = `CMD ["sh", "-c", "${migrationCmds} && ${pm.name} start"]`;
       }
       return `FROM node:${nodeVersion}-alpine AS builder
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./
@@ -649,6 +651,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
       // Stage 1: Build Frontend (Parallel stage)
       const frontendBuilderStage = `# ── Stage 1: Build Frontend (runs in PARALLEL with Stage 2) ──
 FROM node:${nodeVersion}-alpine AS fe-builder
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 WORKDIR /app/frontend
 ${pmSetup}
 COPY ${feDir}/package*.json${feLockStr} ./
@@ -1010,6 +1013,7 @@ CMD ["/app/start.sh"]`;
         runCmd = `CMD ["sh", "-c", "${migrationCmds} && node .output/server/index.mjs"]`;
       }
       return `FROM node:${nodeVersion}-alpine AS builder
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 WORKDIR /app
 ${pmSetup}
 COPY package*.json ${lockFile} ./

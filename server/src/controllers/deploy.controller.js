@@ -18,7 +18,13 @@ const notifyUpdate = async (projectId) => {
 // ─── POST /api/deploy/webhook ─────────────────────────────────────────────────
 const githubWebhook = async (req, res) => {
   const signature = req.headers['x-hub-signature-256'];
+  const eventType = req.headers['x-github-event'];
   const secret    = process.env.GITHUB_WEBHOOK_SECRET;
+
+  // Handle GitHub Webhook ping event gracefully
+  if (eventType === 'ping') {
+    return res.status(200).json({ message: 'pong' });
+  }
 
   if (secret) {
     if (!signature) {
@@ -49,9 +55,16 @@ const githubWebhook = async (req, res) => {
       return res.status(200).json({ message: 'No matching project found, ignoring' });
     }
 
+    // Vercel/Render-style build auto-cancellation
     const running = await Deployment.findOne({ project: project._id, status: { $in: ['queued', 'building'] } });
     if (running) {
-      return res.status(200).json({ message: 'A build is already queued or in progress for this project, ignoring webhook trigger' });
+      console.info(`[Webhook Auto-Deploy] Cancelling active deployment ${running._id} for project ${project.name} to prioritize new push.`);
+      await Deployment.findByIdAndUpdate(running._id, { 
+        status: 'cancelled', 
+        finishedAt: new Date(),
+        $push: { logs: `[${new Date().toLocaleTimeString()}] 🛑 Build cancelled: A newer commit was pushed to this branch.` }
+      });
+      await notifyUpdate(project._id);
     }
 
     const EnvVar = require('../models/EnvVar.model');

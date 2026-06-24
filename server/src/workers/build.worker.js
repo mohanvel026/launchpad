@@ -756,6 +756,18 @@ buildQueue.process(1, async (job) => {
 
   if (!deployment || !project) throw new Error('Deployment or project not found');
 
+  if (deployment.status === 'cancelled') {
+    console.info(`[Build Worker] Skipping cancelled deployment ${deploymentId}`);
+    return;
+  }
+
+  const checkCancelled = async () => {
+    const freshDep = await Deployment.findById(deploymentId).select('status');
+    if (freshDep && freshDep.status === 'cancelled') {
+      throw new Error('BUILD_CANCELLED');
+    }
+  };
+
   const domain = process.env.CLOUDFLARE_DOMAIN || 'launchlive.in';
   const liveUrl = `https://${project.subdomain}.${domain}`;
 
@@ -834,6 +846,7 @@ buildQueue.process(1, async (job) => {
 
   await updatePhase('fetch', 'running');
   try {
+    await checkCancelled();
     // ── PRE-FLIGHT: Disk Space Check ──────────────────────────────────────────
     if (!isWindows) {
       try {
@@ -870,6 +883,7 @@ buildQueue.process(1, async (job) => {
       await log('   ✅ Fresh clone completed.');
     }
 
+    await checkCancelled();
     await updatePhase('fetch', 'success');
     await updatePhase('analyze', 'running');
 
@@ -1257,6 +1271,7 @@ buildQueue.process(1, async (job) => {
       console.warn('[Security Shield Check Failed]:', secErr.message);
     }
 
+    await checkCancelled();
     await updatePhase('analyze', 'success');
     await updatePhase('prepare', 'running');
 
@@ -1296,6 +1311,7 @@ buildQueue.process(1, async (job) => {
       await log(`   ⚠️ AI Pre-flight check skipped (AI service temporarily unavailable).`);
     }
 
+    await checkCancelled();
     await updatePhase('prepare', 'success');
     await updatePhase('compile', 'running');
 
@@ -1383,6 +1399,20 @@ buildQueue.process(1, async (job) => {
             }
           );
 
+          const cancelInterval = setInterval(async () => {
+            try {
+              const currentDep = await Deployment.findById(deploymentId).select('status');
+              if (currentDep && currentDep.status === 'cancelled') {
+                clearInterval(cancelInterval);
+                clearTimeout(buildTimeout);
+                try {
+                  buildProc.kill('SIGKILL');
+                } catch {}
+                reject(new Error('BUILD_CANCELLED'));
+              }
+            } catch (e) {}
+          }, 3000);
+
           // SRE Safety Limit: Kill process if docker build hangs/thrashes for over 25 minutes
           const buildTimeout = setTimeout(() => {
             try {
@@ -1417,6 +1447,7 @@ buildQueue.process(1, async (job) => {
           });
 
           buildProc.on('exit', (code) => {
+            clearInterval(cancelInterval);
             clearTimeout(buildTimeout);
             if (stdoutBuf.trim()) handleLine(stdoutBuf).catch(() => {});
             if (stderrBuf.trim()) handleLine(stderrBuf).catch(() => {});
@@ -1429,10 +1460,14 @@ buildQueue.process(1, async (job) => {
           });
 
           buildProc.on('error', (err) => {
+            clearInterval(cancelInterval);
             clearTimeout(buildTimeout);
             reject(err);
           });
         }).catch(async (buildErr) => {
+          if (buildErr.message === 'BUILD_CANCELLED') {
+            throw buildErr;
+          }
           // ── Always show the raw error output FIRST so users see what went wrong ──
           await log(`   ❌ Build failed! (${buildErr.message})`);
           await log('   ─── RAW BUILD ERROR OUTPUT ─────────────────────────────────');
@@ -1480,6 +1515,7 @@ buildQueue.process(1, async (job) => {
         });
 
         await log('   ✅ Build successful. Image tagged and ready for deployment.');
+        await checkCancelled();
         await updatePhase('compile', 'success', skipDockerBuild || (hasWarmCache && !forceRebuild));
         await updatePhase('deploy', 'running');
         // ── Auto-prune dangling images to free disk space ───────────────────────
@@ -1997,6 +2033,15 @@ buildQueue.process(1, async (job) => {
     }
 
   } catch (err) {
+    if (err.message === 'BUILD_CANCELLED') {
+      await log(`\n🛑 BUILD CANCELLED: A newer commit was pushed to this branch.`);
+      await Deployment.findByIdAndUpdate(deploymentId, { status: 'cancelled', finishedAt: new Date() });
+      const hasLiveDeploy = await Deployment.findOne({ project: projectId, status: 'success' });
+      await Project.findByIdAndUpdate(projectId, { status: hasLiveDeploy ? 'live' : 'failed' });
+      await notifyUpdate(projectId);
+      return;
+    }
+
     await log(`\n🛑 DEPLOYMENT ABORTED: ${err.message}`);
 
     try {
