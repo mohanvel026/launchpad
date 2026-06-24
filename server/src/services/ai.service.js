@@ -159,8 +159,13 @@ const cleanJson = (str = '') => {
 };
 
 const safeParseJson = (raw) => {
-  const cleaned = cleanJson(raw);
-  return JSON.parse(cleaned);
+  try {
+    const cleaned = cleanJson(raw);
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.warn('[AI] Failed to parse JSON from AI response:', err.message, 'Raw response:', raw);
+    return {};
+  }
 };
 
 /**
@@ -374,14 +379,11 @@ const callGroq = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fals
       return await callGroqWithModel(model, systemPrompt, userPrompt, maxTokens, isJson, 0);
     } catch (err) {
       lastErr = err;
-      if (isRateLimitedOrExhausted(err) || err.message.includes('rate-limited') || err.message.includes('exhausted')) {
-        console.warn(`[Groq] Model ${model} failed due to rate limits. Cascading to next fallback model...`);
-        continue;
-      }
-      throw err;
+      console.warn(`[Groq] Model ${model} failed: ${err.message}. Cascading to next fallback model...`);
+      continue;
     }
   }
-  throw lastErr || new Error('All Groq models rate-limited.');
+  throw lastErr || new Error('All Groq models failed.');
 };
 
 const callGeminiWithModel = async (model, systemPrompt, userPrompt, maxTokens = 600, isJson = false, retryAttempt = 0) => {
@@ -444,14 +446,11 @@ const callGemini = async (systemPrompt, userPrompt, maxTokens = 600, isJson = fa
       return await callGeminiWithModel(model, systemPrompt, userPrompt, maxTokens, isJson, 0);
     } catch (err) {
       lastErr = err;
-      if (isRateLimitedOrExhausted(err) || err.message.includes('rate-limited') || err.message.includes('quota')) {
-        console.warn(`[Gemini] Model ${model} failed due to rate limits. Cascading to next fallback model...`);
-        continue;
-      }
-      throw err;
+      console.warn(`[Gemini] Model ${model} failed: ${err.message}. Cascading to next fallback model...`);
+      continue;
     }
   }
-  throw lastErr || new Error('All Gemini models rate-limited.');
+  throw lastErr || new Error('All Gemini models failed.');
 };
 
 // ─── Orchestration: Groq → Gemini Failover ────────────────────────────────────

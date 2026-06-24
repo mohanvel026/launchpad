@@ -431,6 +431,24 @@ const localDiagnoseError = (output = '', stack = 'unknown') => {
     };
   }
 
+  // Docker build timeout / out-of-memory / swapping
+  if (/timed out|out of memory|killed|oom/i.test(output)) {
+    return {
+      summary: 'Docker build timed out or ran out of memory/disk space.',
+      cause: 'The VPS system ran out of physical memory (RAM) or swap space while compiling the frontend. Node.js thrashed garbage collection or swapped to disk heavily, causing the build to hang.',
+      fix: 'To fix this, please enable a swap file on your VPS to give it extra virtual memory. Alternatively, add `build: { reportCompressedSize: false }` to your `vite.config.js` to speed up the build. To enable a 2GB swap file, run this on your VPS:\n\n' +
+           '```bash\n' +
+           'sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab\n' +
+           '```',
+      commands: [
+        'sudo fallocate -l 2G /swapfile',
+        'sudo chmod 600 /swapfile',
+        'sudo mkswap /swapfile',
+        'sudo swapon /swapfile'
+      ]
+    };
+  }
+
   // Missing environment variable
   const envMissingRegexes = [
     /missing(?: required)? env(?:ironment)? var(?:iable)?s?\b:?\s*['"]?([a-zA-Z0-9_]+)['"]?/i,
@@ -859,6 +877,36 @@ buildQueue.process(1, async (job) => {
           await log('   ✅ Docker cleanup done. Retrying build...');
         }
       } catch {}
+    }
+
+    // ── PRE-FLIGHT: RAM & Swap Space Check ────────────────────────────────────
+    if (!isWindows) {
+      try {
+        const freeOut = execSync('free -m', { stdio: 'pipe' }).toString();
+        const freeLines = freeOut.split('\n');
+        const memLine = freeLines.find(l => l.startsWith('Mem:'));
+        const swapLine = freeLines.find(l => l.startsWith('Swap:'));
+        if (memLine) {
+          const parts = memLine.split(/\s+/);
+          const totalMem = parseInt(parts[1]);
+          const freeMem = parseInt(parts[3]);
+          const availableMem = parseInt(parts[6]) || freeMem;
+          await log(`   ℹ️  System RAM: Total ${totalMem}MB, Available ${availableMem}MB`);
+        }
+        if (swapLine) {
+          const parts = swapLine.split(/\s+/);
+          const totalSwap = parseInt(parts[1]);
+          await log(`   ℹ️  System Swap: ${totalSwap}MB`);
+          if (totalSwap < 1024) {
+            await log(`   ⚠️  LOW SWAP WARNING: VPS has only ${totalSwap}MB of swap space configured.`);
+            await log(`      Low memory can cause Vite builds to hang or time out.`);
+            await log(`      SRE Recommendation: Enable at least 2GB of swap space on your VPS:`);
+            await log(`      $ sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to check RAM/Swap pre-flight:', err.message);
+      }
     }
 
     // ── PHASE 1: Fetch Source ──
