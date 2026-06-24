@@ -379,7 +379,7 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
 
   const chmodHelper = 'RUN find . -name "*.sh" -exec chmod +x {} + 2>/dev/null || true\nRUN chmod +x node_modules/.bin/* 2>/dev/null || true\n';
 
-  const viteOptimizeStep = 'RUN node -e " \\\n  const fs = require(\'fs\'); \\\n  const files = [\'vite.config.js\', \'vite.config.ts\', \'vite.config.mjs\', \'vite.config.cjs\']; \\\n  for (const f of files) { \\\n    if (fs.existsSync(f)) { \\\n      let code = fs.readFileSync(f, \'utf8\'); \\\n      if (!code.includes(\'reportCompressedSize\')) { \\\n        code = code.replace(/plugins\\\\s*:\\\\s*\\\\[/, \'build: { reportCompressedSize: false, sourcemap: false, rollupOptions: { maxParallelFileOps: 2 } },\\\\n  plugins: [\'); \\\n        fs.writeFileSync(f, code); \\\n        console.log(\'SRE: Injected Vite memory optimizations\'); \\\n      } \\\n      break; \\\n    } \\\n  } \\\n" 2>/dev/null || true\n';
+  const viteOptimizeStep = '\nRUN node -e " \\\n  const fs = require(\'fs\'); \\\n  const files = [\'vite.config.js\', \'vite.config.ts\', \'vite.config.mjs\', \'vite.config.cjs\']; \\\n  for (const f of files) { \\\n    if (fs.existsSync(f)) { \\\n      let code = fs.readFileSync(f, \'utf8\'); \\\n      if (!code.includes(\'reportCompressedSize\')) { \\\n        code = code.replace(/plugins\\\\s*:\\\\s*\\\\[/, \'build: { reportCompressedSize: false, sourcemap: false, rollupOptions: { maxParallelFileOps: 2 } },\\\\n  plugins: [\'); \\\n        fs.writeFileSync(f, code); \\\n        console.log(\'SRE: Injected Vite memory optimizations\'); \\\n      } \\\n      break; \\\n    } \\\n  } \\\n" 2>/dev/null || true\n';
 
   const containerPort = options.containerPort || 3000;
 
