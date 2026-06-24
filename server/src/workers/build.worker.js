@@ -899,9 +899,25 @@ buildQueue.process(1, async (job) => {
           await log(`   ℹ️  System Swap: ${totalSwap}MB`);
           if (totalSwap < 1024) {
             await log(`   ⚠️  LOW SWAP WARNING: VPS has only ${totalSwap}MB of swap space configured.`);
-            await log(`      Low memory can cause Vite builds to hang or time out.`);
-            await log(`      SRE Recommendation: Enable at least 2GB of swap space on your VPS:`);
-            await log(`      $ sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`);
+            try {
+              // Check if we have passwordless sudo permission
+              execSync('sudo -n true', { stdio: 'pipe' });
+              await log(`   ⚙️  SRE Auto-Healing: Passwordless sudo is available. Auto-allocating 2GB swap file to prevent build hangs...`);
+              execSync('sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile', { stdio: 'pipe' });
+              try {
+                const fstab = fs.readFileSync('/etc/fstab', 'utf8');
+                if (!fstab.includes('/swapfile')) {
+                  execSync('echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab', { stdio: 'pipe' });
+                }
+              } catch (fstabErr) {
+                execSync('echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab', { stdio: 'pipe' });
+              }
+              await log(`   ✅ Swap space auto-allocated successfully! System now has extra virtual memory.`);
+            } catch (swapErr) {
+              await log(`   ℹ️  Could not auto-allocate swap (requires passwordless sudo): ${swapErr.message}`);
+              await log(`      SRE Recommendation: Please enable at least 2GB of swap space on your VPS manually:`);
+              await log(`      $ sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`);
+            }
           }
         }
       } catch (err) {

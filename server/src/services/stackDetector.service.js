@@ -379,6 +379,8 @@ const generateDockerfile = (stack, repoPath = '', options = {}) => {
 
   const chmodHelper = 'RUN find . -name "*.sh" -exec chmod +x {} + 2>/dev/null || true\nRUN chmod +x node_modules/.bin/* 2>/dev/null || true\n';
 
+  const viteOptimizeStep = 'RUN node -e " \\\n  const fs = require(\'fs\'); \\\n  const files = [\'vite.config.js\', \'vite.config.ts\', \'vite.config.mjs\', \'vite.config.cjs\']; \\\n  for (const f of files) { \\\n    if (fs.existsSync(f)) { \\\n      let code = fs.readFileSync(f, \'utf8\'); \\\n      if (!code.includes(\'reportCompressedSize\')) { \\\n        code = code.replace(/plugins\\\\s*:\\\\s*\\\\[/, \'build: { reportCompressedSize: false, sourcemap: false, rollupOptions: { maxParallelFileOps: 2 } },\\\\n  plugins: [\'); \\\n        fs.writeFileSync(f, code); \\\n        console.log(\'SRE: Injected Vite memory optimizations\'); \\\n      } \\\n      break; \\\n    } \\\n  } \\\n" 2>/dev/null || true\n';
+
   const containerPort = options.containerPort || 3000;
 
   // SRE: Detect if Prisma ORM is present to install runtime OS packages (openssl, libc6-compat) in Alpine
@@ -557,8 +559,7 @@ ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}
 COPY . .
-${chmodHelper}${envArgs}${feCodeGenSteps}
-RUN ${buildCmd}
+${chmodHelper}${envArgs}${feCodeGenSteps}${viteOptimizeStep}RUN ${buildCmd}
 
 FROM nginx:alpine
 RUN apk add --no-cache curl
@@ -659,8 +660,7 @@ ${pmSetup}
 COPY ${feDir}/package*.json${feLockStr} ./
 ${installRunInstruction}
 COPY ${feDir}/ .
-${chmodHelper}${envArgs}${feCodeGenSteps}
-RUN ${buildCmd} || npx vite build`;
+${chmodHelper}${envArgs}${feCodeGenSteps}${viteOptimizeStep}RUN ${buildCmd} || npx vite build`;
 
       if (beStack === 'go') {
         const hasProto = (() => { try { return fs.readdirSync(bePath).some(f => f.endsWith('.proto')); } catch { return false; } })();
@@ -1021,8 +1021,7 @@ ${pmSetup}
 COPY package*.json ${lockFile} ./
 ${installRunInstruction}
 COPY . .
-${chmodHelper}${envArgs}${feCodeGenSteps}
-RUN ${buildCmd} || npx nuxt build
+${chmodHelper}${envArgs}${feCodeGenSteps}${viteOptimizeStep}RUN ${buildCmd} || npx nuxt build
 
 FROM node:${nodeVersion}-alpine
 RUN apk add --no-cache curl tini ca-certificates${hasPrisma ? ' openssl libc6-compat' : ''}
