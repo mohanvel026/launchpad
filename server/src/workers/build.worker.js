@@ -1413,13 +1413,15 @@ buildQueue.process(1, async (job) => {
             } catch (e) {}
           }, 3000);
 
-          // SRE Safety Limit: Kill process if docker build hangs/thrashes for over 25 minutes
+          // SRE Safety Limit: Kill process if docker build hangs/thrashes
+          // Configurable via BUILD_TIMEOUT_MINUTES env var (default: 40 minutes)
+          const buildTimeoutMs = (parseInt(process.env.BUILD_TIMEOUT_MINUTES) || 40) * 60 * 1000;
           const buildTimeout = setTimeout(() => {
             try {
               buildProc.kill('SIGKILL');
             } catch {}
-            reject(new Error('Docker build timed out after 25 minutes due to memory/disk limits'));
-          }, 25 * 60 * 1000);
+            reject(new Error(`Docker build timed out after ${parseInt(process.env.BUILD_TIMEOUT_MINUTES) || 40} minutes due to memory/disk limits`));
+          }, buildTimeoutMs);
 
           const handleLine = async (line) => {
             line = line.trimEnd();
@@ -2061,8 +2063,12 @@ buildQueue.process(1, async (job) => {
 
     let logsText = '';
     try {
-      const fresh   = await Deployment.findById(deploymentId);
-      logsText = fresh.logs.join('\n');
+      const fresh = await Deployment.findById(deploymentId);
+      if (fresh && fresh.logs) logsText = fresh.logs.join('\n');
+    } catch (logFetchErr) {
+      console.warn('[Build Worker] Could not fetch logs for diagnosis:', logFetchErr.message);
+    }
+    try {
       let diagnosis;
       try {
         diagnosis = await analyzeError(logsText, project.stack);
@@ -2104,8 +2110,9 @@ buildQueue.process(1, async (job) => {
       console.error('[Build Worker] Failed to run build error diagnosis:', diagErr.message);
     }
 
-    // AI Auto-Healing Section
-    if (project.autoHeal && !deployment.isAutoHeal && !err.message.includes('Deployment blocked')) {
+    // AI Auto-Healing Section — skip for timeouts (not fixable by code patches)
+    const isTimeout = err.message.includes('timed out') || err.message.includes('Canceled');
+    if (project.autoHeal && !deployment.isAutoHeal && !err.message.includes('Deployment blocked') && !isTimeout && logsText) {
       try {
         await log(`\n🤖 LaunchLive AI Auto-Healing is analyzing repository for a fix...`);
         await pushAuditStep(deploymentId, 'Analyzing logs', 'info', 'Parsing error logs to identify relevant files...');
