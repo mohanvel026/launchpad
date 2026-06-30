@@ -982,8 +982,8 @@ CMD ["/app/start.sh"]`;
 # ── Stage 2: Install & Build Backend (runs in PARALLEL with Stage 1) ──
 FROM node:${nodeVersion}-alpine AS be-builder
 WORKDIR /app
-# SRE Optimization: Force sequential execution under memory limits by copying from fe-builder stage
-COPY --from=fe-builder /app/frontend/package*.json /tmp/dummy-fe-pkg.json
+# SRE Optimization: Force sequential execution under memory limits by copying from fe-builder stage after frontend build is done
+COPY --from=fe-builder /app/frontend/\${feOut} /tmp/dummy-fe-dist
 ${bePmSetup}
 COPY ${beDir}/package*.json${beLockStr} ./
 ${beInstallAllCmd}
