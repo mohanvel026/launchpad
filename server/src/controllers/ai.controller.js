@@ -1018,40 +1018,47 @@ const debugKeys = async (req, res) => {
 const getVpsLogs = async (req, res) => {
   try {
     const { exec } = require('child_process');
-    
+    const homedir = require('os').homedir();
+    const path = require('path');
+    const fs = require('fs');
+
+    const fallbackErrLog = path.join(homedir, '.pm2/logs/launchpad-server-error.log');
+    const fallbackOutLog = path.join(homedir, '.pm2/logs/launchpad-server-out.log');
+
     exec('pm2 jlist', (err, stdout, stderr) => {
-      if (err) {
-        const homedir = require('os').homedir();
-        const logPath = require('path').join(homedir, '.pm2/logs/launchpad-server-error.log');
-        const fs = require('fs');
-        if (fs.existsSync(logPath)) {
-          const content = fs.readFileSync(logPath, 'utf8').split('\n').slice(-150).join('\n');
-          return res.json({ logs: content });
-        }
-        return res.status(500).json({ error: 'Failed to run pm2 jlist and log file not found', detail: err.message });
-      }
-      
-      try {
-        const apps = JSON.parse(stdout);
-        const app = apps.find(a => a.name === 'launchpad-server');
-        if (app) {
-          const fs = require('fs');
-          const errLog = app.pm2_env.pm_err_log_path;
-          const outLog = app.pm2_env.pm_out_log_path;
-          
-          let logs = '';
-          if (fs.existsSync(errLog)) {
-            logs += `--- ERROR LOG (${errLog}) ---\n` + fs.readFileSync(errLog, 'utf8').split('\n').slice(-150).join('\n') + '\n';
+      let errLog = fallbackErrLog;
+      let outLog = fallbackOutLog;
+
+      if (!err && stdout) {
+        try {
+          const apps = JSON.parse(stdout);
+          const app = apps.find(a => a.name === 'launchpad-server');
+          if (app) {
+            errLog = app.pm2_env.pm_err_log_path || fallbackErrLog;
+            outLog = app.pm2_env.pm_out_log_path || fallbackOutLog;
           }
-          if (fs.existsSync(outLog)) {
-            logs += `--- OUT LOG (${outLog}) ---\n` + fs.readFileSync(outLog, 'utf8').split('\n').slice(-150).join('\n') + '\n';
-          }
-          return res.json({ logs });
-        }
-        return res.status(404).json({ error: 'App launchpad-server not found in PM2 list' });
-      } catch (e) {
-        return res.status(500).json({ error: 'Failed to parse pm2 jlist', detail: e.message, raw: stdout });
+        } catch (e) {}
       }
+
+      // Read logs memory-safely using tail
+      let logs = '';
+      const readLogFile = (filePath, label) => {
+        return new Promise((resolve) => {
+          if (!fs.existsSync(filePath)) {
+            return resolve(`--- ${label} (${filePath}) ---\nFile does not exist.\n\n`);
+          }
+          exec(`tail -n 150 "${filePath}"`, { timeout: 5000 }, (tailErr, tailStdout) => {
+            resolve(`--- ${label} (${filePath}) ---\n${tailStdout || 'Empty or failed to read.'}\n\n`);
+          });
+        });
+      };
+
+      Promise.all([
+        readLogFile(errLog, 'ERROR LOG'),
+        readLogFile(outLog, 'OUT LOG')
+      ]).then((results) => {
+        res.json({ logs: results.join('') });
+      });
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
