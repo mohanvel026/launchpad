@@ -1447,6 +1447,8 @@ buildQueue.process(1, async (job) => {
         await new Promise((resolve, reject) => {
           const { spawn } = require('child_process');
           const dockerBuildArgs = ['build', '--progress=plain'];
+          // SRE: Memory limits prevent OOM-killing the host when builds are RAM-intensive
+          dockerBuildArgs.push('--memory', '700m', '--memory-swap', '1500m');
           if (forceRebuild) {
             dockerBuildArgs.push('--no-cache');
           } else {
@@ -1478,13 +1480,13 @@ buildQueue.process(1, async (job) => {
           }, 3000);
 
           // SRE Safety Limit: Kill process if docker build hangs/thrashes
-          // Configurable via BUILD_TIMEOUT_MINUTES env var (default: 40 minutes)
-          const buildTimeoutMs = (parseInt(process.env.BUILD_TIMEOUT_MINUTES) || 40) * 60 * 1000;
+          // Configurable via BUILD_TIMEOUT_MINUTES env var (default: 25 minutes)
+          const buildTimeoutMs = (parseInt(process.env.BUILD_TIMEOUT_MINUTES) || 25) * 60 * 1000;
           const buildTimeout = setTimeout(() => {
             try {
               buildProc.kill('SIGKILL');
             } catch {}
-            reject(new Error(`Docker build timed out after ${parseInt(process.env.BUILD_TIMEOUT_MINUTES) || 40} minutes due to memory/disk limits`));
+            reject(new Error(`Docker build timed out after ${parseInt(process.env.BUILD_TIMEOUT_MINUTES) || 25} minutes due to memory/disk limits`));
           }, buildTimeoutMs);
 
           const handleLine = async (line) => {
