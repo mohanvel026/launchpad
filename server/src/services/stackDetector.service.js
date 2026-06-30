@@ -474,9 +474,11 @@ ENV ${e.key}=$${e.key}`)
     gzip_min_length 256;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml+rss image/svg+xml;
 
-    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|map|json|webp|avif|mp4|webm)$ {
+        try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, no-transform";
+        add_header X-Content-Type-Options "nosniff" always;
     }${proxySection}
 
     location / {
